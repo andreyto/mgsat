@@ -107,6 +107,12 @@ for (package in packages) {
   library(package,character.only=T)
 }
 
+## replace oldnames with newnames in vector allnames
+## to be used when allnames = names(data.frame)
+replace.col.names<-function(allnames,oldnames,newnames) {
+  allnames[match(oldnames,allnames)] = newnames
+  return(allnames)
+}
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
   mask_col_ignore = names(dat) %in% col_ignore
@@ -607,9 +613,9 @@ power.dirmult.range<-function(
     test.wil.res.power.sel = test.wil.res.power[all_clades %in% test_clades]
     cbind(eta=res$eta,mod.cramer.phi=res$mod.cramer.phi,r2.ad,test.Xmcupo.res=res$test.Xmcupo.res,test.ad.res,test.wil.res)
   },
-                                    test_clades=test_clades,
-                                    all_clades=all_clades,
-                                    alpha=alpha)
+  test_clades=test_clades,
+  all_clades=all_clades,
+  alpha=alpha)
   )
   make.global(res.all)
   res = ddply(res.all,c("eta"),
@@ -763,16 +769,44 @@ merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
 
 load.meta.choc <- function(file_name,counts.row.names) {
   meta = read.delim(file_name,header=T,stringsAsFactors=T)
-  meta$Family = as.factor(meta$Family)
   
-  meta$Sample.type.1 = as.factor(unlist(apply(meta,
-                                              1,
-                                              function(row) {switch(paste(row["Sample.type"],row["Therapy.Status"],sep="."),
-                                                                    sibling.Before="sibling",
-                                                                    patient.After="patient.after",
-                                                                    patient.Before="patient.before")})))
-  meta$Sample.ID.1 = as.factor(paste(meta$Subject.ID..blinded.,meta$Sample.type.1,sep="."))
-  row.names(meta) = meta$sample_id_data
+  allnames = replace.col.names(names(meta),
+                               c("Subject.ID..blinded.","SampleID","Subject.s.Gender"),
+                               c("Subject.ID","Sample.ID","Gender"))
+  
+  names(meta) = allnames
+  
+  Subject.ID.split = aaply(as.character(meta$Subject.ID),c(1),function(x){strsplit(x,"-")[[1]]})
+  
+  meta$Family = as.factor(Subject.ID.split[,2])
+  meta$Subject.Ind.Family = as.factor(Subject.ID.split[,3])
+  #what is Subject.ID.split[,1]?
+  
+  meta$Sample.type = gsub(" ",".",meta$Sample.type)
+  
+  #Therapy.Status
+  meta$Sample.type.1 = meta$Sample.type
+  
+  meta$Sample.type = as.factor(unlist(apply(meta,
+                                            1,
+                                            function(row) {switch(row["Sample.type.1"],
+                                                                  sibling ="sibling",
+                                                                  patient.after.chemo="patient",
+                                                                  patient.before.chemo="patient")})))
+  meta$Therapy.Status = as.factor(unlist(apply(meta,
+                                               1,
+                                               function(row) {switch(row["Sample.type.1"],
+                                                                     sibling ="before.chemo",
+                                                                     patient.after.chemo="after.chemo",
+                                                                     patient.before.chemo="before.chemo")})))
+  
+  meta$Sample.ID.1 = as.factor(paste(meta$Subject.ID,meta$Sample.type.1,sep="."))
+  meta$Sample.type = as.factor(meta$Sample.type)
+  meta$Sample.type.1 = as.factor(meta$Sample.type.1)
+  meta$Therapy.Status = as.factor(meta$Therapy.Status)
+  meta$Sample.ID = as.factor(meta$Sample.ID)
+  row.names(meta) = meta$Sample.ID
+  make.global(meta)  
   return (meta)
 }
 
@@ -870,8 +904,9 @@ std.plots <- function(abund.meta.data,
   abund.meta.data.norm = row_normalize(abund.meta.data,col_ignore=abund.meta.attr.names)
   file.name.root = paste(file.name.root,label,sep=".")
   
-  write.table(abund.meta.data,paste(file.name.root,".count.tab"),sep="\t")
-  write.table(abund.meta.data.norm,paste(file.name.root,".freq.tab"),sep="\t")
+  #write files w/o row names because Excel will incorrectly shift column names due to first empty name
+  write.table(abund.meta.data,paste(file.name.root,".count.tab"),sep="\t",row.names = FALSE)
+  write.table(abund.meta.data.norm,paste(file.name.root,".freq.tab"),sep="\t",row.names = FALSE)
   
   make.graph.file.name <- function(kind) {
     paste(file.name.root.id.vars,kind,file.name.sfx,sep=".")
@@ -1049,10 +1084,10 @@ power.choc<-function(taxa.meta.data,taxa.meta.attr.names) {
 
 read.choc <- function(taxa.level=3) {
   #moth.taxa <- read.mothur.taxa.summary("X:/sszpakow/BATCH_03_16S/ab1ec.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary.txt")
-  moth.taxa <- read.mothur.taxa.summary("70cbd.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
+  moth.taxa <- read.mothur.taxa.summary("d3226.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
   taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
   taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0.001,min_row_sum=50,other_cnt="other")
-  meta = load.meta.choc("JCVI_ALL_sample_information.AT.txt")
+  meta = load.meta.choc("JCVI_ALL_sample_information_Feb_2013.AT.txt")
   return (merge.counts.with.meta(taxa.lev,meta))
 }
 
@@ -1060,31 +1095,47 @@ proc.choc <- function() {
   #DEBUG:
   do.power = F
   do.plots = T
-  level = 6
-  taxa.meta = read.choc(level)
-  taxa.meta.data = taxa.meta$data
-  taxa.meta.attr.names = taxa.meta$attr.names
-  
-  #subsample just the rows we need and then filter out clades that are all zero
-  taxa.meta.data = count_filter(taxa.meta.data[c("LK3_91","LK4_92"),],
-                                col_ignore=taxa.meta.attr.names,
-                                min_max_frac=0.001,min_row_sum=50,other_cnt="other")
-  
-  if(do.power) {
-    power.choc(taxa.meta.data,taxa.meta.attr.names)
-  }
-  
-  if(do.plots) {
+  do.tests = T
+  taxa.levels = c(2,3,4,5,6)
+  for (taxa.level in taxa.levels) {
+    label = paste("16s",taxa.level,sep=".")
     
-    std.plots(taxa.meta.data,taxa.meta.attr.names,id.vars.list=
-                list(
-                  c("Sample.type","Therapy.Status"),
-                  c("Subject.ID..blinded.","Therapy.Status"),
-                  c("Sample.type.1"),
-                  c("Sample.ID.1")
-                ),
-              label=level
-    )
+    taxa.meta = read.choc(taxa.level)
+    taxa.meta.data = taxa.meta$data
+    taxa.meta.attr.names = taxa.meta$attr.names
+    
+    #(optionally) subsample just the rows we need and then filter out clades that are all zero
+    #taxa.meta.data[taxa.meta.data$Sample.type=="patient",]
+    taxa.meta.data = count_filter(taxa.meta.data,
+                                  col_ignore=taxa.meta.attr.names,
+                                  min_max_frac=0.001,min_row_sum=50,other_cnt="other")
+    
+    if(do.power) {
+      power.choc(taxa.meta.data,taxa.meta.attr.names)
+    }
+    if (do.tests) {
+      res.tests = try(
+        test.counts.choc(taxa.meta.data,taxa.meta.attr.names,
+                         label=label,
+                         stability.transform.counts="ident",
+                         do.stability=T,
+                         do.tests=F)
+      )
+    }
+    if(do.plots) {
+      try(
+        std.plots(taxa.meta.data,taxa.meta.attr.names,id.vars.list=
+                    list(
+                      c("Sample.type","Therapy.Status"),
+                      c("Subject.ID","Therapy.Status"),
+                      c("Sample.type.1"),
+                      c("Sample.ID.1")
+                    ),
+                  label=label,
+                  res.tests=res.tests
+        )
+      )
+    }
   }
 }
 
@@ -1230,46 +1281,46 @@ cv.glmnet.alpha <- function(y, x, family, seed=NULL, standardize=T) {
                          standardize=standardize, 
                          alpha=alphas[i]))
 }
-  # there are two lambdas per model
-  # minimum lamda
-  # lambda within 1 standard deviation of the error
-  # find the best alpha
-  best_alpha_index <- 0
-  lowest_error <- 0
-  for (i in c(1:length(alphas))) {
-    # if a model fails, "try-error" will return true. "try-error" is an object that traps errors
-    # inherits is a function that will be true if try-error has collected an error from the model
-    # we want to avoid any errors recorded in "try-error" in the list of models we just generated
-    # example too small a dataset
-    if (!inherits(lassomodels[[i]], "try-error")) {
-      # First we will find the index of the lambda corresponding to the lambda.min
-      index <- which(lassomodels[[i]]$lambda.min == lassomodels[[i]]$lambda)
-      # high lambda means more penalty.
-      # lambdas are arranged from highest to lowest
-      # alpha = 1 ==> lasso
-      # alph = 0 ==> ridge
-      
-      #cvm is the cross-validated error, in this case, deviance.
-      error <- lassomodels[[i]]$cvm[index]
-      #print(error)
-      if (best_alpha_index == 0 || error < lowest_error) {
-        best_alpha_index <- i # picks an alpha from the grid of alphas
-        lowest_error <- error # picks the lowest deviance from the grid
-      }
+# there are two lambdas per model
+# minimum lamda
+# lambda within 1 standard deviation of the error
+# find the best alpha
+best_alpha_index <- 0
+lowest_error <- 0
+for (i in c(1:length(alphas))) {
+  # if a model fails, "try-error" will return true. "try-error" is an object that traps errors
+  # inherits is a function that will be true if try-error has collected an error from the model
+  # we want to avoid any errors recorded in "try-error" in the list of models we just generated
+  # example too small a dataset
+  if (!inherits(lassomodels[[i]], "try-error")) {
+    # First we will find the index of the lambda corresponding to the lambda.min
+    index <- which(lassomodels[[i]]$lambda.min == lassomodels[[i]]$lambda)
+    # high lambda means more penalty.
+    # lambdas are arranged from highest to lowest
+    # alpha = 1 ==> lasso
+    # alph = 0 ==> ridge
+    
+    #cvm is the cross-validated error, in this case, deviance.
+    error <- lassomodels[[i]]$cvm[index]
+    #print(error)
+    if (best_alpha_index == 0 || error < lowest_error) {
+      best_alpha_index <- i # picks an alpha from the grid of alphas
+      lowest_error <- error # picks the lowest deviance from the grid
     }
   }
-  #print(best_alpha_index)
-  out <- list(c(), c(), c())
-  if (best_alpha_index != 0) {
-    # print the lassomodel at the best_alpha_index
-    lasso_model <- lassomodels[[best_alpha_index]]
-    alpha <- alphas[best_alpha_index]
-    # Use lambda which gives the lowest cross validated error
-    lambda <- lasso_model$lambda.min
-    out <- list(lasso_model, alpha, lambda)
-  }
-  names(out) <- c("glmnet.model", "alpha", "lambda")
-  out
+}
+#print(best_alpha_index)
+out <- list(c(), c(), c())
+if (best_alpha_index != 0) {
+  # print the lassomodel at the best_alpha_index
+  lasso_model <- lassomodels[[best_alpha_index]]
+  alpha <- alphas[best_alpha_index]
+  # Use lambda which gives the lowest cross validated error
+  lambda <- lasso_model$lambda.min
+  out <- list(lasso_model, alpha, lambda)
+}
+names(out) <- c("glmnet.model", "alpha", "lambda")
+out
 }
 
 stability.selection.c060.at <- function (x, fwer, pi_thr = 0.6) 
@@ -1517,6 +1568,133 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   }
   return (res)
 }
+
+
+test.counts.choc <- function(data,attr.names,label,alpha=0.05,
+                             do.tests=T,do.stability=T,
+                             stability.transform.counts="ident") {
+  
+  n.adonis.perm = 400
+  res = list()
+  m_a.abs = split_count_df(data,col_ignore=attr.names)
+  
+  data.norm = row_normalize(data,col_ignore=attr.names)
+  
+  #make.global(tbl)
+  #make.global(fams)
+  #make.global(data.norm)
+  
+  all.clades = get.clade.names(data,attr.names)
+  m_a = split_count_df(data.norm,col_ignore=attr.names)
+  make.global(m_a)
+  
+  m = m_a$count
+  
+  #m = (m_a.abs$count > 0)
+  #storage.mode(m) = "integer"
+  
+  count = switch(stability.transform.counts,
+                 boxcox=boxcox.transform.mat(m),
+                 ihs=ihs(m,1),
+                 ident=m,
+                 binary=(m_a.abs$count > 0))
+  make.global(count)
+  
+  if (do.stability) {
+    
+    standardize.glm = T
+    
+    cl<-makeCluster(getOption("mc.cores", 4L)) #number of CPU cores
+    registerDoSNOW(cl)
+    stab.resp.var = m_a$attr$Therapy.Status
+    #stab.resp.var = m_a$attr$Sample.type
+    cv.res = cv.glmnet.alpha(stab.resp.var,count,family="binomial",standardize=standardize.glm)
+    stopCluster(cl)
+    
+    make.global(cv.res)
+    
+    penalty.alpha = cv.res$alpha
+    #alpha = 0.8
+    stab.res.c060 = stability.path(stab.resp.var,count,weakness=0.6,
+                                   family="binomial",steps=600,
+                                   alpha=penalty.alpha,standardize=standardize.glm)
+    make.global(stab.res.c060)
+    fwer = alpha
+    pi_thr = 0.6
+    stab.feat.c060 = stability.selection.c060.at(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+    #stab.feat.c060 = stability.selection(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+    make.global(stab.feat.c060)
+    print (names(stab.feat.c060$stable))
+    
+    stab.path.file = paste("stability.path",label,"png",sep=".")
+    
+    #p = plot.stability.selection.c060.at(stab.feat.c060,rank="mean")
+    p = plot.stability.selection.c060.at(stab.feat.c060,xvar="fraction",rank="lpos")
+    ggsave(stab.path.file)
+    #png(stab.path.file)
+    #plot(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+    #dev.off()
+    res$stab.feat=stab.feat.c060
+  }
+  
+  if (do.tests) {
+    ##Negative values break bray-curtis and jaccarda= distances; we standardize to "range" to reduce
+    ##the influence of very abundant species
+    count = decostand(m_a$count,method="range",MARGIN=2)
+    adonis.dist = "jaccard" #"bray"
+    #ad.res = adonis(count~T1D + Batch,data=m_a$attr,permutations=n.adonis.perm,method=adonis.dist)
+    #print(ad.res)
+    ad.res.unpaired = adonis(count~Therapy.Status,data=m_a$attr,permutations=n.adonis.perm,method=adonis.dist)
+    print(ad.res.unpaired)
+    ad.res.paired = adonis(count~Therapy.Status,data=m_a$attr,strata=m_a$attr$Family,permutations=n.adonis.perm,method=adonis.dist)  
+    print (ad.res.paired)
+    #make.global(ad.res)
+    
+    #print (ad.res)
+    #test.ad.res = ad.res$aov.tab$"Pr(>F)"[1]
+    #r2.ad = ad.res$aov.tab$R2[1]
+    
+    gr.abs = m_a.abs$attr$Therapy.Status
+    gr.abs.cnt = list(x=m_a.abs$count[gr.abs=="before.chemo",],y=m_a.abs$count[gr.abs!="before.chemo",])
+    print(Xdc.sevsample(gr.abs.cnt))
+    K = dim(gr.abs.cnt[[1]])[2]-1
+    print (K)
+    #make.global(gr.abs.cnt)
+    print(Xmcupo.sevsample(gr.abs.cnt,K))
+    
+    ##this is a rank based pairwise test; column-wise standartization does not
+    ##affect it, but rwo-wise - does
+    gr = m_a$attr$Therapy.Status
+    gr.cnt = list(x=m_a$count[gr=="before.chemo",],y=m_a$count[gr!="before.chemo",])
+    
+    test.wil.res = list()
+    
+    for (clade in all.clades) {
+      test.wil.res[[clade]] = wilcox.test(gr.cnt[[1]][,clade],gr.cnt[[2]][,clade],paired=FALSE,exact=F)$p.value
+    }
+    test.wil.res = unlist(test.wil.res)
+    make.global(test.wil.res)    
+    names(test.wil.res) = all.clades
+    test.wil.res.adj = p.adjust(test.wil.res,method="BH")
+    fdr.res = fdrtool(test.wil.res,"pvalue")
+    
+    names(test.wil.res.adj) = names(test.wil.res)
+    print("Significant unadjusted p-values:")
+    print(test.wil.res[test.wil.res<=alpha])
+    print("Significant BH adjusted p-values:")    
+    print(test.wil.res.adj[test.wil.res.adj<=alpha])
+    make.global(test.wil.res.adj)
+    test.wil.res.adj.q = fdr.res$qval
+    names(test.wil.res.adj.q) = names(test.wil.res)
+    print("Q-values below cutoff:")
+    print(test.wil.res.adj.q[test.wil.res.adj.q<=alpha])
+    make.global(test.wil.res.adj.q)
+    
+    
+  }
+  return (res)
+}
+
 
 load.meta.t1d <- function(file_name,counts.row.names,as.merged=F) {
   
@@ -1928,26 +2106,26 @@ read.pieper.t1d <- function() {
   #data = ddply(data,.(id.person),colwise(function(y) {if(is.numeric(y)) sum(y) else y[1]} ))
   data$ID = NULL
   if(F) {
-  id.group = data[,c("id.person","group")]
-  #id.group = id.group[!duplicated(id.group$id.person),]
-  #rownames(id.group)=id.group$id.person
-  #id.group$id.person = NULL
-  #id.group = id.group[order(rownames(id.group)),]
-  data$group = NULL
-  data = ddply(data,.(id.person),function(x) {id.person=x$id.person[1]
-                                              x$id.person=NULL
-                                              y = colSums(x)
-                                              c(id.person,y)})
-  rownames(data) = data[,1]
-  make.global(data)
-  make.global(id.group)
-  #data = data[order(rownames(data)),]
-  #stopifnot(all(rownames(id.group)==rownames(data)))
-  #data$group = id.group$group
-  nrow.before = nrow(data)
-  data = join(data,id.group,by=c("id.person"),type="left",match="first")
-  stopifnot(!any(aaply(c(data$group),1,is.null)))
-  stopifnot(nrow(data)==nrow.before)
+    id.group = data[,c("id.person","group")]
+    #id.group = id.group[!duplicated(id.group$id.person),]
+    #rownames(id.group)=id.group$id.person
+    #id.group$id.person = NULL
+    #id.group = id.group[order(rownames(id.group)),]
+    data$group = NULL
+    data = ddply(data,.(id.person),function(x) {id.person=x$id.person[1]
+                                                x$id.person=NULL
+                                                y = colSums(x)
+                                                c(id.person,y)})
+    rownames(data) = data[,1]
+    make.global(data)
+    make.global(id.group)
+    #data = data[order(rownames(data)),]
+    #stopifnot(all(rownames(id.group)==rownames(data)))
+    #data$group = id.group$group
+    nrow.before = nrow(data)
+    data = join(data,id.group,by=c("id.person"),type="left",match="first")
+    stopifnot(!any(aaply(c(data$group),1,is.null)))
+    stopifnot(nrow(data)==nrow.before)
   }
   data = data[!duplicated(data$id.person),]
   return (list(data=data,attr.names=c("id.person","group")))
@@ -1960,7 +2138,7 @@ power.pieper.t1d <- function() {
   make.global(taxa.meta)
   taxa.meta.attr.names = taxa.meta$attr.names    
   taxa.meta.data.raw = count_filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
-                                min_max_frac=0,min_max=0,min_median=100,min_row_sum=0,other_cnt=NULL)
+                                    min_max_frac=0,min_max=0,min_median=100,min_row_sum=0,other_cnt=NULL)
   taxa.meta.data = all_normalize(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
   make.global(taxa.meta.data)
   clade.names = get.clade.names(taxa.meta.data,taxa.meta.attr.names)
