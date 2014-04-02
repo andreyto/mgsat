@@ -33,6 +33,7 @@
 #source("http://bioconductor.org/biocLite.R")
 #biocLite("multtest")
 #biocLite("GeneSelector")
+#biocLite("RColorBrewer")
 ## To upgrade Bioconductor packages, use: source("http://bioconductor.org/biocLite.R"); biocLite("BiocUpgrade")
 ## Normal R-Studio upgrade apparently does not upgrade Bioconductor.
 
@@ -218,22 +219,35 @@ tryCatchAndWarn<-function(expr,catch.warnings=F,catch.errors=T) {
   ok=T
   #somehow if both warning and error arguments are used
   #in a single call to tryCatch, then error handler is not
-  #called
-  res = tryCatch(tryCatch(expr,
-                          
-                          warning=function(w) {
-                            warning(paste("Warning caught in tryCatch; returning NULL: ",w,"\n"))
-                            if(catch.warnings) {
-                              ok<<-F
-                            }
-                          }
-  ),                   error=function(e) {
-    warning(paste("Error caught in tryCatch; returning NULL: ",e,"\n"))
-    if(catch.errors) {
+  #called - probably only the handler for whatever happens first
+  #is called
+
+  if(catch.warnings) {
+    warnHand = function(w) {
+      warning(paste("Warning caught in tryCatch; returning NULL: ",w,"\n"))
       ok<<-F
     }
   }
-  )
+  
+  if(catch.errors) {
+    errHand = function(e) {
+        warning(paste("Error caught in tryCatch; returning NULL: ",e,"\n"))
+        ok<<-F
+    }
+  }
+  
+  if(catch.warnings && catch.errors) {
+    res = tryCatch(tryCatch(expr,warning=warnHand),error=errHand)
+  }
+  else if(catch.warnings && !catch.errors) {
+    res = tryCatch(expr,warning=warnHand)
+  }
+  else if(!catch.warnings && catch.errors) {
+    res = tryCatch(expr,error=errHand)
+  }
+  else {
+    res = tryCatch(expr)
+  }
   
   #options(warn=warn_saved)
   if (!ok) {
@@ -854,15 +868,21 @@ load.meta.choc <- function(file_name,counts.row.names) {
   
   allnames = replace.col.names(names(meta),
                                c("Subject.ID..blinded.","SampleID","Subject.s.Gender"),
-                               c("Subject.ID","Sample.ID","Gender"))
+                               c("SubjectID","SampleID","Gender"))
   
   names(meta) = allnames
   
-  Subject.ID.split = aaply(as.character(meta$Subject.ID),c(1),function(x){strsplit(x,"-")[[1]]})
+  ## Format of SubjectID from Raja:
+  ## The third letter in the letter set describes whether the sample is 
+  ## from the patient (P) or sibling (S). The first set of numbers is 
+  ## the date of consent without year. The second set of two numbers 
+  ## links patient and sibling together. For example, ARP-0328-01 and 
+  ## CRS-0329-01 are family set 01
   
-  meta$Family = as.factor(Subject.ID.split[,2])
-  meta$Subject.Ind.Family = as.factor(Subject.ID.split[,3])
-  #what is Subject.ID.split[,1]?
+  Subject.ID.split = aaply(as.character(meta$SubjectID),c(1),function(x){strsplit(x,"-")[[1]]})
+  
+  meta$FamilyID = as.factor(Subject.ID.split[,3])
+  #meta$SubjectIndFamily = as.factor(Subject.ID.split[,3])
   
   meta$Sample.type = gsub(" ",".",meta$Sample.type)
   
@@ -875,19 +895,21 @@ load.meta.choc <- function(file_name,counts.row.names) {
                                                                   sibling ="sibling",
                                                                   patient.after.chemo="patient",
                                                                   patient.before.chemo="patient")})))
-  meta$Therapy.Status = as.factor(unlist(apply(meta,
-                                               1,
-                                               function(row) {switch(row["Sample.type.1"],
-                                                                     sibling ="before.chemo",
-                                                                     patient.after.chemo="after.chemo",
-                                                                     patient.before.chemo="before.chemo")})))
+  meta$TherapyStatus = as.factor(unlist(apply(meta,
+                                              1,
+                                              function(row) {switch(row["Sample.type.1"],
+                                                                    sibling ="before.chemo",
+                                                                    patient.after.chemo="after.chemo",
+                                                                    patient.before.chemo="before.chemo")})))
   
-  meta$Sample.ID.1 = as.factor(paste(meta$Subject.ID,meta$Sample.type.1,sep="."))
+  meta$Antibiotic = as.factor(meta$Antibiotic.treatment.within.the.last.1.months. != "No")
+  
+  meta$SampleID.1 = as.factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
   meta$Sample.type = as.factor(meta$Sample.type)
   meta$Sample.type.1 = as.factor(meta$Sample.type.1)
-  meta$Therapy.Status = as.factor(meta$Therapy.Status)
-  meta$Sample.ID = as.factor(meta$Sample.ID)
-  row.names(meta) = meta$Sample.ID
+  meta$TherapyStatus = as.factor(meta$TherapyStatus)
+  meta$SampleID = as.factor(meta$SampleID)
+  row.names(meta) = meta$SampleID
   make.global(meta)  
   return (meta)
 }
@@ -1186,7 +1208,7 @@ read.choc <- function(taxa.level=3) {
   return (merge.counts.with.meta(taxa.lev,meta))
 }
 
-proc.choc <- function() {
+proc.choc.nov_2013_grant_proposal <- function() {
   #DEBUG:
   do.power = F
   do.plots = T
@@ -1233,6 +1255,81 @@ proc.choc <- function() {
     }
   }
 }
+
+proc.choc <- function() {
+  #taxa.levels = c(2,3,4,5,6)
+  taxa.levels = c(6)
+  do.std.plots = T
+  do.tests = T
+  
+  report$add.descr("Largely identical set of analysis routines is applied
+                   in loops over different 
+                   taxonomic levels. For each output, look for the nearest
+                   headers to figure out the taxonomic level.
+                   If viewing HTML formatted report, you can click on the
+                   images to view the hi-resolution picture.")
+  
+  for (taxa.level in taxa.levels) {
+    taxa.meta = read.choc(taxa.level)
+    
+    label = paste("16s","l",taxa.level,sep=".",collapse=".")
+    report$add.p(paste("Tag:",label))
+    report$set.tag(label)
+    
+    report$add.header(paste("Taxonomic level:",taxa.level),2)
+    
+    taxa.meta.aggr = taxa.meta
+    report$add.p(paste("Number of samples:",nrow(taxa.meta.aggr$data)))      
+    
+    xtabs.formulas = list(~Sample.type+TherapyStatus)
+    for(xtabs.formula in xtabs.formulas) {
+      fact.xtabs = xtabs(xtabs.formula,data=taxa.meta.aggr$data,drop.unused.levels=T)
+      report$add.table(fact.xtabs,show.row.names=T,caption="Sample cross tabulation")
+      report$add.printed(summary(fact.xtabs))
+    }
+    
+    taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
+                                       col_ignore=taxa.meta.aggr$attr.names,
+                                       min_max=10)
+    #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
+    #                              min_median=0.002,
+    #                              min_max_frac=0.1,min_max=10,
+    #                              min_row_sum=500,other_cnt="other")
+    
+    report$add.p(paste("After count filtering,",
+                       (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),"clades left."))
+    
+    
+    if (do.tests) {
+      res.tests = tryCatchAndWarn(
+        test.counts.choc(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
+                         label=label,
+                         stability.transform.counts="ihs",
+                         do.stability=T,
+                         do.tests=T,
+                         do.genesel=T,do.glmnet=T,
+                         do.glmer=T,do.adonis=T,
+        )
+      )
+    }
+    if (do.std.plots) {
+      tryCatchAndWarn({
+        plot.group = list(
+          c("Sample.type","TherapyStatus")
+          #c("SubjectID","TherapyStatus"),
+          #c("Sample.type.1"),
+          #c("SampleID.1")
+        )            
+        std.plots(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,id.vars.list=
+                    plot.group,
+                  label=label,
+                  res.tests=res.tests
+        )
+      })
+    }
+  }
+}
+
 
 #Function for symbolic derivative of arbitrary order
 #Copied from help page for 'deriv()'
@@ -1824,9 +1921,9 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
 }
 
 
-test.counts.choc <- function(data,attr.names,label,alpha=0.05,
-                             do.tests=T,do.stability=T,
-                             stability.transform.counts="ihs") {
+test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=0.05,
+                                                    do.tests=T,do.stability=T,
+                                                    stability.transform.counts="ihs") {
   
   n.adonis.perm = 400
   res = list()
@@ -1949,6 +2046,239 @@ test.counts.choc <- function(data,attr.names,label,alpha=0.05,
   return (res)
 }
 
+test.counts.choc <- function(data,attr.names,label,alpha=0.05,
+                             do.tests=T,do.stability=T,
+                             do.genesel=T,do.glmnet=T,
+                             do.glmer=T,do.adonis=T,
+                             stability.transform.counts="ihs") {
+  
+  
+  stability.resp.attr = "TherapyStatus"
+  stability.model.family = "binomial"
+  n.adonis.perm = 4000
+  if(do.adonis) {
+    adonis.tasks = list(
+      list(formula_rhs="TherapyStatus",
+           strata=NULL,
+           descr="Association with the therapy status unpaired"),
+      list(formula_rhs="TherapyStatus",
+           strata="FamilyID",
+           descr="Association with the therapy status unpaired")
+    )
+  }
+  if(do.glmer) {
+    ##intercept varying among families and among individuals within families (nested random effects)
+    formula_rhs = "TherapyStatus + (1|FamilyID/SubjectID)"
+    ##if there are repeated samples per individual, add sample random effect for overdispersion
+    ##otherwise, overdispersion is taken care of by SubjectID random effect(?)
+    if(anyDuplicated(data$SubjectID)) {
+      formula_rhs = paste(formula_rhs,"+(1|SampleID)",sep="")
+    }
+    
+    linfct=c("TherapyStatusbefore.chemo = 0")
+    
+    glmer_descr = "The random effect terms in the model formula describe that: 
+                       - intercept varies among families 
+                       and among individuals within families (nested random effects);
+                       - when there are multiple observations (samples) per
+                       individual, we add a random effect for each observation to account
+                       for the overdispersion;
+                       The fixed effect is T1D status. The binomial family
+                       is used to build a set of univariate models, with each
+                       model describing the observed counts of one clade.
+                       P-values are estimated from the model under a null hypothesis
+                       of zero coefficients and a two-sided alternative. 
+                       Benjamini & Hochberg (1995) method is used 
+                       for multiple testing correction, and the significant clades
+                       are reported."
+  }  
+  res = list()
+  
+  m_a.abs = split_count_df(data,col_ignore=attr.names)
+  
+  data.norm = row_normalize(data,col_ignore=attr.names)
+  
+  #make.global(data.norm)
+  
+  all.clades = get.clade.names(data,attr.names)
+  m_a = split_count_df(data.norm,col_ignore=attr.names)
+  
+  make.global(m_a)
+  
+  m = m_a$count
+  
+  #m = (m_a.abs$count > 0)
+  #storage.mode(m) = "integer"
+  
+  count = switch(stability.transform.counts,
+                 boxcox=boxcox.transform.mat(m),
+                 ihs=ihs(m,1),
+                 ident=m,
+                 binary=(m_a.abs$count > 0))
+  
+  if (do.stability) {
+    
+    if(do.genesel) {
+      ## We need to use row-normalized counts here, because we perform Wilcox test
+      ## inside, and could false significance due to different depth of sequencing
+      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,stability.resp.attr])
+      report$add.header("GeneSelector stability ranking",3)
+      report$add.package.citation("GeneSelector")
+      report$add.descr("Univariate test (Wilcox) is applied to each clade on random
+                       subsamples of the data. Consensus ranking is found with a
+                       Monte Carlo procedure. The top clades of the consensus ranking
+                       are returned, along with the p-values computed on the full
+                       original dataset (with multiple testing correction).")
+      report$add.table(res.stab_sel_genesel$stab_feat,
+                       caption=
+                         paste("GeneSelector stability ranking for response ",stability.resp.attr)
+      )
+      report$add.package.citation("vegan")
+      report$add(
+        plot.features.mds(m_a,species.sel=(colnames(m_a$count) %in% 
+                                             res.stab_sel_genesel$stab_feat$name),
+                          sample.group=m_a$attr[,stability.resp.attr]),
+        caption="metaMDS plot. 'x' marks top selected clades, 'o' marks samples"
+      )
+    }
+    if(do.glmnet) {
+      standardize.glm = T
+      if(standardize.glm) {
+        count = decostand(count,method="standardize",MARGIN=2)
+      }
+      
+      cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
+      registerDoSNOW(cl)  
+      cv.res = cv.glmnet.alpha(m_a$attr[,stability.resp.attr],count,family=stability.model.family,standardize=F)
+      stopCluster(cl)
+      
+      penalty.alpha = cv.res$alpha
+      #alpha = 0.8
+      stab.res.c060 = stabpath(m_a$attr[,stability.resp.attr],count,weakness=0.8,
+                               family=stability.model.family,steps=600,
+                               alpha=penalty.alpha,standardize=F)
+      #stab.res.c060 = stabpath(m_a$attr$A1C[m_a$attr$T1D=="T1D"],
+      #                               count[m_a$attr$T1D=="T1D",],
+      #                               weakness=0.9,
+      #                               family="gaussian",steps=600,
+      #                               alpha=penalty.alpha,standardize=F)
+      
+      fwer = alpha
+      pi_thr = 0.6
+      stab.feat.c060 = stability.selection.c060.at(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+      #stab.feat.c060 = stability.selection(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+      
+      stab.path.file = paste("stability.path",label,"png",sep=".")
+      
+      pl.stab = tryCatchAndWarn({
+        #p = plot.stability.selection.c060.at(stab.feat.c060,rank="mean")
+        p = plot.stability.selection.c060.at(stab.feat.c060,xvar="fraction",rank="lpos")
+        ggsave(stab.path.file)
+        p
+      })
+      
+      #report$add.printed(stab.res.c060$fit,
+      #                   caption=paste(
+      #                     "Glmnet stability path analysis for response (",
+      #                     stability.resp.attr,
+      #                     ")"
+      #                     )
+      #)
+      report$add.header(paste(
+        "Glmnet stability path analysis for response (",
+        stability.resp.attr,
+        ")"
+      ),3
+      )
+      report$add.package.citation("c060")
+      report$add.descr("This multivariate feature selection method builds glmnet models 
+                       for a given response variable at 
+                       varying strengths of L1 norm
+                       regularization parameter and on multiple random subsamples at each
+                       level of the parameter. The features (e.g. taxonomic clades)
+                       are ranked according to their probability to be included in the
+                       model")
+      report$add.printed(stab.feat.c060$stable,
+                         caption="Features that passed FWER in stability analysis:")
+      
+      if(!is.null(pl.stab)) {
+        report$add(pl.stab,caption="Stability path. Probability of each variable 
+                   to be included in the model as a function of L1 regularization
+                   strength. Paths for top ranked variables are colored. The variables
+                   (if any) that passed family wide error rate (FWER) cutoff are
+                   plotted as solid lines.")
+      }
+      
+      res$stab.feat=stab.feat.c060
+    }
+  }
+  
+  if (do.tests) {
+    if(do.glmer) {  
+      res$glmer = test_taxa_count_glmer(m_a.abs,alpha=alpha,
+                                        formula_rhs=formula_rhs,
+                                        linfct=linfct)
+      report$add.header("Binomial mixed model analysis",3)
+      report$add.package.citation("lme4")
+      report$add.descr(glmer_descr)
+      report.taxa_count_glmer(report,res$glmer)
+    }
+    if(do.adonis) {
+      ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
+      ##the influence of very abundant species:
+      count = decostand(m_a$count,method="range",MARGIN=2)
+      #or, no standartization:
+      #count = m_a$count
+      adonis.dist = "bray" #"jaccard" #"bray"
+      #ad.res = adonis(count~T1D + Batch,data=m_a$attr,permutations=n.adonis.perm,method=adonis.dist)
+      #print(ad.res)
+      report$add.header("PermANOVA (adonis) analysis of taxonomic profiles",3)
+      report$add.package.citation("vegan")
+      report$add.descr("Non-parametric multivariate test for association between
+                       taxonomic profiles and meta-data variables. Profile is normalized
+                       to proportions across clades and then to range across samples.")
+      
+      for(adonis.task in adonis.tasks) {
+        ad.res = adonis(
+          as.formula(paste("count",adonis.task$formula_rhs,sep="~")),
+          data=m_a$attr,
+          strata=if(!is.null(adonis.task$strata)) m_a$attr[,adonis.task$strata] else NULL,
+          permutations=n.adonis.perm,
+          method=adonis.dist)
+        
+        report$add.printed(ad.res,adonis.task$descr)
+      }
+      
+    }
+  }
+  return (res)
+}
+
+heatmap.choc <- function(m_a) {
+  library(RColorBrewer)
+  library(Heatplus)
+  library(vegan)
+  count = m_a$count
+  attr = m_a$attr
+  data.dist.samp <- vegdist(count, method = "bray")
+  row.clus <- hclust(data.dist.samp, "aver")
+  # you have to transpose the dataset to get the taxa as rows
+  data.dist.taxa <- vegdist(t(count), method = "bray")
+  col.clus <- hclust(data.dist.taxa, "aver")
+  plot(annHeatmap2(count,
+                   #col = colorRampPalette(c("lightyellow", "red"), space = "rgb")(51),
+                   breaks = 50,
+                   #dendrogram = list(Row = list(dendro = as.dendrogram(row.clus)), 
+                  #                 Col = list(dendro = as.dendrogram(col.clus))),
+                   legend = 3, 
+                   labels = list(Col = list(nrow = 12),Row = list(nrow=4,labels=attr$SubjectID)), 
+                   ann = list(Row = list(data = attr$Sample.type.1)),
+                   cluster = list(Row = list(cuth = 0.5, 
+                                             col = function(n) {brewer.pal(n, "Set2")})) 
+                   # cuth gives the height at which the dedrogram should be cut to form 
+                   # clusters, and col specifies the colours for the clusters
+  ))  
+}
 
 load.meta.t1d.sebastian <- function(file_name,cleared.samp.file=NULL,as.merged=F) {
   
@@ -2229,7 +2559,7 @@ test_taxa_count_glmer_col <- function(taxa.count,
   ##  Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1  
   response = cbind(taxa.count,taxa.count_rowsum-taxa.count)
   test_glmer_inner <- function() {
-
+    
     ##default optimizer was not converging often, 
     ##the developer recommended using bobyga:
     ##http://stackoverflow.com/questions/21344555/convergence-error-for-development-version-of-lme4
@@ -2278,18 +2608,18 @@ test_taxa_count_glmer_col <- function(taxa.count,
   )
   
   #options(warn=warn_saved)
-
+  
   if (!ok) {
     
     print("Warnings or errors in glmer, returning NA, making data available for debugging")
     
     #cat(xtabs(~(response[,"taxa.count"]>0)+attr$Batch+attr$T1D))
-
+    
     #make.global(dat.glmer)
     make.global(attr)
     make.global(response)
     make.global(formula_rhs)
-
+    
     p_val = NA
     
   }
@@ -2383,7 +2713,7 @@ report.taxa_count_glmer <- function(report,x,...) {
   failed.names = names(x$p_vals[is.na(x$p_vals)])
   if(length(failed.names)>0) {
     report$add(list(failed.names),
-                    caption="Clades for which the model could not be built (e.g. too many all-zeros samples)")
+               caption="Clades for which the model could not be built (e.g. too many all-zeros samples)")
   }
 }
 

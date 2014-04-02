@@ -15,7 +15,7 @@ options(boot.parallel="snow")
 #taxa.meta.data = taxa.meta$data
 #taxa.meta.attr.names = taxa.meta$attr.names
 
-#set_trace_options()
+set_trace_options()
 #sink("analysis.log",split=T)
 
 # panderOptions("table.style","rmarkdown")
@@ -36,12 +36,11 @@ MGSAT_SRC = "~/work/mgsat"
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
-setwd("~/work/T1D/BATCH_03_16S")
+setwd("~/work/CHOC/stage_2")
 
 report <- PandocAT$new("atovtchi@jcvi.org","T1D 16S Analysis (Batches 1-3)")
 
-proc.t1d()
-#proc.t1d.mg()
+proc.choc()
 
 #print(report$body)
 
@@ -49,6 +48,7 @@ report$save("report")
 Pandoc.convert("report.md",format="html",open=F)
 Pandoc.convert("report.md",format="docx",open=F)
 #Pandoc.convert("report.md",format="pdf",open=F)
+
 
 
 #print(plot.stability.selection.c060.at(s),rank="mean")
