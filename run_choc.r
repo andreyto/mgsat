@@ -15,7 +15,6 @@ options(boot.parallel="snow")
 #taxa.meta.data = taxa.meta$data
 #taxa.meta.attr.names = taxa.meta$attr.names
 
-set_trace_options()
 #sink("analysis.log",split=T)
 
 # panderOptions("table.style","rmarkdown")
@@ -36,9 +35,12 @@ MGSAT_SRC = "~/work/mgsat"
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
+set_trace_options()
+
 setwd("~/work/CHOC/stage_2")
 
-report <- PandocAT$new("atovtchi@jcvi.org","T1D 16S Analysis (Batches 1-3)")
+
+report <- PandocAT$new("atovtchi@jcvi.org","CHOC pre-B ALL pilot 16S Analysis")
 
 proc.choc()
 

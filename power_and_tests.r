@@ -6,10 +6,12 @@
 #install.packages("BiodiversityR")
 #install.packages("LiblineaR")
 #install.packages("BatchJobs")
+#install.packages("Rcmdr")
 ##base as.Date() method is brittle and does very little error checking
 #install.packages("date")
 ##handle timestamps
 #install.packages("timeDate")
+#install.packages("pheatmap")
 
 ##two alternative implementations of the same stability
 ##selection paper, and different classification methods
@@ -179,7 +181,9 @@ all_normalize<-function(dat,col_ignore=c(),norm.func=NULL) {
 
 ## If the other_cnt column is already present, it will be incremented with counts of clades
 ## relegated to the "other" in this call; otherwise, the new column with this name will be
-## created
+## created.
+## Count columns will be sorted in decreasing order of the column mean frequencies, so that
+## you can easily subset the count matrix later to only keep N most abundant columns.
 count_filter<-function(dat,col_ignore=c(),min_max_frac=0.0,min_max=10,min_median=0,min_row_sum=100,other_cnt="other") {
   x<-split_count_df(dat,col_ignore)
   row_cnt = rowSums(x$count)
@@ -187,7 +191,10 @@ count_filter<-function(dat,col_ignore=c(),min_max_frac=0.0,min_max=10,min_median
   cnt = x$count[row_sel,]
   row_cnt = row_cnt[row_sel]
   attr = x$attr[row_sel,]
-  cnt_col_sel = cnt[,apply(row_normalize_matr(cnt),2,max) >= min_max_frac]
+  cnt_norm = row_normalize_matr(cnt)
+  col_sum = colSums(cnt_norm)
+  cnt = cnt[,order(col_sum,decreasing=T)]
+  cnt_col_sel = cnt[,apply(cnt_norm,2,max) >= min_max_frac]
   cnt_col_sel = cnt_col_sel[,apply(cnt_col_sel,2,max) >= min_max]
   cnt_col_sel = cnt_col_sel[,apply(cnt_col_sel,2,median) >= min_median]  
   cnt_col_other = as.data.frame(row_cnt - rowSums(cnt_col_sel))
@@ -1257,10 +1264,10 @@ proc.choc.nov_2013_grant_proposal <- function() {
 }
 
 proc.choc <- function() {
-  #taxa.levels = c(2,3,4,5,6)
-  taxa.levels = c(6)
+  taxa.levels = c(2,3,4,5,6)
+  #taxa.levels = c(3)
   do.std.plots = T
-  do.tests = T
+  do.tests = F
   
   report$add.descr("Largely identical set of analysis routines is applied
                    in loops over different 
@@ -1281,7 +1288,7 @@ proc.choc <- function() {
     taxa.meta.aggr = taxa.meta
     report$add.p(paste("Number of samples:",nrow(taxa.meta.aggr$data)))      
     
-    xtabs.formulas = list(~Sample.type+TherapyStatus)
+    xtabs.formulas = list(~Sample.type+TherapyStatus,~FamilyID,~Sample.type.1)
     for(xtabs.formula in xtabs.formulas) {
       fact.xtabs = xtabs(xtabs.formula,data=taxa.meta.aggr$data,drop.unused.levels=T)
       report$add.table(fact.xtabs,show.row.names=T,caption="Sample cross tabulation")
@@ -1299,7 +1306,7 @@ proc.choc <- function() {
     report$add.p(paste("After count filtering,",
                        (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),"clades left."))
     
-    
+    res.tests = NULL
     if (do.tests) {
       res.tests = tryCatchAndWarn(
         test.counts.choc(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
@@ -1315,9 +1322,9 @@ proc.choc <- function() {
     if (do.std.plots) {
       tryCatchAndWarn({
         plot.group = list(
-          c("Sample.type","TherapyStatus")
+          c("Sample.type","TherapyStatus"),
           #c("SubjectID","TherapyStatus"),
-          #c("Sample.type.1"),
+          c("Sample.type.1")
           #c("SampleID.1")
         )            
         std.plots(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,id.vars.list=
@@ -1325,6 +1332,9 @@ proc.choc <- function() {
                   label=label,
                   res.tests=res.tests
         )
+      })
+      tryCatchAndWarn({
+      heatmap.choc(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,label=label)
       })
     }
   }
@@ -2254,30 +2264,240 @@ test.counts.choc <- function(data,attr.names,label,alpha=0.05,
   return (res)
 }
 
-heatmap.choc <- function(m_a) {
+## annHeatmap2 from Heatplus, with fixed reordering of labels
+annHeatmap2AT <-
+function (x, dendrogram, annotation, cluster, labels, scale = c("row", 
+                                                                "col", "none"), breaks = 256, col = g2r.colors, legend = FALSE) 
+{
+  if (!is.matrix(x) | !is.numeric(x)) 
+    stop("x must be a numeric matrix")
+  nc = ncol(x)
+  nr = nrow(x)
+  if (nc < 2 | nr < 2) 
+    stop("x must have at least two rows/columns")
+  def = list(clustfun = hclust, distfun = dist, status = "yes", 
+             lwd = 3, dendro = NULL)
+  dendrogram = extractArg(dendrogram, def)
+  def = list(data = NULL, control = list(), asIs = FALSE, inclRef = TRUE)
+  annotation = extractArg(annotation, def)
+  def = list(cuth = NULL, grp = NULL, label = NULL, col = RainbowPastel)
+  cluster = extractArg(cluster, def)
+  def = list(cex = NULL, nrow = 3, side = NULL, labels = NULL)
+  labels = extractArg(labels, def)
+  if (is.logical(legend)) {
+    if (legend) 
+      leg = NULL
+    else leg = 0
+  }
+  else {
+    if (!(legend %in% 1:4)) 
+      stop("invalid value for legend: ", legend)
+    else leg = legend
+  }
+  layout = heatmapLayout(dendrogram, annotation, leg.side = leg)
+  x2 = x
+  scale = match.arg(scale)
+  if (scale == "row") {
+    x2 = sweep(x2, 1, rowMeans(x, na.rm = TRUE))
+    sd = apply(x2, 1, sd, na.rm = TRUE)
+    x2 = sweep(x2, 1, sd, "/")
+  }
+  else if (scale == "column") {
+    x2 = sweep(x2, 2, colMeans(x, na.rm = TRUE))
+    sd = apply(x2, 2, sd, na.rm = TRUE)
+    x2 = sweep(x2, 2, sd, "/")
+  }
+  breaks = niceBreaks(range(x2, na.rm = TRUE), breaks)
+  col = breakColors(breaks, col)
+  dendrogram$Row = within(dendrogram$Row, if (!inherits(dendro, 
+                                                        "dendrogram")) {
+    dendro = clustfun(distfun(x))
+    dendro = reorder(as.dendrogram(dendro), rowMeans(x, na.rm = TRUE))
+  })
+  dendrogram$Col = within(dendrogram$Col, if (!inherits(dendro, 
+                                                        "dendrogram")) {
+    dendro = clustfun(distfun(t(x)))
+    dendro = reorder(as.dendrogram(dendro), colMeans(x, na.rm = TRUE))
+  })
+  rowInd = with(dendrogram$Row, if (status != "no") 
+    order.dendrogram(dendro)
+    else 1:nr)
+  colInd = with(dendrogram$Col, if (status != "no") 
+    order.dendrogram(dendro)
+    else 1:nc)
+  x2 = x2[rowInd, colInd]
+  labels$Row = within(labels$Row, {
+    if (is.null(cex)) 
+      cex = 0.2 + 1/log10(nr)
+    if (is.null(side)) 
+      side = if (is.null(annotation$Row$data)) 
+        4
+    else 2
+    if (is.null(labels)) 
+      labels = rownames(x2)
+    else
+      ## need to reorder - plot.annHeatmap does not do it
+      labels = labels[rowInd]
+  })
+  labels$Col = within(labels$Col, {
+    if (is.null(cex)) 
+      cex = 0.2 + 1/log10(nc)
+    if (is.null(side)) 
+      side = if (is.null(annotation$Col$data)) 
+        1
+    else 3
+    if (is.null(labels)) 
+      labels = colnames(x2)
+    else
+      ## need to reorder - plot.annHeatmap does not do it
+      labels = labels[colInd]
+  })
+  cluster$Row = within(cluster$Row, if (!is.null(cuth) && (cuth > 
+                                                             0)) {
+    grp = cutree.dendrogram(dendrogram$Row$dendro, cuth)[rowInd]
+  })
+  cluster$Col = within(cluster$Col, if (!is.null(cuth) && (cuth > 
+                                                             0)) {
+    grp = cutree.dendrogram(dendrogram$Col$dendro, cuth)[colInd]
+  })
+  annotation$Row = within(annotation$Row, {
+    data = convAnnData(data, asIs = asIs, inclRef = inclRef)
+  })
+  annotation$Col = within(annotation$Col, {
+    data = convAnnData(data, asIs = asIs, inclRef = inclRef)
+  })
+  ret = list(data = list(x = x, x2 = x2, rowInd = rowInd, colInd = colInd, 
+                         breaks = breaks, col = col), dendrogram = dendrogram, 
+             cluster = cluster, annotation = annotation, labels = labels, 
+             layout = layout, legend = legend)
+  class(ret) = "annHeatmap2AT"
+  ret
+}
+
+environment(annHeatmap2AT) <- asNamespace('Heatplus')
+
+plot.annHeatmap2AT <-
+function (x, widths, heights, ...) 
+{
+  if (!missing(widths)) 
+    x$layout$width = widths
+  if (!missing(heights)) 
+    x$layout$height = heights
+  with(x$layout, layout(plot, width, height, respect = TRUE))
+  nc = ncol(x$data$x2)
+  nr = nrow(x$data$x2)
+  doRlab = !is.null(x$labels$Row$labels)
+  doClab = !is.null(x$labels$Col$labels)
+  mmar = c(1, 0, 0, 2)
+  if (doRlab) 
+    mmar[x$labels$Row$side] = x$labels$Row$nrow
+  if (doClab) 
+    mmar[x$labels$Col$side] = x$labels$Col$nrow
+  with(x$data, {
+    par(mar = mmar)
+    image(1:nc, 1:nr, t(x2), axes = FALSE, xlim = c(0.5, 
+                                                    nc + 0.5), ylim = c(0.5, nr + 0.5), xlab = "", ylab = "", 
+          col = col, breaks = breaks, ...)
+  })
+  with(x$labels, {
+    if (doRlab) 
+      axis(Row$side, 1:nr, las = 2, line = -0.5, tick = 0, 
+           labels = Row$labels, cex.axis = Row$cex)
+    if (doClab) 
+      axis(Col$side, 1:nc, las = 2, line = -0.5, tick = 0, 
+           labels = Col$labels, cex.axis = Col$cex)
+  })
+  with(x$dendrogram$Col, if (status == "yes") {
+    par(mar = c(0, mmar[2], 3, mmar[4]))
+    cutplot.dendrogram(dendro, h = x$cluster$Col$cuth, cluscol = x$cluster$Col$col, 
+                       horiz = FALSE, axes = FALSE, xaxs = "i", leaflab = "none", 
+                       lwd = x$dendrogram$Col$lwd)
+  })
+  with(x$dendrogram$Row, if (status == "yes") {
+    par(mar = c(mmar[1], 3, mmar[3], 0))
+    cutplot.dendrogram(dendro, h = x$cluster$Row$cuth, cluscol = x$cluster$Row$col, 
+                       horiz = TRUE, axes = FALSE, yaxs = "i", leaflab = "none", 
+                       lwd = x$dendrogram$Row$lwd)
+  })
+  if (!is.null(x$annotation$Col$data)) {
+    par(mar = c(1, mmar[2], 0, mmar[4]), xaxs = "i", yaxs = "i")
+    picketPlot(x$annotation$Col$data[x$data$colInd, , drop = FALSE], 
+               grp = x$cluster$Col$grp, grpcol = x$cluster$Col$col, 
+               control = x$annotation$Col$control, asIs = TRUE)
+  }
+  if (!is.null(x$annotation$Row$data)) {
+    par(mar = c(mmar[1], 0, mmar[3], 1), xaxs = "i", yaxs = "i")
+    picketPlot(x$annotation$Row$data[x$data$rowInd, , drop = FALSE], 
+               grp = x$cluster$Row$grp, grpcol = x$cluster$Row$col, 
+               control = x$annotation$Row$control, asIs = TRUE, 
+               horizontal = FALSE)
+  }
+  if (x$legend) {
+    if (x$layout$legend.side %in% c(1, 3)) {
+      par(mar = c(2, mmar[2] + 2, 2, mmar[4] + 2))
+    }
+    else {
+      par(mar = c(mmar[1] + 2, 2, mmar[3] + 2, 2))
+    }
+    doLegend(x$data$breaks, col = x$data$col, x$layout$legend.side)
+  }
+  invisible(x)
+}
+
+environment(plot.annHeatmap2AT) <- asNamespace('Heatplus')
+
+heatmap.choc <- function(meta.data,attr.names,label) {
+  
   library(RColorBrewer)
   library(Heatplus)
   library(vegan)
-  count = m_a$count
-  attr = m_a$attr
+  
+  data.norm = row_normalize(meta.data,col_ignore=attr.names)
+  
+  m_a = split_count_df(data.norm,col_ignore=attr.names)
+  
+  ##permute samples to make sure that our dendrogram
+  ##clustering is not influenced by the original order
+  perm.ind = sample(nrow(m_a$count))
+  
+  count = m_a$count[perm.ind,]
+  
+  #count = decostand(count,method="range",MARGIN=2)
+  
+  attr = m_a$attr[perm.ind,]
   data.dist.samp <- vegdist(count, method = "bray")
-  row.clus <- hclust(data.dist.samp, "aver")
+  row.clus <- hclust(data.dist.samp, "ward")
+  row.dendro = as.dendrogram(row.clus)
+  #row.dendro = reorder(row.dendro, rowMeans(count, na.rm = TRUE))
+  #row.ind = order.dendrogram(row.dendro)
+  attr.annot = data.frame(Group=attr$Sample.type.1,Antibiotic=attr$Antibiotic)
+  
+  count.sub = count #count[,1:20]
   # you have to transpose the dataset to get the taxa as rows
-  data.dist.taxa <- vegdist(t(count), method = "bray")
-  col.clus <- hclust(data.dist.taxa, "aver")
-  plot(annHeatmap2(count,
-                   #col = colorRampPalette(c("lightyellow", "red"), space = "rgb")(51),
-                   breaks = 50,
-                   #dendrogram = list(Row = list(dendro = as.dendrogram(row.clus)), 
-                  #                 Col = list(dendro = as.dendrogram(col.clus))),
-                   legend = 3, 
-                   labels = list(Col = list(nrow = 12),Row = list(nrow=4,labels=attr$SubjectID)), 
-                   ann = list(Row = list(data = attr$Sample.type.1)),
-                   cluster = list(Row = list(cuth = 0.5, 
+  data.dist.taxa <- vegdist(t(count.sub), method = "bray")
+  col.clus <- hclust(data.dist.taxa, "ward")
+
+  #count.sub = count.sub^0.3
+  count.sub = decostand(count.sub,method="range",MARGIN=2)
+  
+  pl.heat = annHeatmap2AT(count.sub,
+                   col = colorRampPalette(c("lightyellow", "red"), space = "Lab")(50),
+                   #col = heat.colors(50),
+                   breaks = niceBreaks(c(min(count.sub),max(count.sub)),50),
+                   scale = "none", # we get false bands with default standartization
+                   legend = F,
+                   dendrogram = list(status="yes",
+                                  Row = list(dendro = row.dendro), 
+                                  Col = list(dendro = as.dendrogram(col.clus))),
+                   labels = list(Col = list(nrow = 20),
+                                 Row = list(nrow=6,labels=attr$SubjectID)), #cex=0.8
+                   ann = list(Row = list(data = attr.annot)),
+                   cluster = list(Row = list(cuth = 2, 
                                              col = function(n) {brewer.pal(n, "Set2")})) 
                    # cuth gives the height at which the dedrogram should be cut to form 
                    # clusters, and col specifies the colours for the clusters
-  ))  
+  )
+  report$add(plot(pl.heat))
 }
 
 load.meta.t1d.sebastian <- function(file_name,cleared.samp.file=NULL,as.merged=F) {
