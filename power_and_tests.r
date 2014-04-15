@@ -1267,7 +1267,7 @@ proc.choc <- function() {
   taxa.levels = c(2,3,4,5,6)
   #taxa.levels = c(3)
   do.std.plots = T
-  do.tests = F
+  do.tests = T
   
   report$add.descr("Largely identical set of analysis routines is applied
                    in loops over different 
@@ -1285,15 +1285,19 @@ proc.choc <- function() {
     
     report$add.header(paste("Taxonomic level:",taxa.level),2)
     
-    taxa.meta.aggr = taxa.meta
-    report$add.p(paste("Number of samples:",nrow(taxa.meta.aggr$data)))      
+    make.global(taxa.meta)
+    #taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.type.1 != "sibling",]
     
-    xtabs.formulas = list(~Sample.type+TherapyStatus,~FamilyID,~Sample.type.1)
-    for(xtabs.formula in xtabs.formulas) {
-      fact.xtabs = xtabs(xtabs.formula,data=taxa.meta.aggr$data,drop.unused.levels=T)
-      report$add.table(fact.xtabs,show.row.names=T,caption="Sample cross tabulation")
-      report$add.printed(summary(fact.xtabs))
-    }
+    taxa.meta.aggr = taxa.meta
+    
+    aggr_var = "SubjectID"
+    
+    taxa.meta.aggr = aggregate_by_meta_data(taxa.meta$data,
+                                            aggr_var,
+                                            taxa.meta$attr.names)
+    report$add.p(paste("After aggregating samples by ", aggr_var, ":",nrow(taxa.meta.aggr$data)))
+    
+    report$add.p(paste("Number of samples:",nrow(taxa.meta.aggr$data)))      
     
     taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
                                        col_ignore=taxa.meta.aggr$attr.names,
@@ -1305,6 +1309,13 @@ proc.choc <- function() {
     
     report$add.p(paste("After count filtering,",
                        (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),"clades left."))
+    
+    xtabs.formulas = list(~Sample.type+TherapyStatus,~FamilyID,~Sample.type.1,~SubjectID)
+    for(xtabs.formula in xtabs.formulas) {
+      fact.xtabs = xtabs(xtabs.formula,data=taxa.meta.aggr$data,drop.unused.levels=T)
+      report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
+      report$add.printed(summary(fact.xtabs))
+    }
     
     res.tests = NULL
     if (do.tests) {
@@ -2062,30 +2073,49 @@ test.counts.choc <- function(data,attr.names,label,alpha=0.05,
                              do.glmer=T,do.adonis=T,
                              stability.transform.counts="ihs") {
   
-  
-  stability.resp.attr = "TherapyStatus"
+  if(F)
+    stability.resp.attr = "TherapyStatus"
+  else
+    stability.resp.attr = "Sample.type"
   stability.model.family = "binomial"
   n.adonis.perm = 4000
   if(do.adonis) {
+    if(F) {
     adonis.tasks = list(
       list(formula_rhs="TherapyStatus",
            strata=NULL,
            descr="Association with the therapy status unpaired"),
       list(formula_rhs="TherapyStatus",
            strata="FamilyID",
-           descr="Association with the therapy status unpaired")
+           descr="Association with the therapy status paired")
     )
+    }
+    else {
+    adonis.tasks = list(
+      list(formula_rhs="Sample.type",
+           strata=NULL,
+           descr="Association with the patient/sibling status unpaired"),
+      list(formula_rhs="Sample.type",
+           strata="FamilyID",
+           descr="Association with the patient/sibling status paired")
+    )
+    }
   }
   if(do.glmer) {
     ##intercept varying among families and among individuals within families (nested random effects)
+    if(F) {
     formula_rhs = "TherapyStatus + (1|FamilyID/SubjectID)"
+    linfct=c("TherapyStatusbefore.chemo = 0")
+    }
+    else {
+    formula_rhs = "Sample.type + (1|FamilyID/SubjectID)"
+    linfct=c("Sample.typesibling = 0")
+    }
     ##if there are repeated samples per individual, add sample random effect for overdispersion
     ##otherwise, overdispersion is taken care of by SubjectID random effect(?)
     if(anyDuplicated(data$SubjectID)) {
       formula_rhs = paste(formula_rhs,"+(1|SampleID)",sep="")
     }
-    
-    linfct=c("TherapyStatusbefore.chemo = 0")
     
     glmer_descr = "The random effect terms in the model formula describe that: 
                        - intercept varies among families 
@@ -2105,6 +2135,10 @@ test.counts.choc <- function(data,attr.names,label,alpha=0.05,
   res = list()
   
   m_a.abs = split_count_df(data,col_ignore=attr.names)
+  make.global(m_a.abs)
+  
+  row_summ = summary(rowSums(m_a.abs$count))
+  report$add.printed(row_summ,caption="Summary of absolute counts")
   
   data.norm = row_normalize(data,col_ignore=attr.names)
   
