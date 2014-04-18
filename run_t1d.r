@@ -38,7 +38,7 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 setwd("~/work/T1D/BATCH_03_16S")
 
-report <- PandocAT$new("atovtchi@jcvi.org","T1D 16S Analysis (Batches 1-3)")
+report <- PandocAT$new("atovtchi@jcvi.org","T1D 16S Analysis MiSeq V1-V3")
 
 proc.t1d()
 #proc.t1d.mg()
