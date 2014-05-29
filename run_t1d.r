@@ -2,6 +2,7 @@
 options(mc.cores=4)
 options(boot.ncpus=4)
 options(boot.parallel="snow")
+
 #cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
 #registerDoSNOW(cl)  
 
@@ -15,7 +16,6 @@ options(boot.parallel="snow")
 #taxa.meta.data = taxa.meta$data
 #taxa.meta.attr.names = taxa.meta$attr.names
 
-#set_trace_options()
 #sink("analysis.log",split=T)
 
 # panderOptions("table.style","rmarkdown")
@@ -35,6 +35,8 @@ MGSAT_SRC = "~/work/mgsat"
 
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
+
+#set_trace_options()
 
 setwd("~/work/T1D/BATCH_03_16S")
 

@@ -40,6 +40,8 @@
 ## Normal R-Studio upgrade apparently does not upgrade Bioconductor.
 
 set_trace_options<-function() {
+  #tell our custom tryCatchAndWarn not to catch anything
+  options(try.debug=T)
   #setup more verbose error reporting
   #set warn to 2 to convert warinings to errors
   options(warn = 0, keep.source = TRUE, error = 
@@ -228,6 +230,10 @@ list_to_df<-function(x,col_names=NULL,row_names=NULL) {
 }
 
 tryCatchAndWarn<-function(expr,catch.warnings=F,catch.errors=T) {
+  if(getOption("try.debug",F)) {
+    message("In debug mode, not catching anything in tryCatchAndWarn")
+    return (eval.parent(expr))
+  }
   ok=T
   #somehow if both warning and error arguments are used
   #in a single call to tryCatch, then error handler is not
@@ -951,9 +957,29 @@ order.levels <- function(lev,keys) {
   lev[order(keys,decreasing=T)]
 }
 
-plot.abund.meta <- function(data,id.vars,attr.names,value.name="abundance",
-                            file_name=NULL,ggp.comp=NULL,facet_grid.margins=FALSE,
-                            clades.order=NULL) {
+plot.abund.meta <- function(data,
+                            id.vars,
+                            attr.names,
+                            value.name="abundance",
+                            file_name=NULL,
+                            ggp.comp=NULL,
+                            facet_grid.margins=FALSE,
+                            clades.order=NULL,
+                            geom="bar",
+                            n.top=20,
+                            id.var.dodge="T1D",
+                            flip.coords=T,
+                            sqrt.scale=F) {
+  
+  if(is.null(id.var.dodge)) {
+    id.vars.facet = id.vars
+  }
+  else {
+    id.vars.facet = id.vars[id.vars != id.var.dodge]
+  }
+  if(flip.coords && sqrt.scale) {
+    stop("SQRT coordinate transformation cannot be used in flipped horizontal and vertical coords")
+  }
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
   
   if (is.null(clades.order)) {
@@ -963,45 +989,104 @@ plot.abund.meta <- function(data,id.vars,attr.names,value.name="abundance",
     dat$clade = factor(dat$clade,levels=clades.order,ordered=T)
   }
   
-  #show only 20 top
-  dat = dat[dat$clade %in% levels(dat$clade)[1:20],]
+  #show only n.top
+  clades = levels(dat$clade)
+  clades = clades[1:min(length(clades),n.top)]
+  dat = dat[dat$clade %in% clades,]
   
-  if (length(id.vars) == 1) {
-    wr = facet_wrap(as.formula(paste("~",id.vars[1],sep="")))
+  #print(ddply(dat, c("T1D","clade"), summarise, mean_abund = mean(abundance)))
+  
+  if(geom == "bar") {
+    geom_obj = stat_summary(fun.y=mean, geom="bar", aes(width=0.5), 
+                            position=position_dodge(width=0.9))
+    #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
+    #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
+  }
+  else if(geom == "violin") {
+    geom_obj = geom_violin(scale= "width", trim=TRUE, adjust=1)
+  }
+  else if(geom == "boxplot") {
+    geom_obj = geom_boxplot(fill=NA,na.value=NA,outlier.size = 0)
   }
   else {
-    wr = facet_grid(as.formula(paste(id.vars[2],id.vars[1],sep="~")),drop=T,margins=facet_grid.margins)
+    stop(paste("Unexpected parameter value: geom = ",geom))
   }
   
-  
-  clade.names = get.clade.names(data,attr.names)
-  #this will be used to label each facet with number of cases in it
-  facet.cnt <- ddply(.data=data, id.vars, function(x,clade.names) { c(.n=nrow(x),
-                                                                      .y=mean(colMeans(as.matrix(x[,clade.names])),
-                                                                              names=F)) },clade.names)
-  facet.cnt$.n = paste("n =", facet.cnt$.n)
-  #facet.cnt$y = facet.cnt$V2
-  
-  gp = ggplot(dat, aes(x=clade,y=ihs(abundance),
-                       fill = clade,color = clade))+
-    #geom_violin(scale= "count", trim=TRUE, adjust=1)+
+  if(is.null(id.var.dodge)) {
+    fill="clade"
+    color="clade"
+  }
+  else {
+    fill=id.var.dodge
+    color=id.var.dodge
+  }
+  ## here is what is going on with scale transformations in ggplot2 (v.1.0.0):
+  ## scale_y_sqrt() - transforms data points before anything else is done like
+  ## stats calculation or range detection; scale ticks are distributed quadratically
+  ## (unevenly); this one can be combined with coord_flip().
+  ## A (serious) downside of this method is that it can change relative magnitude
+  ## of clade mean values as computed and shown by stat_summary(fun.y=mean) because large
+  ## outliers will be compressed stronger.
+  ## coord_trans(y = "sqrt") transforms only final geometric representation (including
+  ## all glyphs) and creates a non-linear tick marks as well; it cannot be combined with
+  ## coord_flip().
+  ## Because of the above, we switch between two representations: vertical with
+  ## coord_trans(y = "sqrt") and horizontal (flipped) with original linear coords
+  aes_s = aes_string(x="clade",y=value.name,
+                     fill = fill,color = color)
+  gp = ggplot(dat, aes_s)+
     #stat_summary(fun.y="mean", geom="point",size=8,color="black",shape=4)+
-    stat_summary(fun.y="mean", geom="bar")+
-    #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
-    coord_flip()+
-    #geom_boxplot(color="black")+
-    #geom_boxplot(fill=NA,na.value=NA,outlier.size = 0)+
-    #geom_point(position = "jitter")+
-    #stat_identity(geom="bar")+
-    #geom_bar(stat="identity")
-    #scale_fill_brewer(type = "seq", palette = 1)
-    wr+
-    #labels facet with number of cases
-    geom_text(data=facet.cnt, aes(x=1.5, y=.y, label=.n, size=1), colour="black", inherit.aes=FALSE, parse=FALSE)+
-    theme(legend.position = "none",
-          axis.title=element_blank(),
-          axis.text.y=element_text(color=c("black","black")))
-  
+    #scale_y_sqrt()+
+    #coord_trans(y = "sqrt")+
+    geom_obj
+  #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
+  #coord_flip()+
+  #geom_boxplot(color="black")+
+  #geom_point(position = "jitter")+
+  #stat_identity(geom="bar")+
+  #geom_bar(stat="identity")
+  #scale_fill_brewer(type = "seq", palette = 1)
+  #labels facet with number of cases
+  if(flip.coords) {
+    gp = gp + coord_flip()
+  }
+  if(sqrt.scale) {
+    gp = gp + coord_trans(y = "sqrt")
+  }
+  if(length(id.vars.facet) == 0) {
+    wr = facet_null()
+  }
+  else if (length(id.vars.facet) == 1) {
+    wr = facet_wrap(as.formula(paste("~",id.vars.facet[1],sep="")))
+  }
+  else {
+    wr = facet_grid(as.formula(paste(id.vars.facet[2],id.vars.facet[1],sep="~")),drop=T,margins=facet_grid.margins)
+  }
+  gp = gp + wr
+  if(length(id.vars.facet) > 0) {
+    clade.names = get.clade.names(data,attr.names)
+    #this will be used to label each facet with number of cases in it
+    facet.cnt <- ddply(.data=data, id.vars.facet, function(x,clade.names) 
+    { c(.n=nrow(x),
+        .y=mean(colMeans(as.matrix(x[,clade.names])),
+                names=F)) },
+    clade.names)
+    facet.cnt$.n = paste("n =", facet.cnt$.n)
+    #facet.cnt$y = facet.cnt$V2
+    
+    gp = gp +
+      geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=1), colour="black", inherit.aes=FALSE, parse=FALSE)+
+      theme(legend.position = "none",
+            axis.title=element_blank(),
+            axis.text.y=element_text(color=c("black","black")))
+  }
+  else {
+    gp = gp + 
+      theme(
+        axis.title=element_blank(),
+        axis.text.y=element_text(color=c("black","black")))
+    
+  }
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
@@ -1022,20 +1107,24 @@ std.plots <- function(abund.meta.data,
                       do.diversity=F,
                       file.name.root="std.plot",
                       file.name.sfx="png",
-                      res.tests=NULL) {
+                      res.tests=NULL,
+                      clade.meta.x.vars=c(),
+                      do.profile=T,
+                      do.clade.meta=T) {
   
   abund.meta.data.norm = row_normalize(abund.meta.data,col_ignore=abund.meta.attr.names)
   file.name.root = paste(file.name.root,label,sep=".")
   
   #write files w/o row names because Excel will incorrectly shift column names due to first empty name
-  write.table(abund.meta.data,paste(file.name.root,".count.tab"),sep="\t",row.names = FALSE)
-  write.table(abund.meta.data.norm,paste(file.name.root,".freq.tab"),sep="\t",row.names = FALSE)
+  write.table(abund.meta.data,paste(file.name.root,".count.tab",sep=""),sep="\t",row.names = FALSE)
+  write.table(abund.meta.data.norm,paste(file.name.root,".freq.tab",sep=""),sep="\t",row.names = FALSE)
   
   make.graph.file.name <- function(kind) {
     paste(file.name.root.id.vars,kind,file.name.sfx,sep=".")
   }
   
   m_a = split_count_df(abund.meta.data,col_ignore=abund.meta.attr.names)
+  m_a.norm = split_count_df(abund.meta.data.norm,col_ignore=abund.meta.attr.names)
   #make.global(m_a)
   
   is.count.data = any(m_a$count > 1)
@@ -1087,35 +1176,75 @@ std.plots <- function(abund.meta.data,
     file.name.root.id.vars = paste0(c(file.name.root,id.vars),collapse="_")
     #coord_trans(y="sqrt"),
     #scale_y_sqrt(),    
-    clades.order = NULL
+    clades.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
     if (!is.null(names(res.tests)) && !is.null(res.tests$stab.feat)) {
-      clades.order = res.tests$stab.feat$labels[res.tests$stab.feat$mean.order]
+      clades.order[[2]] = list(ord=res.tests$stab.feat$labels[res.tests$stab.feat$mean.order],
+                               ord_descr="GLMnet feature stability",
+                               sfx="glmnet")
     }
-    pl.hist = plot.abund.meta(abund.meta.data.norm,
-                              id.vars=id.vars,
-                              attr.names=abund.meta.attr.names,
-                              file_name=make.graph.file.name("abund"),
-                              ggp.comp=list(
-                                scale_y_sqrt(),
-                                theme(
-                                  plot.title = element_text(size = rel(2)),
-                                  axis.text.x = element_text(size = rel(0.85),angle=90),
-                                  axis.text.y = element_text(size = rel(0.85))
-                                )
-                              ),
-                              clades.order=clades.order
-    )
-    #env=as.environment(as.list(environment(), all.names=TRUE))
-    #print(names(as.list(env)))
-    #print(evals("pl.hist",env=env))
-    report$add(pl.hist,
-               caption=paste("Abundance profile grouped by ",
-                             paste(id.vars,collapse=","),
-                             if(!is.null(clades.order)) 
-                             {"sorted according to GLMnet feature stability order"} 
-                             else {""})
-    )
-    
+    for(pl.par in clades.order) {
+      if(do.clade.meta) {
+        clade.names.meta=if(is.null(pl.par$ord)) colnames(m_a.norm$count) else pl.par$ord
+        clade.names.meta = clade.names.meta[1:min(length(clade.names.meta),20)]
+        for(x.var in clade.meta.x.vars) {
+          show.clade.meta(m_a=m_a.norm,
+                          clade.names=clade.names.meta,
+                          x.var=x.var,
+                          group.var=id.vars[1])
+        }
+      }
+      if(do.profile) {
+        for(id.var.dodge in list(NULL,id.vars[1])) {
+          for(other.params in list(
+            list(flip.coords=T,
+                 sqrt.scale=F),
+            list(flip.coords=F,
+                 sqrt.scale=T)
+          )) {
+            for(geom in c("bar","violin","boxplot")) {
+              tryCatchAndWarn({
+              pl.hist = plot.abund.meta(abund.meta.data.norm,
+                                        id.vars=id.vars,
+                                        attr.names=abund.meta.attr.names,
+                                        file_name=make.graph.file.name(
+                                          paste("abund",
+                                                pl.par$sfx,
+                                                geom,
+                                                id.var.dodge,
+                                                other.params,
+                                                sep=".",
+                                                collapse=".")),
+                                        ggp.comp=list(
+                                          #scale_y_sqrt(),
+                                          #coord_trans(y = "sqrt"),
+                                          theme(
+                                            plot.title = element_text(size = rel(2)),
+                                            axis.text.x = element_text(size = rel(0.85),angle=90),
+                                            axis.text.y = element_text(size = rel(0.85))
+                                          )
+                                        ),
+                                        clades.order=pl.par$ord,
+                                        geom=geom,
+                                        id.var.dodge=id.var.dodge,
+                                        flip.coords=other.params$flip.coords,
+                                        sqrt.scale=other.params$sqrt.scale
+              )
+              #env=as.environment(as.list(environment(), all.names=TRUE))
+              #print(names(as.list(env)))
+              #print(evals("pl.hist",env=env))
+              report$add(pl.hist,
+                         caption=paste("Abundance profile grouped by ",
+                                       paste(id.vars,collapse=","),
+                                       if(!is.null(pl.par$ord)) 
+                                       {paste("sorted according to",pl.par$ord_descr)} 
+                                       else {""})
+              )
+              })
+            }
+          }
+        }
+      }
+    }
     if ( do.diversity ) {
       pl.hist = plot.abund.meta(rich.meta,id.vars=id.vars,attr.names=abund.meta.attr.names,
                                 file_name=make.graph.file.name("richness"))
@@ -1249,6 +1378,7 @@ proc.choc.nov_2013_grant_proposal <- function() {
     if(do.power) {
       power.choc(taxa.meta.data,taxa.meta.attr.names)
     }
+    res.tests = NULL
     if (do.tests) {
       res.tests = try(
         test.counts.choc(taxa.meta.data,taxa.meta.attr.names,
@@ -1500,6 +1630,58 @@ show.trend <- function(meta.data,x,y,group,title="Group trends") {
   )
 }
 
+show.clade.meta <- function(m_a,
+                            clade.names,
+                            x.var,
+                            group.var,
+                            value.name="abundance",
+                            trans="boxcox") {
+  
+  
+  make.global(m_a)
+  make.global(clade.names)
+  
+  count = m_a$count[,clade.names,drop=F]
+  
+  count = switch(trans,
+                 boxcox=boxcox.transform.mat(count),
+                 ihs=ihs(count,1),
+                 ident=count,
+                 binary=(count > 0))  
+  
+  id.vars = c(x.var,group.var)
+  dat = cbind(m_a$attr[,id.vars],count)
+  dat = melt.abund.meta(dat,id.vars=id.vars,attr.names=id.vars,value.name=value.name)
+  smooth_method = "loess" #"lm"
+  for(clade.name in clade.names) {
+  pl = ggplot(dat[dat$clade==clade.name,], aes_string(x=x.var, y=value.name,color=group.var)) +
+    geom_point() +
+    #geom_line(alpha=0.3, linetype=3) + 
+    #geom_smooth(aes(group=group,color=group), method='lm', formula=y~x+I(x^2)+I(x^3)) + 
+    stat_smooth(method=smooth_method, se = T,degree=1,size=1)
+    #scale_x_date() +
+    #labs(title=title)+
+    #facet_wrap(~clade,scales="free")
+  if(trans != "ident") {
+    trans.msg = paste("(transformed with",trans,")")
+  }
+  else {
+    trans.msg = ""
+  }
+  report$add(pl,
+             caption=paste("Abundance",
+                           trans.msg,
+                           "of",
+                           clade.name,
+                          "as a function of",
+                           x.var,
+                           "split by",
+                           group.var)
+  )
+  }
+}
+
+
 ##Code adapted from Jyoti Shankar. Find best alpha through cross-validation as
 ##per the recipe from cv.glmnet help page
 cv.glmnet.alpha <- function(y, x, family, seed=NULL, standardize=T) {
@@ -1525,12 +1707,12 @@ cv.glmnet.alpha <- function(y, x, family, seed=NULL, standardize=T) {
   # within each model there is cross-validation happening for lambda for each alpha.
   # lambda1 = lambda*alpha 
   # lambda2 = lambda*(1-alpha)
-  model <- try(cv.glmnet(x=x, y=y, family=family,
+  model <- try({cv.glmnet(x=x, y=y, family=family,
                          nfolds=numfolds, 
                          type.measure="deviance", 
                          foldid=foldid,
                          standardize=standardize, 
-                         alpha=alphas[i]))
+                         alpha=alphas[i])})
 }
 # there are two lambdas per model
 # minimum lamda
@@ -1716,6 +1898,9 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   
   all.clades = get.clade.names(data,attr.names)
   m_a = split_count_df(data.norm,col_ignore=attr.names)
+  
+  #make.global(m_a)
+  #stopifnot(F)
   
   m = m_a$count
   
@@ -2584,13 +2769,13 @@ heatmap.counts <- function(meta.data,attr.names,attr.annot.names,attr.row.labels
   attr.annot = attr[,attr.annot.names,drop=F]
   
   ## cluster on normalized columns
-  count.sub = count[,1:max.species.show]
+  count.sub = count[,1:min(ncol(count),max.species.show)]
   # you have to transpose the dataset to get the taxa as rows
   data.dist.taxa <- vegdist(t(count.sub), method = "bray")
   col.clus <- hclust(data.dist.taxa, "ward")
   
   ## go back to un-normalized
-  count.sub = count.src[,1:max.species.show]
+  count.sub = count.src[,1:min(ncol(count),max.species.show)]
   if(!is.null(stand.show)) {
     count.sub = decostand(count.sub,method=stand.show,MARGIN=2)
   }
@@ -2639,15 +2824,15 @@ heatmap.t1d <- function(meta.data,attr.names,label) {
       meta.data$TimestampMonth = sample(meta.data$TimestampMonth)
       label = paste(label.ini,"randomization ",i,"of TimestampMonth")
     }
-  heatmap.counts(meta.data,
-                 attr.names,
-                 attr.annot.names=c("T1D","TimestampMonth"),
-                 attr.row.labels=NULL,
-                 label=label,
-                 stand.show="max",
-                 trans.show=sqrt,
-                 attr.order="TimestampMonth",
-                 agglo.fun.order=mean)
+    heatmap.counts(meta.data,
+                   attr.names,
+                   attr.annot.names=c("T1D","TimestampMonth"),
+                   attr.row.labels=NULL,
+                   label=label,
+                   stand.show="max",
+                   trans.show=sqrt,
+                   attr.order="TimestampMonth",
+                   agglo.fun.order=mean)
   }
 }
 
@@ -2715,7 +2900,7 @@ load.meta.t1d.sebastian <- function(file_name,cleared.samp.file=NULL,as.merged=F
   return (meta)
 }
 
-load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
+load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   
   meta =read.csv(file_name, header=TRUE,stringsAsFactors=T)
   
@@ -2842,6 +3027,143 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
   return (meta)
 }
 
+load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
+  
+  meta =read.delim(file_name, header=TRUE,stringsAsFactors=T, sep="\t")
+  make.global(meta)
+  names(meta) =
+    replace.col.names(
+      names(meta),
+      c("Aliquot_id","Sample_id","Family.ID..blinded.", "Subject.ID..blinded.", 
+        "Subject.s.Gender", "Autoantibody.Status", "T1D.status",
+        "Subject.s.YEAR.of.birth"),
+      c("AliquotID","SampleID",      "FamilyID",            "SubjectID",            
+        "gender",           "AA",                  "T1D",
+        "YearOfBirth")
+    )
+  
+  meta = meta[!duplicated(meta$SampleID),]
+  
+  meta$gender = unlist( lapply( meta$gender, substr, 1,1  ))
+  
+  meta$Batch = 4
+  ## We set Batch=0 downstream as a special value, it should not be
+  ## present already
+  stopifnot(sum(meta$Batch==0) == 0)
+  meta$BatchRepeat=as.factor(1)
+  
+  meta$Specimen.Collection.Date = 
+    as.date(as.character(meta$Specimen.Collection.Date),order="mdy")
+  meta$age = as.numeric(
+    meta$Specimen.Collection.Date
+    - 
+      as.date(paste(meta$YearOfBirth,"-06-01",sep=""),order="ymd")
+  )/365
+  
+  ##day is fake
+  meta$Date.of.Diagnosis = as.date(as.character(meta$Date.of.Diagnosis),order="mdy")
+  
+  meta$YearsSinceDiagnosis = as.numeric(
+    meta$Specimen.Collection.Date
+    -
+      meta$Date.of.Diagnosis
+    )/365
+  
+  meta$T1D[meta$T1D=="Unknown"] = "Control"
+  
+  meta$Timestamp = 
+    strptime(as.character(meta$Timestamp),format = "%m/%d/%Y %H:%M")
+  
+  meta$BioSampleID = paste(meta$SubjectID,meta$Specimen.Type,as.numeric(meta$Timestamp),sep="_")
+  
+  make.global(meta)
+  
+  meta$age.quant = quantcut(meta$age)
+  meta$A1C = as.double(as.character(meta$A1C))
+  #meta$A1C[is.na(meta$A1C)] = 6.2
+  meta$A1C.quant = quantcut(as.double(as.character(meta$A1C)))
+  
+  meta = arrange(meta,SubjectID,Timestamp)
+  
+  ## Filtering and aggregation of rows has to be done before we start marking repeats for throwing
+  ## out repeats
+  if(!is.null(batch)) {
+    report$add.p(paste(c("Filtering metadata by batch:",batch),collapse=" "))
+    batch.mask = (meta$Batch %in% batch)
+    meta = meta[batch.mask,]
+  }  
+  
+  ## That would leave only AA defined samples or T1D patients (under
+  ## an assumption that T1D patients are always AA positive even if AA is not measured)
+  #meta = meta[meta$AA!="Unknown" | meta$T1D == "T1D",]
+  
+  ## Subject is at least first repeat, but bio sample is first occurence, in time order 
+  ## (e.g. second visit)
+  isBioRepeatFirst = duplicated(meta$SubjectID) & ! duplicated(meta$BioSampleID)
+  
+  BioSampleIDRep = meta$BioSampleID[isBioRepeatFirst]
+  
+  meta$isBioRepeat = meta$BioSampleID %in% BioSampleIDRep
+  
+  ## Now do the same as above, but ignore failed samples when looking
+  ## for bio repeats
+  meta_qa = meta[meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS",]
+  
+  isBioRepeatFirst = duplicated(meta_qa$SubjectID) & ! duplicated(meta_qa$BioSampleID)
+  
+  BioSampleIDRep = meta_qa$BioSampleID[isBioRepeatFirst]
+  
+  ## mark all failed samples or bio repeats following at least one good sample
+  meta$isBioRepeatOrFailed = (meta$BioSampleID %in% BioSampleIDRep) | 
+    ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")
+  
+  ##
+  ## This section builds a difference in months between next samples and first sample for every subject
+  ##
+  meta_keys = meta[,c("SubjectID","SampleID","BioSampleID","Timestamp","isBioRepeat","isBioRepeatOrFailed")]  
+  meta_keys_non_rep = meta_keys[!meta$isBioRepeatOrFail,]
+  #join() will keep duplicate names, so we rename the names, except SubjectID merge key
+  names(meta_keys_non_rep) = paste(names(meta_keys_non_rep),".first",sep="")
+  names(meta_keys_non_rep)[1] = "SubjectID"
+  meta_keys_1 = join(meta_keys,meta_keys_non_rep,by=c("SubjectID"),match="first",type="left")
+  stopifnot(meta$SampleID==meta_keys_1$SampleID)
+  stopifnot(is.na(meta_keys_1$Timestamp.first) |
+              (meta_keys_1$Timestamp >= meta_keys_1$Timestamp.first) |
+              ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")) #should not see otherwise
+  meta_keys_1$MonthsAfterFirstBioSample = as.numeric(meta_keys_1$Timestamp - meta_keys_1$Timestamp.first,units="days")/30
+  ## NA will be at records that did not pass QA. Set to 0.
+  meta_keys_1$MonthsAfterFirstBioSample[is.na(meta_keys_1$MonthsAfterFirstBioSample)] = 0
+  ##
+  ## uncheck those bio repeats that passed QA and were made less than 9 mon after the first sampling - they
+  ## are testing intentional repeats and should be aggregated just like batch repeats when analyzing 
+  ## unpaired group differences
+  ##
+  meta_keys_1$isAnnualRepeatOrFailed = meta_keys_1$isBioRepeatOrFailed & 
+    ! (
+      (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS") & 
+        meta_keys_1$MonthsAfterFirstBioSample < 9
+    )
+  make.global(meta_keys_1)
+  meta$isAnnualRepeatOrFailed = meta_keys_1$isAnnualRepeatOrFailed
+  meta$MonthsAfterFirstBioSample = meta_keys_1$MonthsAfterFirstBioSample
+  meta$TimestampMonth = as.numeric(meta$Timestamp - min(meta$Timestamp),units="days")/30  
+  meta$Timestamp = as.numeric(meta$Timestamp)
+  meta$TimestampDate = as.Date(timeDate(meta$Timestamp))
+  
+  row.names(meta) = meta$SampleID
+  
+  ##pass filter argument and filter here before aggregation but after repeats etc are marked
+  
+  if(!is.null(aggr_var)) {
+    
+    meta = aggregate_by_meta_data(meta,
+                                  aggr_var,
+                                  names(meta))  
+  }
+  
+  return (meta)
+}
+
 
 read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
   #moth.taxa <- read.mothur.taxa.summary("X:/sszpakow/BATCH_03_16S/ab1ec.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary.txt")
@@ -2851,8 +3173,10 @@ read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
   #moth.taxa <- read.mothur.taxa.summary("acc5a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
   ##Andrey's run
   #taxa.file = "dec1a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-  ##MiSeq run
-  taxa.file = "147936b4aacf1a450a0dfe2d97c3dd5a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+  ##1st MiSeq run
+  #taxa.file = "147936b4aacf1a450a0dfe2d97c3dd5a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+  ##Verification MiSeq run
+  taxa.file = "2014-05_final_53ea024a8bdf736a4dc90f4ae6d02d6a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
   moth.taxa <- read.mothur.taxa.summary(taxa.file)
   ##Vishal's run
   #moth.taxa <- read.mothur.taxa.summary("vishal_all_e61bb.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
@@ -2862,7 +3186,7 @@ read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
   #taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
   taxa.lev = taxa.lev.all
   make.global(taxa.lev)
-  meta = load.meta.t1d("seq_id_to_metadata.csv",batch=batch,aggr_var = aggr_var_meta)
+  meta = load.meta.t1d("aliq_id_to_metadata_for_yap_inp_t1d_v1_v3_2014-04-11_fixed_diagnosis_dates.tsv",batch=batch,aggr_var = aggr_var_meta)
   make.global(meta)
   #meta = load.meta.t1d("annotation20130819.csv")
   #meta = load.meta.t1d("annotation20130819.csv","all_batches_cleaned_yap_input.csv")
@@ -3192,13 +3516,23 @@ lmerCI <- function(obj, rnd = 2) {
 }
 
 
+pair.counts <- function(m_a,pair.attr) {
+  m_m = melt(m_a$count,varnames=c("SampleID","clade"),value.name="cnt")
+  attr_sub = m_a$attr[,c("SampleID",pair.attr)]
+  m_m = join(m_m,attr_sub,by="SampleID",type="inner",match="first")
+  
+}
+
 proc.t1d <- function() {
-  #taxa.levels = c(2,3,4,5,6)
-  taxa.levels = c(6)
+  taxa.levels = c(2,3,4,5,6)
+  #taxa.levels = c(6)
   #batches = list(c(1,2,3),c(1),c(2),c(3),c(2,3),c(1,3))
-  batches = list(c(1,2,3))
+  batches = list(c(4))
   do.std.plots = T
   do.tests = T
+  do.heatmap = T
+  do.clade.meta = T
+  do.profile = T
   
   report$add.descr("Largely identical set of analysis routines is applied
                    in nested loops over combinations of batches and 
@@ -3277,33 +3611,45 @@ proc.t1d <- function() {
         print(contrasts(T1D))
       }
       )
-      
+      res.tests = NULL
       if (do.tests) {
-        res.tests = try(
+        res.tests = tryCatchAndWarn({
           test.counts.t1d(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
                           label=label,
                           stability.transform.counts="ihs",
-                          do.stability=F,
+                          do.stability=T,
                           do.tests=T,
-                          do.genesel=F,do.glmnet=F,
-                          do.glmer=T,do.adonis=F,
-          )
+                          do.genesel=T,do.glmnet=T,
+                          do.glmer=T,do.adonis=T,
+          )}
         )
       }
       if (do.std.plots) {
-        tryCatchAndWarn({
-          heatmap.t1d(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,label=label)
+        if(do.heatmap) {
+          tryCatchAndWarn({
+            heatmap.t1d(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,label=label)
+          })
+        }
+        with(taxa.meta.aggr$data,{
+        report$add.printed(cor.test(YearsSinceDiagnosis,
+                                            Timestamp,
+                                         method="spearman"),
+                           caption="Spearman RHO for metadata variables")
         })
-        
-        try({
+        tryCatchAndWarn({
           plot.group = list(c("T1D"))
           if(n.batches>1) {
             plot.group[[2]] = c("T1D","Batch")
           }
-          std.plots(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,id.vars.list=
+          std.plots(taxa.meta.aggr$data,
+                    taxa.meta.aggr$attr.names,
+                    id.vars.list=
                       plot.group,
                     label=label,
-                    res.tests=res.tests
+                    res.tests=res.tests,
+                    do.clade.meta=do.clade.meta,
+                    do.profile=do.profile,
+                    clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
           )
         })
       }
@@ -3361,14 +3707,14 @@ proc.t1d.mg <- function() {
       
       if (do.tests) {
         
-        res.tests = try(test.counts.t1d(count.meta.data,count.meta.attr.names,
+        res.tests = tryCatchAndWarn({test.counts.t1d(count.meta.data,count.meta.attr.names,
                                         label=label,
                                         stability.transform.counts="ihs",
                                         do.stability=T,
-                                        do.tests=T))
+                                        do.tests=T)})
       }
       if (do.std.plots) {
-        try(
+        tryCatchAndWarn({
           std.plots(count.meta.data,count.meta.attr.names,id.vars.list=
                       list(
                         c("T1D","age.quant"),
@@ -3381,7 +3727,7 @@ proc.t1d.mg <- function() {
                     do.diversity=do.diversity,
                     res.tests=res.tests
           )
-        )
+        })
       }
     }
   }
@@ -3562,16 +3908,16 @@ proc.mr_oralc <- function() {
     print (paste("Working on",label))
     
     if (do.tests) {
-      res.tests = try(
+      res.tests = tryCatchAndWarn({
         test.counts.mr_oralc(taxa.meta.data,taxa.meta.attr.names,
                              label=label,
                              stability.transform.counts="ihs",
                              do.stability=T,
                              do.tests=T)
-      )
+      })
     }
     if (do.std.plots) {
-      try(
+      tryCatchAndWarn({
         std.plots(taxa.meta.data,taxa.meta.attr.names,id.vars.list=
                     list(
                       c("Subject","sample.type"),
@@ -3581,7 +3927,7 @@ proc.mr_oralc <- function() {
                   label=label,
                   res.tests=res.tests
         )
-      )
+      })
     }
   }
 }
