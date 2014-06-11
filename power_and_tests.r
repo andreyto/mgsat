@@ -32,6 +32,9 @@
 #install.packages("fdrtool")
 #install.packages("tikzDevice") #for knitr
 #install.packages("markdown") #for knit2html
+#install.packages("kernlab")
+#install.packages("ROCR")
+#install.packages("caret")
 #source("http://bioconductor.org/biocLite.R")
 #biocLite("multtest")
 #biocLite("GeneSelector")
@@ -122,11 +125,16 @@ packages = c(
   "date",
   "timeDate",
   #for llist
-  "Hmisc"
+  "Hmisc",
+  "kernlab"
 )
 
 for (package in packages) {
   suppressMessages(library(package,character.only=T))
+}
+
+take_first<-function(x,n) {
+  return (x[1:min(length(x),n)])
 }
 
 ## replace oldnames with newnames in vector allnames
@@ -157,6 +165,18 @@ split_count_df<-function(dat,col_ignore=c()) {
   }
   attr = dat[mask_col_ignore]
   list(count=m,attr=attr)
+}
+
+## operation opposite to split_count_df()
+join_count_df<-function(m_a) {
+  
+  if(!is.null(m_a$count)) {
+    cbind(as.data.frame(m_a$count),m_a$attr)
+  }
+  else {
+    m_a$attr
+  }
+  
 }
 
 row_normalize_matr<-function(x) {
@@ -1087,6 +1107,13 @@ plot.abund.meta <- function(data,
         axis.text.y=element_text(color=c("black","black")))
     
   }
+  
+  gp = gp + 
+    theme(
+    plot.title = element_text(size = rel(2)),
+    axis.text.x = element_text(size = rel(0.85),angle=90),
+    axis.text.y = element_text(size = rel(0.85)))
+  
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
@@ -1214,15 +1241,6 @@ std.plots <- function(abund.meta.data,
                                                 other.params,
                                                 sep=".",
                                                 collapse=".")),
-                                        ggp.comp=list(
-                                          #scale_y_sqrt(),
-                                          #coord_trans(y = "sqrt"),
-                                          theme(
-                                            plot.title = element_text(size = rel(2)),
-                                            axis.text.x = element_text(size = rel(0.85),angle=90),
-                                            axis.text.y = element_text(size = rel(0.85))
-                                          )
-                                        ),
                                         clades.order=pl.par$ord,
                                         geom=geom,
                                         id.var.dodge=id.var.dodge,
@@ -1880,7 +1898,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   stability.resp.attr = "T1D"
   stability.model.family = "binomial"
   n.adonis.perm = 4000
-  res = list()
+  
   #data = data[data$Batch %in% c(1,2,3),]
   
   ##only families with 1 sibling and 1 patient
@@ -1899,10 +1917,20 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   all.clades = get.clade.names(data,attr.names)
   m_a = split_count_df(data.norm,col_ignore=attr.names)
   
-  #make.global(m_a)
+  make.global(m_a)
+  #DEBUG
   #stopifnot(F)
   
   m = m_a$count
+
+  species.sel=res$stab.feat.genesel$stab_feat$name
+  species.sel=names(take_first(res$stab.feat.glmnet$mean.order.p,10))
+  select.samples(data.norm,attr.names,
+                 species.sel=species.sel,
+                 sample.group.name=stability.resp.attr)
+  return (res)
+  
+  res = list()  
   
   #m = (m_a.abs$count > 0)
   #storage.mode(m) = "integer"
@@ -1919,6 +1947,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       ## We need to use row-normalized counts here, because we perform Wilcox test
       ## inside, and could false significance due to different depth of sequencing
       res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,stability.resp.attr])
+      res$stab.feat.genesel = res.stab_sel_genesel
       report$add.header("GeneSelector stability ranking",3)
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcox) is applied to each clade on random
@@ -2007,6 +2036,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       }
       
       res$stab.feat=stab.feat.c060
+      res$stab.feat.glmnet = stab.feat.c060
     }
   }
   
@@ -2171,6 +2201,8 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       }
     }
   }
+  make.global(res)
+  
   return (res)
 }
 
@@ -3217,6 +3249,172 @@ plot.features.mds <- function(m_a,species.sel,sample.group) {
   legend(-0.5,1,unique(sample.group),col=1:length(sample.group),pch=1)
 }
 
+cut.top.predictions<-function(scores,labels,sample.ids,n.cut) {
+  lab.levels = levels(labels)
+  stopifnot(length(lab.levels)==2)
+  n = length(scores)
+  stopifnot(length(labels)==n && length(sample.ids)==n)
+  
+  res = list()
+  
+  lab = lab.levels[1]
+  ord = order(scores)
+  cum.cnt = cumsum(labels[ord]==lab)
+  i.ord = first(cum.cnt>=n.cut)
+  stopifnot(length(i.ord)>0) #index found
+  cut = scores[ord[i.ord]]
+  ids = sample.ids[(scores <= cut) & (labels == lab)]
+  res[[lab]] = list(cut=cut,ids=ids)
+  
+  lab = lab.levels[2]
+  ord = order(-scores)
+  cum.cnt = cumsum(labels[ord]==lab)
+  i.ord = first(cum.cnt>=n.cut)
+  stopifnot(length(i.ord)>0) #index found
+  cut = scores[ord[i.ord]]
+  ids = sample.ids[(scores >= cut) & (labels == lab)]
+  res[[lab]] = list(cut=cut,ids=ids)
+  
+  return (res)
+  
+}
+
+show.pred.perf <- function(pred,pred.score,labels) {
+  library(ROCR)
+  #print(table(labels,pred.score>0))
+  pred.perf = prediction(pred.score,labels)
+  print(table(labels,pred))
+  # Plot ROC curve
+  perf <- performance(pred.perf, measure = "tpr", x.measure = "fpr")
+  plot(perf)
+  # Plot precision/recall curve
+  perf <- performance(pred.perf, measure = "prec", x.measure = "rec")
+  plot(perf)
+  perf <- performance(pred.perf, measure = "acc")
+  plot(perf)
+}
+
+select.samples <- function(meta.data,attr.names,species.sel,sample.group.name,n.select,selection.file) {
+  library(kernlab)
+  library(caret)
+  
+  data.norm = row_normalize(meta.data,col_ignore=attr.names)
+  
+  m_a = split_count_df(data.norm,col_ignore=attr.names)
+  
+  sample.group = m_a$attr[,sample.group.name]
+  
+  ## nasty "feature" - when species.sel is a factor,
+  ## the subscripting of count seems to use the integer level of a factor
+  species.sel = as.character(species.sel)
+
+  m = m_a$count[,species.sel]
+  
+  #If building kernel from a distance:
+  #S = np.exp(-D * gamma), where one heuristic for choosing gamma is 1 / num_features
+  #or
+  #S = 1. / (D / np.max(D))
+  #m = boxcox.transform.mat(m)
+
+  m = ihs(m)
+  
+  m = decostand(m,method="standardize",MARGIN=2)
+  
+  print(colnames(m))
+  make.global(species.sel)
+  make.global(m)
+  make.global(sample.group)
+  bootControl <- trainControl(number = 40)
+  set.seed(2)
+  scaled = F
+  sigma = sigest(m,scaled=scaled)[2]
+  ##print(paste("sigma",sigma))
+  ##using prob.mod=T screws up the model - the plane is no longer at 0 decision
+  ##threshold. Maybe bias is lost?
+  if(T) {
+    cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
+    registerDoSNOW(cl)      
+    #class.weights=1/table(sample.group),
+    #tuneGrid = expand.grid(sigma=sigma,C = 4**(-2:7)),
+  mod.fit <- train(m, sample.group,
+                     method = "svmLinear", #"svmRadial" 
+                   prob.model = F,
+                   cross=3,
+                   class.weights=1/table(sample.group),
+                   tuneGrid = expand.grid(C = 4**(-2:7)),
+                     trControl = bootControl, scaled = scaled,
+                   metric="Accuracy")  #"Kappa"
+  stopCluster(cl)
+  print(mod.fit)
+  mod = mod.fit$finalModel
+  }
+  else {
+    for (C in c(1)) {
+    mod = ksvm(x=m, y=sample.group, kernel = "vanilladot",
+         kpar = "automatic", C = C, cross = 6, prob.model = F,
+         class.weights=1/table(sample.group),scaled=scaled)
+    print(cross(mod))
+    print(mod)
+    }
+  }
+  print(paste("Cross:", cross(mod)))
+  print(mod)
+  make.global(mod)
+  print(table(sample.group,predict(mod, m)))
+  #mod.pred.prob = predict(mod, m, type = "probabilities")
+  #make.global(mod.pred.prob)
+  #print(sum(mod.pred.prob[,"Control"]>0.5))
+  mod.pred.score = predict(mod,m,type="decision")
+  mod.pred = predict(mod,m)
+  make.global(mod.pred.score)
+  show.pred.perf(mod.pred,mod.pred.score,sample.group)  
+  #}
+  sample.ids = rownames(m)
+  cut.res = cut.top.predictions(mod.pred.score,sample.group,sample.ids,10)
+  make.global(cut.res)
+  ids.sel = c(laply(cut.res,function(x) x[["ids"]]))
+  mask.sel = sample.ids %in% ids.sel
+  pred.score.sel = mod.pred.score[mask.sel]
+  pred.sel = mod.pred[mask.sel]
+  sample.group.sel = sample.group[mask.sel]
+  show.pred.perf(pred.sel,pred.score.sel,sample.group.sel)
+  
+  data.norm.sel = data.norm[mask.sel,]
+  
+  m_a.sel = split_count_df(data.norm.sel,col_ignore=attr.names)
+  
+  m_a.sel$count = m_a.sel$count[,species.sel]
+  
+  pl.hist = plot.abund.meta(join_count_df(m_a.sel),
+                            id.vars=c(sample.group.name),
+                            attr.names=attr.names,
+                            geom="bar",
+                            id.var.dodge=sample.group.name
+                            )
+  #env=as.environment(as.list(environment(), all.names=TRUE))
+  #print(names(as.list(env)))
+  #print(evals("pl.hist",env=env))
+  report$add(pl.hist,
+             caption=paste("Abundance profile of samples maximally different with regard to ",
+                           sample.group.name,"(only clades that were used for selection are shown)")
+  )
+  
+  pl.hist = plot.abund.meta(data.norm.sel,
+                            id.vars=c(sample.group.name),
+                            attr.names=attr.names,
+                            geom="bar",
+                            id.var.dodge=sample.group.name
+  )
+  #env=as.environment(as.list(environment(), all.names=TRUE))
+  #print(names(as.list(env)))
+  #print(evals("pl.hist",env=env))
+  report$add(pl.hist,
+             caption=paste("Abundance profile of samples maximally different with regard to ",
+                           sample.group.name,"(all clades are shown, even those not used for selection)")
+  )
+  
+}
+
 proc.t1d.som <- function() {
   library(kononen)
   m.som = som(m, grid = somgrid(5, 5, "hexagonal"))
@@ -3524,15 +3722,15 @@ pair.counts <- function(m_a,pair.attr) {
 }
 
 proc.t1d <- function() {
-  taxa.levels = c(2,3,4,5,6)
-  #taxa.levels = c(6)
+  #taxa.levels = c(2,3,4,5,6)
+  taxa.levels = c(6)
   #batches = list(c(1,2,3),c(1),c(2),c(3),c(2,3),c(1,3))
   batches = list(c(4))
-  do.std.plots = T
+  do.std.plots = F
   do.tests = T
-  do.heatmap = T
-  do.clade.meta = T
-  do.profile = T
+  do.heatmap = F
+  do.clade.meta = F
+  do.profile = F
   
   report$add.descr("Largely identical set of analysis routines is applied
                    in nested loops over combinations of batches and 
@@ -3618,7 +3816,7 @@ proc.t1d <- function() {
                           label=label,
                           stability.transform.counts="ihs",
                           do.stability=T,
-                          do.tests=T,
+                          do.tests=F,
                           do.genesel=T,do.glmnet=T,
                           do.glmer=T,do.adonis=T,
           )}
