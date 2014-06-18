@@ -1436,12 +1436,13 @@ proc.choc <- function() {
                    If viewing HTML formatted report, you can click on the
                    images to view the hi-resolution picture.")
   
+  up.report.section = report$get.section()
   for (taxa.level in taxa.levels) {
     taxa.meta = read.choc(taxa.level)
     
     label = paste("16s","l",taxa.level,sep=".",collapse=".")
-    report$add.p(paste("Tag:",label))
-    report$set.tag(label)
+    report.section = up.report.section
+    report.section = report$add.header(paste(label),action.section="push")
     
     report$add.header(paste("Taxonomic level:",taxa.level),2)
     
@@ -1894,6 +1895,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
                             do.glmer=T,do.adonis=T,
                             stability.transform.counts="ihs") {
   
+  report.section = report$add.header("Data analysis",section.action="push")
   n.batch.levels = sum(table(data$Batch) > 0)
   stability.resp.attr = "T1D"
   stability.model.family = "binomial"
@@ -3281,22 +3283,56 @@ cut.top.predictions<-function(scores,labels,sample.ids,n.cut) {
 
 show.pred.perf <- function(pred,pred.score,labels) {
   library(ROCR)
+  report.section = report$add.header("Prediction performance measures",section.action="push")  
+  report$add.package.citation("ROCR")
   #print(table(labels,pred.score>0))
   pred.perf = prediction(pred.score,labels)
-  print(table(labels,pred))
+  report$add.table(table(labels,pred),caption="Confusion table")
   # Plot ROC curve
   perf <- performance(pred.perf, measure = "tpr", x.measure = "fpr")
-  plot(perf)
+  report$add(plot(perf),caption="ROC curve")
   # Plot precision/recall curve
   perf <- performance(pred.perf, measure = "prec", x.measure = "rec")
-  plot(perf)
+  report$add(plot(perf),caption="Precision/recall")
   perf <- performance(pred.perf, measure = "acc")
-  plot(perf)
+  report$add(plot(perf),caption="Accuracy")
 }
 
-select.samples <- function(meta.data,attr.names,species.sel,sample.group.name,n.select,selection.file) {
+select.samples <- function(meta.data,
+                           attr.names,
+                           species.sel,
+                           sample.group.name,
+                           n.select=10,
+                           selection.file=NULL) {
   library(kernlab)
   library(caret)
+
+  report.section = report$add.header("Selecting most different samples with regard to a phenotype",section.action="push")
+  report$add.package.citation("kernlab")
+  report$add.package.citation("caret")
+  report$add.descr(paste("This procudure selects those samples that are most different with regard to a grouping variable"
+                          ,sample.group.name,", with an intent of using this subset for WGS or 
+                         transcriptomics sequencing. Support Vector Machine is built using previously selected clades,
+                   and",n.select,"samples corresponding to each of the two levels
+                         of the grouping variable are picked. Samples are picked as 
+                        predicted correctly by the linear SVM after applying to the frequency 
+                        profiles the 
+                        inverse hyperbolic sign transform and normalizing across columns, 
+                        and selecting samples that are maximally
+                         distant from the SVM separating plane. The nuisanse parameter
+                         of the SVM is picked through a grid search maximizing
+                         prediction accuracy in training with resampling.
+                         Accuracy of the final model is reported both on the
+                         training set and with cross-validation. Several
+                        performance charts are shown for the training set.
+                         After selecting samples, the same metrics are shown
+                         for the selected samples only. Additionally, the
+                         abundance profiles are plotted for the selected samples.
+                         Typically, you might expect a fairly poor
+                         accuracy for the full sample set, and very good - for the
+                         selected samples assuming that the number of selected
+                         samples is a small fraction of the total. For reference, a purely
+                         random binary classifier would result in a 50% accuracy."))
   
   data.norm = row_normalize(meta.data,col_ignore=attr.names)
   
@@ -3320,11 +3356,12 @@ select.samples <- function(meta.data,attr.names,species.sel,sample.group.name,n.
   
   m = decostand(m,method="standardize",MARGIN=2)
   
-  print(colnames(m))
-  make.global(species.sel)
-  make.global(m)
-  make.global(sample.group)
-  bootControl <- trainControl(number = 40)
+  report$add.vector(colnames(m),name="Clade",caption="Using these clades for sample selection.")
+  report$add.header("Models trained on the full dataset and their performance")  
+  #make.global(species.sel)
+  #make.global(m)
+  #make.global(sample.group)
+  bootControl <- trainControl(number = 4) #DEBUG: 40
   set.seed(2)
   scaled = F
   sigma = sigest(m,scaled=scaled)[2]
@@ -3345,7 +3382,7 @@ select.samples <- function(meta.data,attr.names,species.sel,sample.group.name,n.
                      trControl = bootControl, scaled = scaled,
                    metric="Accuracy")  #"Kappa"
   stopCluster(cl)
-  print(mod.fit)
+  report$add.printed(mod.fit,caption="Results of SVM parameter fitting")
   mod = mod.fit$finalModel
   }
   else {
@@ -3353,31 +3390,43 @@ select.samples <- function(meta.data,attr.names,species.sel,sample.group.name,n.
     mod = ksvm(x=m, y=sample.group, kernel = "vanilladot",
          kpar = "automatic", C = C, cross = 6, prob.model = F,
          class.weights=1/table(sample.group),scaled=scaled)
-    print(cross(mod))
+    #print(cross(mod))
     print(mod)
     }
   }
-  print(paste("Cross:", cross(mod)))
-  print(mod)
-  make.global(mod)
-  print(table(sample.group,predict(mod, m)))
+
+  report$add.printed(mod,caption="Best model trained on the full input set")  
+
   #mod.pred.prob = predict(mod, m, type = "probabilities")
   #make.global(mod.pred.prob)
   #print(sum(mod.pred.prob[,"Control"]>0.5))
   mod.pred.score = predict(mod,m,type="decision")
   mod.pred = predict(mod,m)
-  make.global(mod.pred.score)
+  #make.global(mod.pred.score)
+  
+  report$push.section(report.section)
   show.pred.perf(mod.pred,mod.pred.score,sample.group)  
+  report$pop.section()
+  
   #}
+  report$add.header("Performance of the models and plots for selected samples")  
   sample.ids = rownames(m)
-  cut.res = cut.top.predictions(mod.pred.score,sample.group,sample.ids,10)
+  cut.res = cut.top.predictions(mod.pred.score,sample.group,sample.ids,n.select)
   make.global(cut.res)
   ids.sel = c(laply(cut.res,function(x) x[["ids"]]))
   mask.sel = sample.ids %in% ids.sel
   pred.score.sel = mod.pred.score[mask.sel]
   pred.sel = mod.pred[mask.sel]
   sample.group.sel = sample.group[mask.sel]
+  samples.sel = data.frame(SampleID=ids.sel,Group=sample.group.sel)
+  samples.sel = samples.sel[ordered(as.character(samples.sel$Group)),]
+  report$add.table(samples.sel,
+                   caption="Selected samples")
+  
+  report$push.section(report.section)
   show.pred.perf(pred.sel,pred.score.sel,sample.group.sel)
+  
+  report$add.header("Abundance Plots")
   
   data.norm.sel = data.norm[mask.sel,]
   
@@ -3410,9 +3459,9 @@ select.samples <- function(meta.data,attr.names,species.sel,sample.group.name,n.
   #print(evals("pl.hist",env=env))
   report$add(pl.hist,
              caption=paste("Abundance profile of samples maximally different with regard to ",
-                           sample.group.name,"(all clades are shown, even those not used for selection)")
+                           sample.group.name,"(the most abundant clades are shown, even those not used for selection)")
   )
-  
+  report$pop.section()
 }
 
 proc.t1d.som <- function() {
@@ -3739,20 +3788,23 @@ proc.t1d <- function() {
                    If viewing HTML formatted report, you can click on the
                    images to view the hi-resolution picture.")
   
+  report.section = report$get.section()
+  report$add.header("Iterating over batch combinations")
+  report$push.section(report.section)
   for (batch in batches) {
     
-    report$add.header(paste(c("Batch combination:",batch),collapse=" "),1)
+    report$add.header(paste(c("Batch combination:",batch),collapse=" "))
     label_batch = paste("16s","b",paste(batch,collapse="-"),sep=".")
-    report$set.tag(label_batch)
-    
+    report$add.header("Iterating over taxonomic levels")
+    report$push.section(report.section)
     for (taxa.level in taxa.levels) {
       taxa.meta = read.t1d(taxa.level,batch=batch,aggr_var_meta = "AliquotID")
-      report$add.header(paste("Taxonomic level:",taxa.level),2)
+      report$add.header(paste("Taxonomic level:",taxa.level))
+      report$push.section(report.section)
+      report$add.header("Data preparation")
       report$add.p(paste("Before filtering for QAed and redundant samples:",nrow(taxa.meta$data)))
       
       label = paste(label_batch,"l",taxa.level,sep=".",collapse=".")
-      report$add.p(paste("Tag:",label))
-      report$set.tag(label)
       
       aggrBySubject = F
       if(!aggrBySubject) {
@@ -3823,6 +3875,7 @@ proc.t1d <- function() {
         )
       }
       if (do.std.plots) {
+        report$add.header("Plots")
         if(do.heatmap) {
           tryCatchAndWarn({
             heatmap.t1d(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,label=label)
@@ -3851,8 +3904,11 @@ proc.t1d <- function() {
           )
         })
       }
+      report$pop.section()
     }
+    report$pop.section()
   }
+  report$pop.section()
 }
 
 read.t1d.mg <-function(annot.type,level) {
