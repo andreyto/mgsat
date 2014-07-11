@@ -35,9 +35,9 @@ MGSAT_SRC = "~/work/mgsat"
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
-set_trace_options()
+set_trace_options(try.debug=T)
 
-setwd("~/work/CHOC/stage_2")
+setwd("~/work/CHOC/stage_3")
 
 
 report <- PandocAT$new("atovtchi@jcvi.org","CHOC pre-B ALL pilot 16S Analysis")

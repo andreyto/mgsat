@@ -2,7 +2,7 @@ library(ggplot2)
 #library(knitr)
 library(pander)
 
-panderOptions("table.style","rmarkdown")
+panderOptions("table.style","grid")
 panderOptions("table.split.table",180)
 panderOptions("table.alignment.default","left")
 panderOptions("evals.messages",F)
@@ -102,6 +102,12 @@ format.report.section<-function(x=NULL) {
   return (paste("\\(",paste(x$path,sep="",collapse="."),"\\)",sep=""))
 }
 
+format.report.section.as.file<-function(x=NULL) {
+  if(is.null(x)) {
+    x = get.report.section()
+  }
+  return (paste(x$path,sep="",collapse="."))
+}
 
 
 pandoc.as.printed.return <- function(x,attrs="") {
@@ -111,6 +117,12 @@ pandoc.as.printed.return <- function(x,attrs="") {
          '\n', paste(x, 
                      collapse = '\n'), 
          '\n', repChar('`', 7), '\n')
+}
+
+pandoc.special.symb = "`*_{}()#+!~"
+
+pandoc.escape.special <- function(x) {
+  gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",x)
 }
 
 PandocAT <- setRefClass('PandocAT', contains = "Pandoc", 
@@ -176,10 +188,17 @@ PandocAT$methods(pop.section = function(...) {
   return(pop.report.section(...))
 })
 
-PandocAT$methods(add.table = function(x,show.row.names=F,
+PandocAT$methods(add.table = function(x,
+                                      show.row.names=F,
                                       echo=T,
                                       caption=NULL,
-                                      split.tables=180,style="rmarkdown",...) {
+                                      wrap.vals=F,
+                                      wrap.caption=T,
+                                      split.tables=180,
+                                      style="grid",...) {
+  if (wrap.caption && !is.null(caption)) {
+    caption = pandoc.escape.special(caption)
+  }
   caption = .self$priv.format.caption(caption)
   if(is.null(x) || nrow(x)==0) {
     if(!is.null(caption)) {
@@ -190,6 +209,22 @@ PandocAT$methods(add.table = function(x,show.row.names=F,
   if(!show.row.names) {
     rownames(x) <- NULL
   }
+
+  if(wrap.vals) {
+    rn = rownames(x)
+    if(!is.null(rn)) {
+      rn = pandoc.escape.special(rn)
+    }
+    if(is.matrix(x)) {
+      x = as.data.frame(x)
+    }
+    x = sapply(x,pandoc.escape.special,USE.NAMES=F,simplify=T)
+    if(!is.matrix(x)) {
+      x = t(as.matrix(x))
+    }
+    rownames(x) = rn
+  }
+  
   tbl_p <- pandoc.table.return(x,split.tables=split.tables,style=style,caption=caption,...)
   if(echo) {
     print(tbl_p)
@@ -200,16 +235,12 @@ PandocAT$methods(add.table = function(x,show.row.names=F,
 PandocAT$methods(add.vector = function(x,name=NULL,
                                        show.row.names=T,
                                        caption=NULL,
-                                       wrap.vals=T,
                                        ...) {
   if(is.null(x) || length(x)==0) {
     if(!is.null(caption)) {
       .self$add.p(.self$priv.format.caption(caption))
     }
     return(.self$add.p("Empty dataset"))
-  }
-  if(wrap.vals) {
-    x = wrap(x)
   }
   y = data.frame(x=x)
   if(!is.null(name)) {
@@ -252,7 +283,6 @@ PandocAT$methods(add.printed = function(x,caption=NULL,echo=T,...) {
 })
 
 PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T,...) {
-  
   report.section = switch(section.action,
                  incr=incr.report.section(),
                  push=incr.report.section(),
@@ -264,10 +294,30 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
   .self$add.p(pandoc.header.return(x,level=level,...),echo=echo)
   
   if(section.action=="push") {
+    #w/o argument it clones
     report.section = push.report.section()
   }
   return (report.section)
   
+})
+
+PandocAT$methods(make.file.name = function(name.base) {
+  stopifnot(!missing(name.base))
+  out_dir="output"
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+  return (file.path(out_dir,paste(format.report.section.as.file(),name.base,sep="-")))
+})
+
+PandocAT$methods(write.table.file = function(data,name.base,descr=NULL,row.names=F) {
+  ## if we write row.names, Excel shifts header row to the left when loading
+  fn = .self$make.file.name(name.base)
+  write.table(data,
+              fn,
+              sep="\t",
+              row.names = row.names)
+  if (!is.null(descr)) {
+    .self$add.descr(paste("Wrote",descr,"to file",fn))
+  }
 })
 
 PandocAT$methods(save = function(f) {
@@ -280,7 +330,6 @@ PandocAT$methods(save = function(f) {
   ## create pandoc file
   cat(pandoc.title.return(.self$title, .self$author, .self$date), file = fp)
   f_sections = .self$sections
-  make.global(f_sections)
   ##sort by section lexicographically, using a stable sort
   sect_ord = sort.list(
     unlist(lapply(.self$sections,function(x) paste(x,sep="",collapse="."))),
@@ -291,7 +340,7 @@ PandocAT$methods(save = function(f) {
 
 test_report.sections<-function() {
   
-  report <- PandocAT$new("noone@email.com","test")
+  report <- PandocAT$new("noone@email.com","developer")
   
   get.pandoc.section.3<-function() {
     print("get.pandoc.section.3")
@@ -299,6 +348,7 @@ test_report.sections<-function() {
     report.section = report$add.header("get.pandoc.section.3",section.action="push")
     report.section = report$add.header("get.pandoc.section.3.1")
     report$add.table(data.frame(A=c("a","b"),B=c(1,2)),caption="Table")
+    report$add.descr(paste("File name with extra output is ",report$make.file.name("data.csv")))
     return (report.section)
   }
   
@@ -331,11 +381,36 @@ test_report.sections<-function() {
   
   get.pandoc.section.1()
   
-  report$save("test_report")
-  Pandoc.convert("test_report.md",format="html",open=F)
+  report$save("test_sections")
+  Pandoc.convert("test_sections.md",format="html",open=F)
   
 }
 
+test_report.tables<-function() {
+  
+  report <- PandocAT$new("noone@email.com","developer")
+  
+  y = data.frame(a=c(1,2),b=c(2,4),c=c("zzz","mmmm"))
+  
+  report$add.table(y,caption="Test table 1",style="multiline")
+  
+  y = data.frame(a=c(1))
+  
+  report$add.table(y,caption="Test table 2",style="grid")
+    
+  x = c(x="_a_",y="b",z="c")
+  
+  report$add.vector(x,name="Clade",caption="Test vector 1",
+                    show.row.names=T,wrap.vals=F,style="grid")
+  report$add.vector(x,name="Clade",caption="Test vector 1",
+                    show.row.names=T,wrap.vals=T,style="grid")
+  report$add.vector(x,name="Clade",caption="Test vector 1",
+                    show.row.names=F,wrap.vals=T,style="grid")
+  
+  report$save("test_tables")
+  
+  Pandoc.convert("test_tables.md",format="html",open=F)
+}
 
 my_p <- function(x, wrap = panderOptions('p.wrap'), sep = panderOptions('p.sep'), copula = panderOptions('p.copula'), limit = Inf, keep.trailing.zeros = panderOptions('keep.trailing.zeros')){
   
