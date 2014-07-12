@@ -1036,28 +1036,21 @@ plot.abund.meta <- function(data,
     dat$clade = factor(dat$clade,levels=clades.order,ordered=T)
   }
   
-  #show only n.top
+  ##show only n.top
   clades = levels(dat$clade)
   clades = clades[1:min(length(clades),n.top)]
   dat = dat[dat$clade %in% clades,]
   
+  if(geom == "violin") {
+    ##violin will fail the entire facet if one clade has zero variance,
+    ##so we perturb data a tiny bit
+    val = dat[,value.name]
+    sd_dodge = max(abs(val))*1e-6
+    dat[,value.name] = val + rnorm(length(val),0,sd_dodge)
+  }
+  
   #print(ddply(dat, c("T1D","clade"), summarise, mean_abund = mean(abundance)))
   
-  if(geom == "bar") {
-    geom_obj = stat_summary(fun.y=mean, geom="bar", aes(width=0.5), 
-                            position=position_dodge(width=0.9))
-    #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
-    #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
-  }
-  else if(geom == "violin") {
-    geom_obj = geom_violin(scale= "width", trim=TRUE, adjust=1)
-  }
-  else if(geom == "boxplot") {
-    geom_obj = geom_boxplot(fill=NA,na.value=NA,outlier.size = 0)
-  }
-  else {
-    stop(paste("Unexpected parameter value: geom = ",geom))
-  }
   
   if(is.null(id.var.dodge)) {
     fill="clade"
@@ -1081,11 +1074,24 @@ plot.abund.meta <- function(data,
   ## coord_trans(y = "sqrt") and horizontal (flipped) with original linear coords
   aes_s = aes_string(x="clade",y=value.name,
                      fill = fill,color = color)
-  gp = ggplot(dat, aes_s)+
-    #stat_summary(fun.y="mean", geom="point",size=8,color="black",shape=4)+
-    #scale_y_sqrt()+
-    #coord_trans(y = "sqrt")+
-    geom_obj
+  gp = ggplot(dat, aes_s)
+  
+  if(geom == "bar") {
+    gp = gp + stat_summary(fun.y=mean, geom="bar", aes(width=0.5), 
+                            position=position_dodge(width=0.9))
+    #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
+    #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
+  }
+  else if(geom == "violin") {
+    gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
+  }
+  else if(geom == "boxplot") {
+    gp = gp + geom_boxplot(fill=NA,na.value=NA,outlier.size = 0)
+  }
+  else {
+    stop(paste("Unexpected parameter value: geom = ",geom))
+  }
+
   #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
   #coord_flip()+
   #geom_boxplot(color="black")+
@@ -1475,36 +1481,96 @@ gen.tasks.choc <- function(taxa.meta) {
   for multiple testing correction, and the significant clades
   are reported."
   
-  
-  task1 = within(
+  task = within(
     list(),
 {
-  
-  do.std.plots = F
-  do.clade.meta=F
+  do.std.plots = T
+  do.clade.meta=T
   do.profile=T
   
   do.heatmap = T
   do.std.tests = T
   
   do.stability=T
-  do.tests=F
+  do.tests=T
   do.genesel=T
   do.glmnet=T
   do.glmer=T
   do.adonis=T
-
+  
   stability.steps = 600
-  n.adonis.perm = 4000
+  n.adonis.perm = 4000  
+  
+  stability.resp.attr = "NULL" 
+  stability.model.family = "binomial"
+  
+  genesel.resp.attr = stability.resp.attr
+  
+  stability.transform.counts="ihs"
+
+  adonis.tasks = list()
+  
+  glmer.task = list()
+  
+  plot.group = list()            
+  
+  clade.meta.x.vars=c()
+  
+  heatmap.task = list()
+  
+  
+}
+  )
+
+task1 = within(
+  task,
+{
+  
+  descr = "All samples, no aggregation"
+  
+  do.stability=T
+  do.tests=T
+  
+  do.genesel=F
+  do.glmnet=T
+  
+  taxa.meta.aggr = taxa.meta
+  
+  stability.resp.attr = "Sample.type.1" 
+  stability.model.family = "multinomial"
+  
+  genesel.resp.attr = stability.resp.attr
+  
+  plot.group = list(
+    c("TherapyStatus","Sample.type"),
+    c("Sample.type","visit")
+  )            
+  
+  clade.meta.x.vars=c("visit","age")
+  
+  heatmap.task = list(
+    attr.annot.names=c("Sample.type.1","visit","age","Antibiotic"),
+    attr.row.labels="SampleID"
+  )
+  
+}
+)
+
+task2 = within(
+  task,
+{
   
   descr = "Samples before therapy aggregated by SubjectID"
+  
+  do.clade.meta=F
   
   taxa.meta.aggr = aggregate_by_meta_data(subset(taxa.meta$data,TherapyStatus=="before.chemo"),
                                           "SubjectID",
                                           taxa.meta$attr.names)
   stability.resp.attr = "Sample.type" 
   stability.model.family = "binomial"
-  stability.transform.counts="ihs"
+  
+  genesel.resp.attr = stability.resp.attr
   
   adonis.tasks = list(
     list(formula_rhs="Sample.type",
@@ -1531,16 +1597,65 @@ gen.tasks.choc <- function(taxa.meta) {
   )            
   
   clade.meta.x.vars=c("visit")
-
+  
   heatmap.task = list(
-  attr.annot.names=c("Sample.type","Antibiotic"),
-  attr.row.labels="SampleID"
+    attr.annot.names=c("Sample.type","Antibiotic"),
+    attr.row.labels="SampleID"
   )
   
 }
-  )
+)
 
-return (list(task1))
+
+task3 = within(
+  task,
+{
+  
+  descr = "Patients only, no aggregation"
+  
+  do.std.plots = F
+  do.clade.meta=T
+  do.profile=T
+  
+  do.heatmap = F
+  do.std.tests = T
+  
+  do.stability=T
+  do.tests=T
+  do.genesel=T
+  do.glmnet=T
+  do.glmer=T
+  do.adonis=T
+  
+  taxa.meta.aggr = taxa.meta
+  
+  taxa.meta.aggr$data = subset(taxa.meta.aggr$data,Sample.type=="patient")
+  
+  stability.resp.attr = "visit" 
+  stability.model.family = "gaussian"
+  
+  genesel.resp.attr = "TherapyStatus" 
+  
+  adonis.tasks = list(
+    list(formula_rhs="visit",
+         strata=NULL,
+         descr="Association with the visit number unpaired"),
+    list(formula_rhs="visit",
+         strata="SubjectID",
+         descr="Association with the visit number paired by subject")
+  )
+  
+  glmer.task = list(
+    formula.rhs = "visit + (1|SubjectID) + (1|SampleID)",
+    linfct=c("visit = 0"),
+    descr=sprintf(glmer.descr.tpl,"visit")
+  )
+  
+}
+)
+
+
+return (list(task3))
 
 }
 
@@ -1612,53 +1727,53 @@ proc.choc <- function() {
   report.section = report$get.section()
   
   if(do.summary.meta) {
-  
-  report$add.header("Summary of metadata variables")
-  
-  taxa.meta = read.choc(taxa.level=2)
-  
-  xtabs.formulas = list("~Sample.type+TherapyStatus","~FamilyID","~Sample.type.1","~SubjectID")
-  for(xtabs.formula in xtabs.formulas) {
-    fact.xtabs = xtabs(as.formula(xtabs.formula),data=taxa.meta$data,drop.unused.levels=T)
-    report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
-    report$add.printed(summary(fact.xtabs))
+    
+    report$add.header("Summary of metadata variables")
+    
+    taxa.meta = read.choc(taxa.level=2)
+    
+    xtabs.formulas = list("~Sample.type+TherapyStatus","~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
+    for(xtabs.formula in xtabs.formulas) {
+      fact.xtabs = xtabs(as.formula(xtabs.formula),data=taxa.meta$data,drop.unused.levels=T)
+      report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
+      report$add.printed(summary(fact.xtabs))
+    }
+    
+    with(taxa.meta$data,{
+      report$add.printed(summary(aov(age~Sample.type)),
+                         caption="ANOVA for age and sample type")
+      report$add(qplot(Sample.type,age,geom="violin"),
+                 caption="Violin plot for age and sample type")
+    })
+    
+    with(taxa.meta$data,{
+      report$add.printed(cor.test(age,
+                                  visit,
+                                  method="spearman"),
+                         caption="Spearman RHO for age and visit")
+      
+    })
+    with(taxa.meta$data[taxa.meta$data$Sample.type=="patient",],{
+      report$add.printed(cor.test(age,
+                                  visit,
+                                  method="spearman"),
+                         caption="Spearman RHO for age and visit, patients only")
+      
+    })
+    
+    #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
+    #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
+    report$add(ggplot(taxa.meta$data,aes(x=visit,y=age,color=Sample.type))+
+                 geom_point()+
+                 stat_smooth(method="loess", se = T,degree=1,size=1),
+               caption="Plot for age and visit with Loess trend line")
+    
   }
   
-  with(taxa.meta$data,{
-    report$add.printed(summary(aov(age~Sample.type)),
-                       caption="ANOVA for age and sample type")
-    report$add(qplot(Sample.type,age,geom="violin"),
-               caption="Violin plot for age and sample type")
-  })
   
-  with(taxa.meta$data,{
-    report$add.printed(cor.test(age,
-                                visit,
-                                method="spearman"),
-                       caption="Spearman RHO for age and visit")
-    
-  })
-  with(taxa.meta$data[taxa.meta$data$Sample.type=="patient",],{
-    report$add.printed(cor.test(age,
-                                visit,
-                                method="spearman"),
-                       caption="Spearman RHO for age and visit, patients only")
-    
-  })
-  
-  #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
-  #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
-  report$add(ggplot(taxa.meta$data,aes(x=visit,y=age,color=Sample.type))+
-               geom_point()+
-               stat_smooth(method="loess", se = T,degree=1,size=1),
-             caption="Plot for age and visit with Loess trend line")
-  
-  }
-  
-
   report$add.header("Iterating over taxonomic levels")
   report$push.section(report.section)
-
+  
   for (taxa.level in taxa.levels) {
     taxa.meta = read.choc(taxa.level)
     
@@ -1711,6 +1826,7 @@ proc.choc <- function() {
                              do.glmnet=do.glmnet,
                              do.glmer=do.glmer,
                              do.adonis=do.adonis,
+                             genesel.resp.attr = genesel.resp.attr,
                              stability.resp.attr = stability.resp.attr,
                              stability.model.family = stability.model.family,
                              stability.transform.counts=stability.transform.counts,
@@ -1726,7 +1842,7 @@ proc.choc <- function() {
           report$add.header("Plots")
         }
         if (do.std.plots) {
-
+          
           tryCatchAndWarn({
             std.plots(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
                       id.vars.list=plot.group,
@@ -2554,6 +2670,7 @@ test.counts.choc <- function(data,
                              label,
                              stability.resp.attr=NULL,
                              stability.model.family=NULL,
+                             genesel.resp.attr=NULL,
                              adonis.tasks=NULL,
                              glmer.task=NULL,
                              alpha=0.05,
@@ -2563,9 +2680,14 @@ test.counts.choc <- function(data,
                              stability.transform.counts="ihs",
                              stability.steps = 600,
                              n.adonis.perm = 4000
-                             ) {
+) {
   
   report.section = report$add.header("Data analysis",section.action="push")
+  
+  if(is.null(genesel.resp.attr)) {
+    genesel.resp.attr = stability.resp.attr
+  }
+  
   res = list()
   
   m_a.abs = split_count_df(data,col_ignore=attr.names)
@@ -2599,7 +2721,7 @@ test.counts.choc <- function(data,
     if(do.genesel) {
       ## We need to use row-normalized counts here, because we perform Wilcox test
       ## inside, and could false significance due to different depth of sequencing
-      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,stability.resp.attr])
+      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,genesel.resp.attr])
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcox) is applied to each clade on random
@@ -2607,15 +2729,19 @@ test.counts.choc <- function(data,
                        Monte Carlo procedure. The top clades of the consensus ranking
                        are returned, along with the p-values computed on the full
                        original dataset (with multiple testing correction).")
+
+      report$add.printed(summary(m_a$attr[,genesel.resp.attr]),
+                         caption="Summary of response variable")
+      
       report$add.table(res.stab_sel_genesel$stab_feat,
                        caption=
-                         paste("GeneSelector stability ranking for response ",stability.resp.attr)
+                         paste("GeneSelector stability ranking for response ",genesel.resp.attr)
       )
       report$add.package.citation("vegan")
       report$add(
         plot.features.mds(m_a,species.sel=(colnames(m_a$count) %in% 
                                              res.stab_sel_genesel$stab_feat$name),
-                          sample.group=m_a$attr[,stability.resp.attr]),
+                          sample.group=m_a$attr[,genesel.resp.attr]),
         caption="metaMDS plot. 'x' marks top selected clades, 'o' marks samples"
       )
     }
@@ -2666,12 +2792,12 @@ test.counts.choc <- function(data,
         "Glmnet stability path analysis for response (",
         stability.resp.attr,
         ")"
-      ),3
+      )
       )
       
       report$add.printed(summary(m_a$attr[,stability.resp.attr]),
                          caption="Summary of response variable")
-
+      
       report$add.package.citation("c060")
       report$add.descr("This multivariate feature selection method builds glmnet models 
                        for a given response variable at 
@@ -3729,8 +3855,9 @@ test_taxa_count_glmer_col <- function(taxa.count,
     ##http://stackoverflow.com/questions/21344555/convergence-error-for-development-version-of-lme4
     
     dat.glmer = glmer(as.formula(paste("response",formula_rhs,sep="~")),
-                      data=attr,family="binomial",
-                      control=glmerControl(optimizer="bobyqa") 
+                      data=attr,
+                      family="binomial",
+                      control=glmerControl(optimizer="bobyqa")
                       ## need to load package "optimx" for the optimizer below
                       #control=glmerControl(optimizer="optimx",
                       #                    optCtrl=list(method="L-BFGS-B") #"nlminb"
@@ -3941,12 +4068,10 @@ stab_sel_genesel <- function(x,
   selected = SelectedGenes(gsel)
   #pvals are always NA somehow, and we do not need the 'index' in
   #the output, so not adding 'selected' to the output
-  selected$pvals=NULL
   index = selected$index
-  selected$index=NULL
   selected = data.frame(name=rownames(x)[index],
-                   pvals.orig=rnk@pval[index],
-                   pvals.adjusted=pvals.adjusted[index])
+                        pvals.orig=rnk@pval[index],
+                        pvals.adjusted=pvals.adjusted[index])
   #print(selected)
   #make.global(gsel)
   return (list(stab_feat=selected,gsel=gsel))
