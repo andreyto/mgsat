@@ -288,7 +288,8 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
                  push=incr.report.section(),
                  keep=get.report.section())
   if (is.null(level)) {
-    level = min(6,length(report.section))
+    ##headers will shift to the left above level 5 in HTML output
+    level = min(5,length(report.section$path))
   }
   x = paste(format.report.section(report.section),x)
   .self$add.p(pandoc.header.return(x,level=level,...),echo=echo)
