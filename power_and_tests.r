@@ -972,7 +972,13 @@ load.meta.choc <- function(file_name,counts.row.names) {
   
   meta$visit = as.numeric(laply(as.character(meta$SampleID),
                                 function(x) unlist(strsplit(x,".v",fixed=T))[2]))
-  
+  meta.visit.max = join(meta,
+                ddply(meta,"SubjectID",summarise,visit.max=max(visit)),
+                by="SubjectID",
+                match="first")
+  stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
+              nrow(meta.visit.max)==nrow(meta))
+  meta = meta.visit.max
   meta$SampleID.1 = as.factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
   meta$Sample.type = as.factor(meta$Sample.type)
   meta$Sample.type.1 = as.factor(meta$Sample.type.1)
@@ -1654,8 +1660,44 @@ task3 = within(
 }
 )
 
+task4 = within(
+  task,
+{
+  
+  descr = "All siblings and patients with two or more visits, no aggregation"
+  
+  do.stability=F
+  do.tests=F
+  do.clade.meta=F
+  
+  do.genesel=F
+  do.glmnet=T
+  
+  taxa.meta.aggr = taxa.meta
+  
+  taxa.meta.aggr$data = subset(taxa.meta.aggr$data,Sample.type=="sibling" | visit.max>=2)
+  
+  stability.resp.attr = "Sample.type.1" 
+  stability.model.family = "multinomial"
+  
+  genesel.resp.attr = stability.resp.attr
+  
+  plot.group = list(
+    c("Sample.type","visit")
+  )            
+  
+  clade.meta.x.vars=c("visit","age")
+  
+  heatmap.task = list(
+    attr.annot.names=c("Sample.type.1","visit","age","Antibiotic"),
+    attr.row.labels="SampleID"
+  )
+  
+}
+)
 
-return (list(task1,task2,task3))
+
+return (list(task1,task2,task3,task4))
 
 }
 
@@ -1712,8 +1754,8 @@ tmp <- function() {
 }
 
 proc.choc <- function() {
-  taxa.levels = c(2,3,4,5,6)
-  #taxa.levels = c(3)
+  #taxa.levels = c(2,3,4,5,6)
+  taxa.levels = c(2)
   
   do.summary.meta = T
   
