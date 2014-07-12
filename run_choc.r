@@ -35,7 +35,7 @@ MGSAT_SRC = "~/work/mgsat"
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 setwd("~/work/CHOC/stage_3")
 

@@ -1529,7 +1529,7 @@ task1 = within(
   descr = "All samples, no aggregation"
   
   do.stability=T
-  do.tests=T
+  do.tests=F
   
   do.genesel=F
   do.glmnet=T
@@ -1655,7 +1655,7 @@ task3 = within(
 )
 
 
-return (list(task3))
+return (list(task1,task2,task3))
 
 }
 
@@ -1712,8 +1712,8 @@ tmp <- function() {
 }
 
 proc.choc <- function() {
-  #taxa.levels = c(2,3,4,5,6)
-  taxa.levels = c(3)
+  taxa.levels = c(2,3,4,5,6)
+  #taxa.levels = c(3)
   
   do.summary.meta = T
   
