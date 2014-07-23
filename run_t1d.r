@@ -33,9 +33,12 @@ options(boot.parallel="snow")
 
 MGSAT_SRC = "~/work/mgsat"
 
+source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
+#install_required_packages()
+load_required_packages()
+
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
-
 #set_trace_options()
 
 setwd("~/work/T1D/BATCH_03_16S")

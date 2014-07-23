@@ -91,47 +91,6 @@ make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
 }
 
-packages = c(        
-  #for quantcut; mask as little as possible (masks permute, 
-  "gtools", #pos = "package:base", 
-  "reshape2",
-  "plyr",
-  # for str_split with max splits
-  "stringr", 
-  "ggplot2",
-  "vegan", 
-  "BiodiversityR", 
-  "LiblineaR", 
-  ## glmnet is exported to snow cluster by c060, but it
-  ## forgets to load it first, so we do it here
-  "glmnet", 
-  "c060", 
-  "geoR", 
-  "foreach", 
-  "iterators", 
-  "doSNOW", 
-  "fdrtool", 
-  #"elasticnet", 
-  #"BioMark", 
-  "HMP", 
-  "BatchJobs", 
-  "boot",
-  "vegan",
-  #Bioconductor
-  #"multtest",
-  "GeneSelector",
-  #"knitr",
-  "lattice",
-  "date",
-  "timeDate",
-  #for llist
-  "Hmisc",
-  "kernlab"
-)
-
-for (package in packages) {
-  suppressMessages(library(package,character.only=T))
-}
 
 take_first<-function(x,n) {
   return (x[1:min(length(x),n)])
@@ -918,8 +877,8 @@ load.meta.choc <- function(file_name,counts.row.names) {
   make.global(meta)
   
   allnames = replace.col.names(names(meta),
-                               c("Subject_ID","SampleID_revised","Subject.s.Gender","Subject.s.YEAR.of.birth"),
-                               c("SubjectID","SampleID","Gender","YearOfBirth"))
+                               c("Subject_ID","SampleID_revised","Subject.s.Gender","Subject.s.YEAR.of.birth","Had.subject.fever.at.the.time.of.sample.collection."),
+                               c("SubjectID","SampleID","Gender","YearOfBirth","Fever.descr"))
   
   names(meta) = allnames
   
@@ -952,9 +911,14 @@ load.meta.choc <- function(file_name,counts.row.names) {
   
   meta$Antibiotic = meta$Antibiotic.treatment.within.the.last.1.months. != "No"
   meta$Antibiotic[str_blank(meta$Antibiotic.treatment.within.the.last.1.months.)] = NA
-  meta$Antibiotic[meta$Antibiotic.treatment.within.the.last.1.months.=="unknown"] = NA
+  meta$Antibiotic[tolower(meta$Antibiotic.treatment.within.the.last.1.months.)=="unknown"] = NA
   meta$Antibiotic = as.factor(meta$Antibiotic)
-  
+
+  meta$Fever = meta$Fever.descr != "No"
+  meta$Fever[str_blank(meta$Fever.descr)] = NA
+  meta$Fever[tolower(meta$Fever.descr)=="unknown"] = NA
+  meta$Fever = as.factor(meta$Fever)
+    
   ## ggplot needs Date object
   Specimen.Collection.Date = 
     as.Date(as.character(meta$Specimen.Collection.Date),format = "%m/%d/%Y")
@@ -1696,9 +1660,45 @@ task4 = within(
 }
 )
 
+task5 = within(
+  task,
+{
+  
+  descr = "Patients only, no aggregation. Checking antibiotic use."
+  
+  do.stability=F
+  do.tests=F
+  do.clade.meta=T
+  
+  do.genesel=F
+  do.glmnet=T
+  
+  taxa.meta.aggr = taxa.meta
+  
+  taxa.meta.aggr$data = subset(taxa.meta.aggr$data,Sample.type=="patient")
+  
+  stability.resp.attr = "Sample.type.1" 
+  stability.model.family = "multinomial"
+  
+  genesel.resp.attr = stability.resp.attr
+  
+  plot.group = list(
+    c("Antibiotic","visit")
+  )            
+  
+  clade.meta.x.vars=c("visit")
+  
+  heatmap.task = list(
+    attr.annot.names=c("visit","Fever","Antibiotic"),
+    attr.row.labels="SampleID"
+  )
+  
+}
+)
 
-return (list(task1,task2,task3,task4))
 
+#return (list(task1,task2,task3,task4,task5))
+return (list(task5))
 }
 
 tmp <- function() {
