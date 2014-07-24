@@ -180,7 +180,7 @@ task2 = within(
   
   glmer.task = list(
     formula.rhs = "Sample.type + (1|MatchedGroup/SubjectID)",
-    linfct=c("Sample.typecontrol = 0"),
+    linfct=c("Sample.typepatient = 0"),
     descr=sprintf(glmer.descr.tpl,"Sample.type")
   )
   
@@ -321,7 +321,7 @@ task5 = within(
 
 #return (list(task1,task2,task3,task4,task5))
 #return (list(task5))
-return (list())
+return (list(task2))
 }
 
 
@@ -369,6 +369,7 @@ proc.project(
   meta.file=paste(MGSAT_SRC,"example_metadata.tsv",sep="/"),
   summary.meta.method=summary.meta.example,
   task.generator.method=gen.tasks.example,
-  load.meta.method=load.meta.example
+  load.meta.method=load.meta.example,
+  taxa.levels=c(2)
 )
 

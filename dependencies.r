@@ -8,7 +8,7 @@ vanilla_packages = c(
   "stringr", 
   "ggplot2",
   "vegan", 
-  "BiodiversityR", 
+  #"BiodiversityR", 
   "LiblineaR", 
   ## glmnet is exported to snow cluster by c060, but it
   ## forgets to load it first, so we do it here
@@ -32,13 +32,15 @@ vanilla_packages = c(
   #for llist
   "Hmisc",
   "kernlab",
+  "lme4",
   "pander"
 )
 
 bio_packages = c(
   "multtest",
   "GeneSelector",
-  "RColorBrewer"
+  "RColorBrewer",
+  "Heatplus"
 )
 
 install_required_packages <- function() {
