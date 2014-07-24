@@ -319,9 +319,9 @@ task5 = within(
 )
 
 
-#return (list(task1,task2,task3,task4,task5))
+return (list(task1,task2,task3,task4,task5))
 #return (list(task5))
-return (list(task2))
+#return (list(task2))
 }
 
 
@@ -370,6 +370,8 @@ proc.project(
   summary.meta.method=summary.meta.example,
   task.generator.method=gen.tasks.example,
   load.meta.method=load.meta.example,
-  taxa.levels=c(2)
+  taxa.levels=c(2,6)
 )
+
+report$save()
 
