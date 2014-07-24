@@ -913,12 +913,12 @@ load.meta.choc <- function(file_name,counts.row.names) {
   meta$Antibiotic[str_blank(meta$Antibiotic.treatment.within.the.last.1.months.)] = NA
   meta$Antibiotic[tolower(meta$Antibiotic.treatment.within.the.last.1.months.)=="unknown"] = NA
   meta$Antibiotic = as.factor(meta$Antibiotic)
-
+  
   meta$Fever = meta$Fever.descr != "No"
   meta$Fever[str_blank(meta$Fever.descr)] = NA
   meta$Fever[tolower(meta$Fever.descr)=="unknown"] = NA
   meta$Fever = as.factor(meta$Fever)
-    
+  
   ## ggplot needs Date object
   Specimen.Collection.Date = 
     as.Date(as.character(meta$Specimen.Collection.Date),format = "%m/%d/%Y")
@@ -937,9 +937,9 @@ load.meta.choc <- function(file_name,counts.row.names) {
   meta$visit = as.numeric(laply(as.character(meta$SampleID),
                                 function(x) unlist(strsplit(x,".v",fixed=T))[2]))
   meta.visit.max = join(meta,
-                ddply(meta,"SubjectID",summarise,visit.max=max(visit)),
-                by="SubjectID",
-                match="first")
+                        ddply(meta,"SubjectID",summarise,visit.max=max(visit)),
+                        by="SubjectID",
+                        match="first")
   stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
               nrow(meta.visit.max)==nrow(meta))
   meta = meta.visit.max
@@ -956,9 +956,6 @@ load.meta.choc <- function(file_name,counts.row.names) {
 
 melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
   clade.names = get.clade.names(data,attr.names)
-  make.global(clade.names)
-  make.global(data)
-  make.global(id.vars)
   return (melt(data,id.vars=id.vars,measure.vars=clade.names,variable.name="clade",value.name=value.name))
 }
 
@@ -1048,7 +1045,7 @@ plot.abund.meta <- function(data,
   
   if(geom == "bar") {
     gp = gp + stat_summary(fun.y=mean, geom="bar", aes(width=0.5), 
-                            position=position_dodge(width=0.9))
+                           position=position_dodge(width=0.9))
     #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
     #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
   }
@@ -1061,7 +1058,7 @@ plot.abund.meta <- function(data,
   else {
     stop(paste("Unexpected parameter value: geom = ",geom))
   }
-
+  
   #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
   #coord_flip()+
   #geom_boxplot(color="black")+
@@ -1477,7 +1474,7 @@ gen.tasks.choc <- function(taxa.meta) {
   genesel.resp.attr = stability.resp.attr
   
   stability.transform.counts="ihs"
-
+  
   adonis.tasks = list()
   
   glmer.task = list()
@@ -1697,61 +1694,10 @@ task5 = within(
 )
 
 
-#return (list(task1,task2,task3,task4,task5))
-return (list(task5))
+return (list(task1,task2,task3,task4,task5))
+
 }
 
-tmp <- function() {
-  
-  if(F)
-    stability.resp.attr = "TherapyStatus"
-  else
-    
-    stability.model.family = "multinomial"
-  
-  
-  if(F)
-    stability.resp.attr = "TherapyStatus"
-  else
-    stability.resp.attr = "Sample.type.1"
-  stability.model.family = "multinomial"
-  if(do.adonis) {
-    if(F) {
-      adonis.tasks = list(
-        list(formula_rhs="TherapyStatus",
-             strata=NULL,
-             descr="Association with the therapy status unpaired"),
-        list(formula_rhs="TherapyStatus",
-             strata="FamilyID",
-             descr="Association with the therapy status paired")
-      )
-    }
-    else {
-    }
-  }
-  if(do.glmer) {
-    ##intercept varying among families and among individuals within families (nested random effects)
-    if(F) {
-      formula.rhs = "TherapyStatus + (1|FamilyID/SubjectID)"
-      linfct=c("TherapyStatusbefore.chemo = 0")
-    }
-    else {
-    }
-    ##if there are repeated samples per individual, add sample random effect for overdispersion
-    ##otherwise, overdispersion is taken care of by SubjectID random effect(?)
-    if(anyDuplicated(data$SubjectID)) {
-      formula.rhs = paste(formula.rhs,"+(1|SampleID)",sep="")
-    }
-    
-  }  
-  
-  glmer.task = list(
-    formula.rhs = formula.rsh,
-    linfct = linfct,
-    descr = glmer.descr
-  )
-  
-}
 
 proc.choc <- function() {
   #taxa.levels = c(2,3,4,5,6)
@@ -1860,23 +1806,231 @@ proc.choc <- function() {
         res.tests = NULL
         if (do.std.tests) {
           res.tests = tryCatchAndWarn(
-            test.counts.choc(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
-                             label=label,
-                             do.stability=do.stability,
-                             do.tests=do.tests,
-                             do.genesel=do.genesel,
-                             do.glmnet=do.glmnet,
-                             do.glmer=do.glmer,
-                             do.adonis=do.adonis,
-                             genesel.resp.attr = genesel.resp.attr,
-                             stability.resp.attr = stability.resp.attr,
-                             stability.model.family = stability.model.family,
-                             stability.transform.counts=stability.transform.counts,
-                             adonis.tasks = adonis.tasks,
-                             glmer.task = glmer.task,
-                             stability.steps = stability.steps,
-                             n.adonis.perm = n.adonis.perm
-                             
+            test.counts.project(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
+                                label=label,
+                                do.stability=do.stability,
+                                do.tests=do.tests,
+                                do.genesel=do.genesel,
+                                do.glmnet=do.glmnet,
+                                do.glmer=do.glmer,
+                                do.adonis=do.adonis,
+                                genesel.resp.attr = genesel.resp.attr,
+                                stability.resp.attr = stability.resp.attr,
+                                stability.model.family = stability.model.family,
+                                stability.transform.counts=stability.transform.counts,
+                                adonis.tasks = adonis.tasks,
+                                glmer.task = glmer.task,
+                                stability.steps = stability.steps,
+                                n.adonis.perm = n.adonis.perm
+                                
+            )
+          )
+        }
+        if( do.std.plots || do.heatmap ) {
+          report$add.header("Plots")
+        }
+        if (do.std.plots) {
+          
+          tryCatchAndWarn({
+            std.plots(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
+                      id.vars.list=plot.group,
+                      label=label,
+                      res.tests=res.tests,
+                      do.clade.meta=do.clade.meta,
+                      do.profile=do.profile,
+                      #clade.meta.x.vars=c("Specimen.Collection.Date","age")                  
+                      clade.meta.x.vars=clade.meta.x.vars
+            )
+          })
+        }
+        if (do.heatmap) {
+          tryCatchAndWarn({
+            heatmap.counts(taxa.meta.aggr$data,
+                           taxa.meta.aggr$attr.names,
+                           attr.annot.names=heatmap.task$attr.annot.names,
+                           attr.row.labels=heatmap.task$attr.row.labels,
+                           caption="Heatmap of abundance profile",
+                           stand.show="max",
+                           trans.show=sqrt
+            )
+          })
+        }
+      })
+      report$pop.section()
+    }
+    report$pop.section()
+    report$pop.section()
+  }
+  report$pop.section()
+}
+
+summary.meta.choc <- function(taxa.meta) {
+  
+  report$add.header("Summary of metadata variables")
+  
+  
+  xtabs.formulas = list("~Sample.type+TherapyStatus","~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
+  for(xtabs.formula in xtabs.formulas) {
+    fact.xtabs = xtabs(as.formula(xtabs.formula),data=taxa.meta$data,drop.unused.levels=T)
+    report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
+    report$add.printed(summary(fact.xtabs))
+  }
+  
+  with(taxa.meta$data,{
+    report$add.printed(summary(aov(age~Sample.type)),
+                       caption="ANOVA for age and sample type")
+    report$add(qplot(Sample.type,age,geom="violin"),
+               caption="Violin plot for age and sample type")
+  })
+  
+  with(taxa.meta$data,{
+    report$add.printed(cor.test(age,
+                                visit,
+                                method="spearman"),
+                       caption="Spearman RHO for age and visit")
+    
+  })
+  with(taxa.meta$data[taxa.meta$data$Sample.type=="patient",],{
+    report$add.printed(cor.test(age,
+                                visit,
+                                method="spearman"),
+                       caption="Spearman RHO for age and visit, patients only")
+    
+  })
+  
+  #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
+  #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
+  report$add(ggplot(taxa.meta$data,aes(x=visit,y=age,color=Sample.type))+
+               geom_point()+
+               stat_smooth(method="loess", se = T,degree=1,size=1),
+             caption="Plot for age and visit with Loess trend line")
+  
+}
+
+
+## Default method for loading metadata file
+## This will work OK if your file follows certain conventions:
+## 1. Tab delimited with a header row
+## 2. All strings can be treated as factors
+## 3. All fields that look like numbers are OK to treat like numbers.
+##    Specifically, make sure that all ID fields (SampleID, SubjectID etc)
+##    start with a letter, not a number.
+## 4. There has to be a unique key field SampleID, that matches SampleID in abundance tables
+##
+## If your file cannot follow the conventions above, then write your own method and pass it to 
+## read.data.project(). The method should create SampleID factor key field and also set row.names to
+## the values of that field.
+
+load.meta.default <- function(file_name,counts.row.names) {
+  meta = read.delim(file_name,header=T,stringsAsFactors=T)
+  meta$SampleID = as.factor(meta$SampleID)
+  row.names(meta) = meta$SampleID
+  return (meta)
+}
+
+
+read.data.project <- function(taxa.summary.file,meta.file,load.meta.method,taxa.level=3) {
+  moth.taxa <- read.mothur.taxa.summary(taxa.summary.file)
+  taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
+  taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0.001,min_row_sum=50,other_cnt="other")
+  meta = load.meta.method(meta.file)
+  return (merge.counts.with.meta(taxa.lev,meta))
+}
+
+proc.project <- function(
+  taxa.summary.file,
+  meta.file,
+  summary.meta.method,
+  task.generator.method,
+  load.meta.method=load.meta.default,
+  taxa.levels = c(2,3,4,5,6),
+  do.summary.meta = T
+) {
+  
+  report$add.descr("Set of analysis routines is applied
+                   in nested loops over combinations of defined subsets of samples (if any) and 
+                   taxonomic levels. For each output, look for the nearest
+                   headers to figure out its place in the report hierarchy.
+                   If viewing HTML formatted report, you can click on the
+                   images to view the hi-resolution picture.")
+  
+  report.section = report$get.section()
+  
+  if(do.summary.meta) {
+    taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
+                                 meta.file=meta.file,
+                                 load.meta.method=load.meta.method,
+                                 taxa.level=2)
+    make.global(taxa.meta)
+    summary.meta.method(taxa.meta)    
+  }
+  
+  report$add.header("Iterating over taxonomic levels")
+  report$push.section(report.section)
+  
+  for (taxa.level in taxa.levels) {
+
+    taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
+                                  meta.file=meta.file,
+                                  load.meta.method=load.meta.method,
+                                  taxa.level=taxa.level)
+    
+    label = paste("16s","l",taxa.level,sep=".",collapse=".")
+    report$add.header(paste("Taxonomic level:",taxa.level))
+    report$push.section(report.section)
+    
+    make.global(taxa.meta)
+    #taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.type.1 != "sibling",]
+    
+    report$add.p(paste("Number of samples:",nrow(taxa.meta$data)))
+    
+    report$add.header("Iterating over subsets of data")
+    report$push.section(report.section)
+    
+    tasks = task.generator.method(taxa.meta)
+    
+    for (task in tasks) {
+      
+      report$add.header(paste("Subset:",task$descr))
+      report$push.section(report.section)
+      
+      with(task,{
+        
+        report$add.p(paste("After aggregating/subsetting samples:",nrow(taxa.meta.aggr$data)))
+        
+        taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
+                                           col_ignore=taxa.meta.aggr$attr.names,
+                                           min_max=10)
+        #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
+        #                              min_median=0.002,
+        #                              min_max_frac=0.1,min_max=10,
+        #                              min_row_sum=500,other_cnt="other")
+        
+        
+        report$add.p(paste("After count filtering,",
+                           (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),"clades left."))
+        
+        
+        res.tests = NULL
+        if (do.std.tests) {
+          res.tests = tryCatchAndWarn(
+            test.counts.project(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
+                                label=label,
+                                do.stability=do.stability,
+                                do.tests=do.tests,
+                                do.genesel=do.genesel,
+                                do.glmnet=do.glmnet,
+                                do.glmer=do.glmer,
+                                do.adonis=do.adonis,
+                                genesel.resp.attr = genesel.resp.attr,
+                                stability.resp.attr = stability.resp.attr,
+                                stability.model.family = stability.model.family,
+                                stability.transform.counts=stability.transform.counts,
+                                adonis.tasks = adonis.tasks,
+                                glmer.task = glmer.task,
+                                stability.steps = stability.steps,
+                                n.adonis.perm = n.adonis.perm
+                                
             )
           )
         }
@@ -2707,21 +2861,21 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
 
 
 
-test.counts.choc <- function(data,
-                             attr.names,
-                             label,
-                             stability.resp.attr=NULL,
-                             stability.model.family=NULL,
-                             genesel.resp.attr=NULL,
-                             adonis.tasks=NULL,
-                             glmer.task=NULL,
-                             alpha=0.05,
-                             do.tests=T,do.stability=T,
-                             do.genesel=T,do.glmnet=T,
-                             do.glmer=T,do.adonis=T,
-                             stability.transform.counts="ihs",
-                             stability.steps = 600,
-                             n.adonis.perm = 4000
+test.counts.project <- function(data,
+                                attr.names,
+                                label,
+                                stability.resp.attr=NULL,
+                                stability.model.family=NULL,
+                                genesel.resp.attr=NULL,
+                                adonis.tasks=NULL,
+                                glmer.task=NULL,
+                                alpha=0.05,
+                                do.tests=T,do.stability=T,
+                                do.genesel=T,do.glmnet=T,
+                                do.glmer=T,do.adonis=T,
+                                stability.transform.counts="ihs",
+                                stability.steps = 600,
+                                n.adonis.perm = 4000
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
@@ -2771,7 +2925,7 @@ test.counts.choc <- function(data,
                        Monte Carlo procedure. The top clades of the consensus ranking
                        are returned, along with the p-values computed on the full
                        original dataset (with multiple testing correction).")
-
+      
       report$add.printed(summary(m_a$attr[,genesel.resp.attr]),
                          caption="Summary of response variable")
       

@@ -126,8 +126,32 @@ pandoc.escape.special <- function(x) {
 }
 
 PandocAT <- setRefClass('PandocAT', contains = "Pandoc", 
-                        fields = list('sections' = 'list')
+                        fields = list(
+                          'sections' = 'list',
+                          'incremental.save' = 'logical',
+                          'out.file.md' = 'character',
+                          'out.formats' = 'character',
+                          'portable.html' = 'logical'
+                          )
                         )
+
+PandocAT$methods(initialize = function(
+  author = "Anonymous",
+  title = "Analysis",
+  out.file.md = "report.md",
+  out.formats = c("html"),
+  incremental.save = F,
+  portable.html=T,
+  ...
+  ) {
+  #.self$author=author
+  #.self$title=title
+  .self$out.file.md=out.file.md
+  .self$out.formats=out.formats
+  .self$incremental.save=incremental.save
+  .self$portable.html=portable.html
+  callSuper(author=author,title=title,...)
+})
 
 ## private service method - should be called whenever an element is
 ## appended to the .self$body
@@ -298,6 +322,11 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
     #w/o argument it clones
     report.section = push.report.section()
   }
+  
+  if(.self$incremental.save) {
+    .self$save()
+  }
+  
   return (report.section)
   
 })
@@ -321,11 +350,30 @@ PandocAT$methods(write.table.file = function(data,name.base,descr=NULL,row.names
   }
 })
 
-PandocAT$methods(save = function(f) {
+PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.loc) {
   
-  if (missing(f))
-    f <- tempfile('pander-', getwd())
-  fp    <- sprintf('%s.md', f)
+  if (missing(out.file.md.loc)) {
+    out.file.md.loc = .self$out.file.md
+    if(missing(out.file.md.loc)) {
+      out.file.md.loc = "report.md"
+    }
+  }
+  
+  if (missing(out.formats.loc)) {
+    out.formats.loc = .self$out.formats
+    if(missing(out.formats.loc)) {
+      out.formats.loc = c("html")
+    }
+  }
+
+  if (missing(portable.html.loc)) {
+    portable.html.loc = .self$portable.html
+    if(missing(portable.html.loc)) {
+      portable.html.loc = T
+    }
+  }
+  
+  fp    <- out.file.md.loc
   timer <- proc.time()
   
   ## create pandoc file
@@ -336,6 +384,10 @@ PandocAT$methods(save = function(f) {
     unlist(lapply(.self$sections,function(x) paste(x,sep="",collapse="."))),
     method="shell")
   lapply(.self$body[sect_ord], function(x) cat(paste(pandoc.return(x$result), collapse = '\n'), file = fp, append = TRUE))
+  
+  for(out.format in out.formats.loc) {
+    Pandoc.convert(fp,format=out.format,open=F,footer=F,portable.html=portable.html.loc)
+  }
     
 })
 
