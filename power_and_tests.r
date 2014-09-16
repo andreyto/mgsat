@@ -352,7 +352,8 @@ wilcox.test.multi.fast <- function(tr.mat,group) {
 #when calling 'boot'
 booted.wilcox.test.multi.fast <- function(n,mat,group,indices,test.method) {
   library(GeneSelector)
-  ind.n = sample(indices, n, replace = FALSE, prob = NULL)
+  #replace=TRUE to select more samples than in original dataset
+  ind.n = sample(indices, n, replace = TRUE, prob = NULL)
   d <- t(mat)[,ind.n] # allows boot to select n samples
   g <- group[ind.n]
   #print(summary(g))
@@ -788,6 +789,37 @@ read.mgrast.summary<-function(file_name,file_name.id.map=NULL) {
   return (merge(data,id.map,by.x="metagenome",by.y="row.names"))
 }
 
+read.mothur.otu.shared <- function(file_name) {
+  data = read.delim(file_name, header=T,stringsAsFactors=T)
+  #where this X == NA column comes from, I have no idea. I do not see
+  #it in the text file. Maybe R bug?
+  data$X = NULL
+  
+  data$label = NULL
+  data$numOtus = NULL
+  row.names(data) = data$Group
+  data$Group = NULL
+  return (data)
+}
+
+read.mothur.cons.taxonomy <- function(file_name) {
+  data = read.delim(file_name, header=T,stringsAsFactors=T)
+  row.names(data) = data$OTU
+  data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),function(x) x[[pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]])
+  return (data)
+}
+
+read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file) {
+  otu.df = read.mothur.otu.shared(otu.shared.file)
+  make.global(otu.df)
+  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file)
+  make.global(taxa.df)
+  stopifnot(all(names(otu.df) == taxa.df$OTU))
+  names(otu.df) = paste(taxa.df$Taxa,taxa.df$OTU,sep=".")
+  ## Order columns by taxa name
+  otu.df = otu.df[,order(names(otu.df))]
+  return (otu.df)
+}
 
 read.mothur.taxa.summary <- function(file_name) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
@@ -3703,7 +3735,7 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
 }
 
 
-read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
+read.t1d <- function(taxa.level="3",batch=NULL,aggr_var_meta = NULL) {
   #moth.taxa <- read.mothur.taxa.summary("X:/sszpakow/BATCH_03_16S/ab1ec.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary.txt")
   #moth.taxa <- read.mothur.taxa.summary("43aa6.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary.txt")
   ##Sebastian's run:
@@ -3715,12 +3747,19 @@ read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
   #taxa.file = "147936b4aacf1a450a0dfe2d97c3dd5a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
   ##Verification MiSeq run
   taxa.file = "2014-05_final_53ea024a8bdf736a4dc90f4ae6d02d6a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-  moth.taxa <- read.mothur.taxa.summary(taxa.file)
-  ##Vishal's run
-  #moth.taxa <- read.mothur.taxa.summary("vishal_all_e61bb.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
-  #moth.taxa <- read.mothur.taxa.summary("vishal_aa_isdef_3b4ea.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
-  taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
-  make.global(taxa.lev.all)
+  otu.shared.file="otu/6ce0d3fda8e528db61a72ac69cf5592c.files_x1.sorted.0.03.shared"
+  cons.taxonomy.file="otu/8478e43c54e283847f7de06e9e14267f.files_x1.sorted.0.03.cons.taxonomy"  
+  if (taxa.level == "otu") {
+    taxa.lev.all = read.mothur.otu.with.taxa(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
+  }
+  else {
+    moth.taxa <- read.mothur.taxa.summary(taxa.file)
+    ##Vishal's run
+    #moth.taxa <- read.mothur.taxa.summary("vishal_all_e61bb.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
+    #moth.taxa <- read.mothur.taxa.summary("vishal_aa_isdef_3b4ea.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
+    taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
+    make.global(taxa.lev.all)
+  }
   #taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
   taxa.lev = taxa.lev.all
   make.global(taxa.lev)
@@ -3728,7 +3767,7 @@ read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
   make.global(meta)
   #meta = load.meta.t1d("annotation20130819.csv")
   #meta = load.meta.t1d("annotation20130819.csv","all_batches_cleaned_yap_input.csv")
-  report$add.p(sprintf("Loaded %i records from taxonomic assignment file %s for taxonomic level %i",
+  report$add.p(sprintf("Loaded %i records from taxonomic assignment file %s for taxonomic level %s",
                        nrow(taxa.lev),taxa.file,taxa.level))
   taxa.meta = merge.counts.with.meta(taxa.lev,meta)
   report$add.p(sprintf("After merging with metadata, %i records left",
@@ -3736,23 +3775,31 @@ read.t1d <- function(taxa.level=3,batch=NULL,aggr_var_meta = NULL) {
   return(taxa.meta)
 }
 
-plot.features.mds <- function(m_a,species.sel,sample.group) {
+plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.samples=T,show.species=T) {
   ##https://stat.ethz.ch/pipermail/r-help/2008-April/159351.html
   ##http://cran.r-project.org/web/packages/vegan/vignettes/intro-vegan.pdf
   m = m_a$count
   ##default distance is bray
   m = decostand(m,method="range",MARGIN=2)
   sol = metaMDS(m,autotransform = F,trymax=40)
+  if(show.samples) {
   site.sc <- scores(sol, display = "sites")
-  species.sc <- scores(sol, display = "species")
   plot(site.sc)
+  unique_sample.group = unique(sample.group)
   points(sol,display="sites",col=sample.group)
-  points(sol,display="species",pch="x",select=species.sel)
-  text(sol,display="species", cex=0.7, col="blue",select=species.sel)
+  if(!is.null(unique_sample.group)) {
+  legend(-0.5,1,unique_sample.group,col=1:length(sample.group),pch=1)  
+  }
+  }
+  if(show.species) {
+    species.sc <- scores(sol, display = "species")
+    points(sol,display="species",pch="x",select=species.sel)
+    text(sol,display="species", cex=0.7, col="blue",select=species.sel)
+  }
   #points(site.sc,col=m_a$attr$T1D)
   #points(species.sc)
   #points(species.sc["Streptococcus_0.1.11.1.2.6.2",1:2,drop=F],pch="+")
-  legend(-0.5,1,unique(sample.group),col=1:length(sample.group),pch=1)
+
 }
 
 cut.top.predictions<-function(scores,labels,sample.ids,n.cut,filter.by.label=F) {
@@ -4308,7 +4355,8 @@ pair.counts <- function(m_a,pair.attr) {
 }
 
 proc.t1d <- function() {
-  taxa.levels = c(2,3,4,5,6)
+  taxa.levels = c("otu")
+  #taxa.levels = c(2,3,4,5,6)
   #taxa.levels = c(6)
   #batches = list(c(1,2,3),c(1),c(2),c(3),c(2,3),c(1,3))
   batches = list(c(4))
@@ -4744,9 +4792,9 @@ proc.mr_oralc <- function() {
   }
 }
 
-read.pieper.t1d <- function() {
+read.pieper.t1d <- function(file.name="aim3/September 28 analysis_T1D.txt") {
   
-  file_name = "aim3/September 28 analysis_T1D.txt"
+  file_name = file.name
   #data =read.csv(file_name, as.is=TRUE, header=TRUE,stringsAsFactors=T)
   data =read.delim(file_name, header=F,sep="\t",stringsAsFactors=FALSE)
   #row.names(meta) = meta$ID
@@ -4796,20 +4844,28 @@ read.pieper.t1d <- function() {
   return (list(data=data,attr.names=c("id.person","group")))
 }
 
-power.pieper.t1d <- function() {
-  alpha = 0.05
-  use.fdrtool = T
-  taxa.meta = read.pieper.t1d()
+power.pieper.t1d <- function(
+  n = 50,
+  alpha.sim = 0.05,
+  alpha.orig = 0.05,
+  min.median = 100,
+  use.fdrtool = T,
+  data.file="aim3/September 28 analysis_T1D.txt",
+  R = 4000
+  ) {
+  taxa.meta = read.pieper.t1d(file.name=data.file)
   make.global(taxa.meta)
   taxa.meta.attr.names = taxa.meta$attr.names    
+  dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
   taxa.meta.data.raw = count_filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
-                                    min_max_frac=0,min_max=0,min_median=100,min_row_sum=0,other_cnt=NULL)
+                                    min_max_frac=0,min_max=0,min_median=min.median,min_row_sum=0,other_cnt=NULL)
   taxa.meta.data = all_normalize(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
   make.global(taxa.meta.data)
   clade.names = get.clade.names(taxa.meta.data,taxa.meta.attr.names)
   #print(clade.names)
   #pvals = wilcox.test.multi(data=taxa.meta.data,resp.vars=clade.names,group.var="group",subset=NULL)
   m = count_matr_from_df(taxa.meta.data,taxa.meta.attr.names)
+  dim.data.filt = dim(m)
   #mtp.res = MTP(X=t(m),Y=taxa.meta.data$group,get.adjp=F)
   tr.m = t(m)
   group = taxa.meta.data$group
@@ -4825,7 +4881,7 @@ power.pieper.t1d <- function() {
     pvals.adj = p.adjust(pvals,method="BH")
   }
   make.global(pvals.adj)
-  ind.sig = which(pvals.adj<=alpha)
+  ind.sig = which(pvals.adj<=alpha.orig)
   group.mean = ddply(cbind(as.data.frame(m),group),.(group),colwise(mean))
   group.sd = ddply(cbind(as.data.frame(m),group),.(group),colwise(sd))
   make.global(ind.sig)
@@ -4840,11 +4896,13 @@ power.pieper.t1d <- function() {
   #print(cohens.d)
   pvals.boot = boot(data=m,
                     statistic=booted.wilcox.test.multi.fast,
-                    R=4000,
-                    n=50,
+                    R=R,
+                    n=n,
                     strata=group,
                     group=group,
                     test.method=wilcox.test.multi.fast)$t
+  ## some numerical instability creates pvals that are slightly larger than 1
+  pvals.boot[pvals.boot>1] = 1  
   make.global(pvals.boot)
   if(use.fdrtool) {
     pvals.boot.adj = aaply(pvals.boot,1,function(x) fdrtool(x,statistic="pvalue",plot=F,verbose=F)$qval)
@@ -4853,7 +4911,7 @@ power.pieper.t1d <- function() {
     pvals.boot.adj = aaply(pvals.boot,1,p.adjust,method="BH")
   }
   make.global(pvals.boot.adj)
-  power.sig = colMeans(pvals.boot.adj[,ind.sig] <= alpha)
+  power.sig = colMeans(pvals.boot.adj[,ind.sig] <= alpha.sim)
   make.global(power.sig)
   #print(power.sig)
   #print(mean(power.sig))
@@ -4863,7 +4921,11 @@ power.pieper.t1d <- function() {
               group.sd.sig=group.sd.sig,group.n=group.n,
               power.sig=power.sig,
               mean.power.sig=mean(power.sig),
-              pvals.adj.sig=pvals.adj[ind.sig]))
+              pvals.adj.sig=pvals.adj[ind.sig],
+              dim.data.orig=dim.data.orig,
+              dim.data.filt=dim.data.filt,
+              alpha.orig=alpha.orig,
+              alpha.sim=alpha.sim))
 }
 
 pediatric.cancer.2013.aim2 <- function() {
@@ -4896,13 +4958,28 @@ pediatric.cancer.2013.aim2 <- function() {
 }
 
 power.pediatric.cancer.2013<-function() {
-  #proc.choc()
-  power.res = power.pieper.t1d()
+  power.res = power.pieper.t1d(
+    n = 50,
+    data.file="aim3/September 28 analysis_T1D.txt"
+    )
   print("Power results Aim 3:")
   print(power.res)
   mom = pediatric.cancer.2013.aim2()
   print("Power results Aim 2:")
   print(paste("Cohen's d Lactoferrin:",mom$cohens.d))
   print(paste("Mean Cohen's d for significant proteins from Aim 3:",power.res$mean.cohens.d))
+}
+
+power.pieper.prostate.cancer.2014<-function() {
+  power.res = power.pieper.t1d(
+    n = 300,
+    data.file = "data/T1D_proteome/September 28 analysis_T1D.txt",
+    min.median = 10,
+    alpha.sim = 0.017,
+    alpha.orig = 0.1,
+    R = 40
+    )
+  print("Power results:")
+  print(power.res)
 }
 
