@@ -1,6 +1,6 @@
 ## number of cores to use on multicore machines
-options(mc.cores=2)
-options(boot.ncpus=2)
+options(mc.cores=4)
+options(boot.ncpus=4)
 ## parallel backend
 options(boot.parallel="snow")
 

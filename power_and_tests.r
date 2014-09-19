@@ -4792,56 +4792,41 @@ proc.mr_oralc <- function() {
   }
 }
 
+
+count.summary <- function(count,fun,group) {
+  group = as.data.frame(group)
+  group.summ = ddply(cbind(as.data.frame(count),group),names(group),colwise(fun))  
+}
+
+group.mean.ratio <- function(count,group) {
+  group.mean = count.summary(count,mean,group)
+  stopifnot(dim(group.mean)[1] == 2)
+  x = (group.mean[1,-1] / group.mean[2,-1])
+  row.names(x) = paste(group.mean[,1],collapse=".")
+  return (x)
+}
+
 read.pieper.t1d <- function(file.name="aim3/September 28 analysis_T1D.txt") {
   
   file_name = file.name
   #data =read.csv(file_name, as.is=TRUE, header=TRUE,stringsAsFactors=T)
-  data =read.delim(file_name, header=F,sep="\t",stringsAsFactors=FALSE)
+  data =read.delim(file_name, header=T,sep="\t",stringsAsFactors=FALSE)
   #row.names(meta) = meta$ID
-  group = c(t(data[1,][-(1:4)]))
-  #rownames(group) = NULL
-  make.global(group)
-  data = t(data[-1,-c(1,(3:4))])
-  col_names = data[1,]
-  #col_names = sub("UniRef.*\\_([0-9A-Z]{4,})","\\1",col_names)
-  data = data[,!duplicated(col_names)]
-  colnames(data) = data[1,]
-  rownames(data) = data[,1]
-  colnames(data)[1] = "ID"
-  data = as.data.frame(data[-1,])
-  data$ID = as.factor(data$ID)
-  data[,-1] = as.numeric(as.matrix(data[,-1]))
-  data$group = group
-  #data = cbind(data,group)
-  data = data[data$group != 0,]
-  data$group = as.factor(data$group)  
-  data$id.person = as.factor(sub(".* ([A-Z]{5,10}).*","\\1",data$ID))
-  #data = ddply(data,.(id.person),colwise(function(y) {if(is.numeric(y)) sum(y) else y[1]} ))
-  data$ID = NULL
-  if(F) {
-    id.group = data[,c("id.person","group")]
-    #id.group = id.group[!duplicated(id.group$id.person),]
-    #rownames(id.group)=id.group$id.person
-    #id.group$id.person = NULL
-    #id.group = id.group[order(rownames(id.group)),]
-    data$group = NULL
-    data = ddply(data,.(id.person),function(x) {id.person=x$id.person[1]
-                                                x$id.person=NULL
-                                                y = colSums(x)
-                                                c(id.person,y)})
-    rownames(data) = data[,1]
-    make.global(data)
-    make.global(id.group)
-    #data = data[order(rownames(data)),]
-    #stopifnot(all(rownames(id.group)==rownames(data)))
-    #data$group = id.group$group
-    nrow.before = nrow(data)
-    data = join(data,id.group,by=c("id.person"),type="left",match="first")
-    stopifnot(!any(aaply(c(data$group),1,is.null)))
-    stopifnot(nrow(data)==nrow.before)
-  }
-  data = data[!duplicated(data$id.person),]
-  return (list(data=data,attr.names=c("id.person","group")))
+  id.ind = 13
+  feat.attr.ind.last = 15
+  feat.attr = data[,c(1:feat.attr.ind.last)]
+  row.names(feat.attr) = data[,id.ind]
+  row.names(data) = data[,id.ind]
+  data = data[,-c(1:feat.attr.ind.last)]
+  data = t(data)
+  meta = as.data.frame(t(as.data.frame(strsplit(row.names(data),"[._]"))))
+  row.names(meta) = row.names(data)
+  names(meta) = c("group","FamilyID","TechReplRelID")
+  meta$SubjectID = paste(meta$group,meta$FamilyID,sep=".")
+  meta$SampleID = row.names(meta)
+  attr.names = names(meta)
+  meta.data = join_count_df(list(count=data,attr=meta))
+  return(list(data=meta.data,attr.names=attr.names,feat.attr=feat.attr))
 }
 
 power.pieper.t1d <- function(
@@ -4854,11 +4839,18 @@ power.pieper.t1d <- function(
   R = 4000
   ) {
   taxa.meta = read.pieper.t1d(file.name=data.file)
+  aggr_var = "SubjectID"
+  taxa.meta = aggregate_by_meta_data(taxa.meta$data,
+                                          aggr_var,
+                                          taxa.meta$attr.names)
+  
   make.global(taxa.meta)
   taxa.meta.attr.names = taxa.meta$attr.names    
   dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
   taxa.meta.data.raw = count_filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
                                     min_max_frac=0,min_max=0,min_median=min.median,min_row_sum=0,other_cnt=NULL)
+  print(dim(taxa.meta.data.raw))
+
   taxa.meta.data = all_normalize(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
   make.global(taxa.meta.data)
   clade.names = get.clade.names(taxa.meta.data,taxa.meta.attr.names)
@@ -4872,6 +4864,8 @@ power.pieper.t1d <- function(
   make.global(m)
   make.global(group)
   m.raw = count_matr_from_df(taxa.meta.data.raw,taxa.meta.attr.names)
+  eff.raw = group.mean.ratio(m.raw,group)
+  
   pvals = wilcox.test.multi.fast(tr.m,group)  
   make.global(pvals)
   if(use.fdrtool) {
@@ -4881,15 +4875,18 @@ power.pieper.t1d <- function(
     pvals.adj = p.adjust(pvals,method="BH")
   }
   make.global(pvals.adj)
-  ind.sig = which(pvals.adj<=alpha.orig)
-  group.mean = ddply(cbind(as.data.frame(m),group),.(group),colwise(mean))
-  group.sd = ddply(cbind(as.data.frame(m),group),.(group),colwise(sd))
-  make.global(ind.sig)
+  #ind.sig = which(pvals.adj<=alpha.orig)
+  ind.sig = which(eff.raw <= 0.66 | eff.raw >= 1.5)
+  print(length(ind.sig))
+  #return(0)  
+  group.mean = count_matr_from_df(count.summary(m,mean,group),c("group"))
+  group.sd = count_matr_from_df(count.summary(m,sd,group),c("group"))
   group.mean.sig = group.mean[,ind.sig]
   #print(group.mean.sig)
   group.sd.sig = group.sd[,ind.sig]
   #print(group.sd.sig)
-  group.n = c(table(group))[rownames(group.mean.sig)]
+  #group.n = c(table(group))[rownames(group.mean.sig)]
+  group.n = count(group)
   cohens.d = foreach(i.var=seq(ncol(group.mean.sig)),.combine=c) %do% {
     cohens.d.from.mom(mean.gr=group.mean.sig[,i.var],var.gr=group.sd.sig[,i.var]**2,n.gr=group.n)
   }
@@ -4912,13 +4909,15 @@ power.pieper.t1d <- function(
   }
   make.global(pvals.boot.adj)
   power.sig = colMeans(pvals.boot.adj[,ind.sig] <= alpha.sim)
+  names(power.sig) = names(pvals.adj[ind.sig])
   make.global(power.sig)
   #print(power.sig)
   #print(mean(power.sig))
   return(list(cohens.d=cohens.d,
               mean.cohens.d=mean(cohens.d),
               group.mean.sig=group.mean.sig,
-              group.sd.sig=group.sd.sig,group.n=group.n,
+              group.sd.sig=group.sd.sig,
+              group.n=group.n,
               power.sig=power.sig,
               mean.power.sig=mean(power.sig),
               pvals.adj.sig=pvals.adj[ind.sig],
@@ -4973,11 +4972,12 @@ power.pediatric.cancer.2013<-function() {
 power.pieper.prostate.cancer.2014<-function() {
   power.res = power.pieper.t1d(
     n = 300,
-    data.file = "data/T1D_proteome/September 28 analysis_T1D.txt",
-    min.median = 10,
-    alpha.sim = 0.017,
-    alpha.orig = 0.1,
-    R = 40
+    ## this is under the proposal directory
+    data.file = "data/T1D_proteime/Original Collapesed APEX (All information).AT.tsv",
+    min.median = 300,
+    alpha.sim = 0.05,
+    alpha.orig = 0.05,
+    R = 4000
     )
   print("Power results:")
   print(power.res)
