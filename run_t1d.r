@@ -39,9 +39,9 @@ load_required_packages()
 
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
-#set_trace_options()
+set_trace_options(try.debug=F)
 
-setwd("~/work/T1D/BATCH_03_16S")
+setwd("~/work/T1D/2014-10-09")
 
 report <- PandocAT$new("atovtchi@jcvi.org","T1D 16S Analysis MiSeq V1-V3")
 
@@ -50,7 +50,7 @@ proc.t1d()
 
 #print(report$body)
 
-report$save("report")
+report$save("report.md")
 Pandoc.convert("report.md",format="html",open=F)
 Pandoc.convert("report.md",format="docx",open=F)
 #Pandoc.convert("report.md",format="pdf",open=F)

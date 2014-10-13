@@ -3372,7 +3372,6 @@ heatmap.t1d <- function(meta.data,attr.names,caption="Heatmap") {
   meta.data.ini = meta.data
   for(i in 1:6) {
     meta.data = meta.data.ini
-    label = label.ini
     if(i>1) {
       meta.data$TimestampMonth = sample(meta.data$TimestampMonth)
       caption = paste(caption.ini,"randomization ",i,"of TimestampMonth")
@@ -3529,7 +3528,7 @@ load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   
   ## Now do the same as above, but ignore failed samples when looking
   ## for bio repeats
-  meta_qa = meta[meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS",]
+  meta_qa = meta[meta$Sample.QA=="PASS",]
   
   isBioRepeatFirst = duplicated(meta_qa$SubjectID) & ! duplicated(meta_qa$BioSampleID)
   
@@ -3537,13 +3536,13 @@ load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   
   ## mark all failed samples or bio repeats following at least one good sample
   meta$isBioRepeatOrFailed = (meta$BioSampleID %in% BioSampleIDRep) | 
-    ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")
+    ! (meta$Sample.QA=="PASS")
   
   SampleIDRep = meta_qa$SampleID[duplicated(meta_qa$SubjectID)]
   
   ## mark all failed samples or repeats following at least one good sample
   meta$isRepeatOrFailed = (meta$SampleID %in% SampleIDRep) | 
-    ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")
+    ! (meta$Sample.QA=="PASS")
   
   
   ##
@@ -3558,7 +3557,7 @@ load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   stopifnot(meta$SampleID==meta_keys_1$SampleID)
   stopifnot(is.na(meta_keys_1$Timestamp.first) |
               (meta_keys_1$Timestamp >= meta_keys_1$Timestamp.first) |
-              ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")) #should not see otherwise
+              ! (meta$Sample.QA=="PASS")) #should not see otherwise
   meta_keys_1$MonthsAfterFirstBioSample = as.numeric(meta_keys_1$Timestamp - meta_keys_1$Timestamp.first,units="days")/30
   ## NA will be at records that did not pass QA. Set to 0.
   meta_keys_1$MonthsAfterFirstBioSample[is.na(meta_keys_1$MonthsAfterFirstBioSample)] = 0
@@ -3569,7 +3568,7 @@ load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   ##
   meta_keys_1$isAnnualRepeatOrFailed = meta_keys_1$isBioRepeatOrFailed & 
     ! (
-      (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS") & 
+      (meta$Sample.QA=="PASS") & 
         meta_keys_1$MonthsAfterFirstBioSample < 9
     )
   make.global(meta_keys_1)
@@ -3598,12 +3597,14 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
   names(meta) =
     replace.col.names(
       names(meta),
-      c("Aliquot_id","Sample_id","Family.ID..blinded.", "Subject.ID..blinded.", 
-        "Subject.s.Gender", "Autoantibody.Status", "T1D.status",
-        "Subject.s.YEAR.of.birth"),
+      c("YAP_Aliq_ID","Sample.Name","family.ID", "Subject.ID", 
+        "gender", "autoantibody.status", "T1D.status",
+        "year.of.birth","date.collected","date.of.diagnosis",
+        "timestamp","sample.type"),
       c("AliquotID","SampleID",      "FamilyID",            "SubjectID",            
         "gender",           "AA",                  "T1D",
-        "YearOfBirth")
+        "YearOfBirth","Specimen.Collection.Date","Date.of.Diagnosis",
+        "Timestamp","Specimen.Type")
     )
   
   meta = meta[!duplicated(meta$SampleID),]
@@ -3671,7 +3672,7 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
   
   ## Now do the same as above, but ignore failed samples when looking
   ## for bio repeats
-  meta_qa = meta[meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS",]
+  meta_qa = meta[meta$Sample.QA=="PASS",]
   
   isBioRepeatFirst = duplicated(meta_qa$SubjectID) & ! duplicated(meta_qa$BioSampleID)
   
@@ -3679,13 +3680,13 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
   
   ## mark all failed samples or bio repeats following at least one good sample
   meta$isBioRepeatOrFailed = (meta$BioSampleID %in% BioSampleIDRep) | 
-    ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")
+    ! (meta$Sample.QA=="PASS")
   
   SampleIDRep = meta_qa$SampleID[duplicated(meta_qa$SubjectID)]
   
   ## mark all failed samples or repeats following at least one good sample
   meta$isRepeatOrFailed = (meta$SampleID %in% SampleIDRep) | 
-    ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")
+    ! (meta$Sample.QA=="PASS")
   
   ##
   ## This section builds a difference in months between next samples and first sample for every subject
@@ -3699,7 +3700,7 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
   stopifnot(meta$SampleID==meta_keys_1$SampleID)
   stopifnot(is.na(meta_keys_1$Timestamp.first) |
               (meta_keys_1$Timestamp >= meta_keys_1$Timestamp.first) |
-              ! (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS")) #should not see otherwise
+              ! (meta$Sample.QA=="PASS")) #should not see otherwise
   meta_keys_1$MonthsAfterFirstBioSample = as.numeric(meta_keys_1$Timestamp - meta_keys_1$Timestamp.first,units="days")/30
   ## NA will be at records that did not pass QA. Set to 0.
   meta_keys_1$MonthsAfterFirstBioSample[is.na(meta_keys_1$MonthsAfterFirstBioSample)] = 0
@@ -3710,7 +3711,7 @@ load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
   ##
   meta_keys_1$isAnnualRepeatOrFailed = meta_keys_1$isBioRepeatOrFailed & 
     ! (
-      (meta$Sample.QA=="PASS" & meta$Subject.QA == "PASS") & 
+      (meta$Sample.QA=="PASS") & 
         meta_keys_1$MonthsAfterFirstBioSample < 9
     )
   make.global(meta_keys_1)
@@ -3746,9 +3747,15 @@ read.t1d <- function(taxa.level="3",batch=NULL,aggr_var_meta = NULL) {
   ##1st MiSeq run
   #taxa.file = "147936b4aacf1a450a0dfe2d97c3dd5a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
   ##Verification MiSeq run
-  taxa.file = "2014-05_final_53ea024a8bdf736a4dc90f4ae6d02d6a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-  otu.shared.file="otu/6ce0d3fda8e528db61a72ac69cf5592c.files_x1.sorted.0.03.shared"
-  cons.taxonomy.file="otu/8478e43c54e283847f7de06e9e14267f.files_x1.sorted.0.03.cons.taxonomy"  
+  #taxa.file = "2014-05_final_53ea024a8bdf736a4dc90f4ae6d02d6a.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+  #otu.shared.file="otu/6ce0d3fda8e528db61a72ac69cf5592c.files_x1.sorted.0.03.shared"
+  #cons.taxonomy.file="otu/8478e43c54e283847f7de06e9e14267f.files_x1.sorted.0.03.cons.taxonomy"
+  #meta.file="aliq_id_to_metadata_for_yap_inp_t1d_v1_v3_2014-04-11_fixed_diagnosis_dates.tsv"
+  ##All samples up to 2014-09-22
+  taxa.file = "a93eeedeef2878be17d30f27b1b0de1c.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+  otu.shared.file="d9f44114ac6369cc66978002228bc5d3.files_x1.sorted.0.03.shared"
+  cons.taxonomy.file="4272870500ad07a7270f9772581fe7fe.files_x1.sorted.0.03.cons.taxonomy"
+  meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922.tsv"
   if (taxa.level == "otu") {
     taxa.lev.all = read.mothur.otu.with.taxa(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
   }
@@ -3763,7 +3770,7 @@ read.t1d <- function(taxa.level="3",batch=NULL,aggr_var_meta = NULL) {
   #taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
   taxa.lev = taxa.lev.all
   make.global(taxa.lev)
-  meta = load.meta.t1d("aliq_id_to_metadata_for_yap_inp_t1d_v1_v3_2014-04-11_fixed_diagnosis_dates.tsv",batch=batch,aggr_var = aggr_var_meta)
+  meta = load.meta.t1d(meta.file,batch=batch,aggr_var = aggr_var_meta)
   make.global(meta)
   #meta = load.meta.t1d("annotation20130819.csv")
   #meta = load.meta.t1d("annotation20130819.csv","all_batches_cleaned_yap_input.csv")
@@ -4354,10 +4361,15 @@ pair.counts <- function(m_a,pair.attr) {
   
 }
 
+report.sample.count.summary <- function(meta.data) {
+  m_a = split_count_df(meta.data$data,col_ignore=meta.data$attr.names)
+  report$add.vector(c(summary(rowSums(m_a$count))),caption="Summary of counts per sample")
+}
+
 proc.t1d <- function() {
-  taxa.levels = c("otu")
-  #taxa.levels = c(2,3,4,5,6)
-  #taxa.levels = c(6)
+  #taxa.levels = c("otu")
+  taxa.levels = c("otu",2,3,4,5,6)
+  #taxa.levels = c(2)
   #batches = list(c(1,2,3),c(1),c(2),c(3),c(2,3),c(1,3))
   batches = list(c(4))
   do.std.plots = T
@@ -4365,6 +4377,7 @@ proc.t1d <- function() {
   do.heatmap = T
   do.clade.meta = T
   do.profile = T
+  do.summary.meta = T
   
   report$add.descr("Set of analysis routines is applied
                    in nested loops over combinations of batches (if present) and 
@@ -4393,14 +4406,13 @@ proc.t1d <- function() {
       
       aggrBySubject = F
       if(!aggrBySubject) {
-        taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.QA=="PASS" & 
-                                          taxa.meta$data$Subject.QA=="PASS",]
+        taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.QA=="PASS",]
         taxa.meta.aggr = taxa.meta
         report$add.p(paste("After filtering for QAed samples:",nrow(taxa.meta$data)))      
         
         taxa.meta$data = taxa.meta$data[!taxa.meta$data$isRepeatOrFailed,] 
         taxa.meta.aggr = taxa.meta
-        report$add.p(paste("After filtering for repeated samples per subject:",nrow(taxa.meta$data)))      
+        report$add.p(paste("After filtering for repeated samples per subject:",nrow(taxa.meta$data)))
         
       }
       else {
@@ -4452,8 +4464,58 @@ proc.t1d <- function() {
       }
       )
       
-      res.tests = NULL
+      taxa.meta = taxa.meta.aggr
       
+      if(do.summary.meta) {
+        
+        #switch it off for other iterations
+        do.summary.meta = F
+        
+        report$add.header("Summary of metadata variables after filtering samples")
+        
+        m_a = split_count_df(taxa.meta$data,col_ignore=taxa.meta$attr.names)
+        
+        report$add.printed(summary(m_a$attr),caption="Summary of metadata variables")
+        
+        xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID")
+        for(xtabs.formula in xtabs.formulas) {
+          fact.xtabs = xtabs(as.formula(xtabs.formula),data=taxa.meta$data,drop.unused.levels=T)
+          report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
+          report$add.printed(summary(fact.xtabs))
+        }
+        
+        with(taxa.meta$data,{
+
+          report$add.printed(summary(aov(age~T1D)),
+                             caption="ANOVA for age and cohort")
+          report$add(qplot(T1D,age,geom="violin"),
+                     caption="Violin plot for age and cohort")
+          
+          #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
+          #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
+          report$add(ggplot(taxa.meta$data,aes(x=age,y=YearsSinceDiagnosis,color=T1D))+
+                       geom_point()+
+                       stat_smooth(method="loess", se = T,degree=1,size=1),
+                     caption="Plot for age and time since diagnosis with Loess trend line")
+          
+        })
+
+        with(taxa.meta$data,{
+          report$add.printed(cor.test(YearsSinceDiagnosis,
+                                      Timestamp,
+                                      method="spearman"),
+                             caption="Spearman RHO for metadata variables")
+          report$add.printed(cor.test(YearsSinceDiagnosis,
+                                      age,
+                                      method="spearman"),
+                             caption="Spearman RHO for metadata variables")          
+        })
+        
+        report.sample.count.summary(taxa.meta)        
+        
+      }
+      
+      res.tests = NULL      
       if (do.tests) {
         
         if(taxa.level==6) {
@@ -4483,16 +4545,6 @@ proc.t1d <- function() {
             heatmap.t1d(taxa.meta.aggr$data,taxa.meta.aggr$attr.names)
           })
         }
-        with(taxa.meta.aggr$data,{
-          report$add.printed(cor.test(YearsSinceDiagnosis,
-                                      Timestamp,
-                                      method="spearman"),
-                             caption="Spearman RHO for metadata variables")
-          report$add.printed(cor.test(YearsSinceDiagnosis,
-                                      age,
-                                      method="spearman"),
-                             caption="Spearman RHO for metadata variables")          
-        })
         tryCatchAndWarn({
           plot.group = list(c("T1D"))
           if(n.batches>1) {
@@ -4971,13 +5023,13 @@ power.pediatric.cancer.2013<-function() {
 
 power.pieper.prostate.cancer.2014<-function() {
   power.res = power.pieper.t1d(
-    n = 300,
+    n = 170,
     ## this is under the proposal directory
-    data.file = "data/T1D_proteime/Original Collapesed APEX (All information).AT.tsv",
-    min.median = 300,
+    data.file = "data/T1D_proteome/Original Collapesed APEX (All information).AT.tsv",
+    min.median = 1200,
     alpha.sim = 0.05,
     alpha.orig = 0.05,
-    R = 4000
+    R = 400
     )
   print("Power results:")
   print(power.res)
