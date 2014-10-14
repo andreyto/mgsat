@@ -174,10 +174,17 @@ all_normalize<-function(dat,col_ignore=c(),norm.func=NULL) {
 ## created.
 ## Count columns will be sorted in decreasing order of the column mean frequencies, so that
 ## you can easily subset the count matrix later to only keep N most abundant columns.
-count_filter<-function(dat,col_ignore=c(),min_max_frac=0.0,min_max=10,min_median=0,min_row_sum=100,other_cnt="other") {
+count_filter<-function(dat,
+                       col_ignore=c(),
+                       min_max_frac=0.0,
+                       min_max=10,
+                       min_median=0,
+                       min_row_sum=100,
+                       max_row_sum=.Machine$integer.max,
+                       other_cnt="other") {
   x<-split_count_df(dat,col_ignore)
   row_cnt = rowSums(x$count)
-  row_sel = row_cnt >= min_row_sum
+  row_sel = row_cnt >= min_row_sum & row_cnt < max_row_sum
   cnt = x$count[row_sel,]
   row_cnt = row_cnt[row_sel]
   attr = x$attr[row_sel,]
@@ -4446,7 +4453,8 @@ proc.t1d <- function() {
       
       taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
                                          col_ignore=taxa.meta.aggr$attr.names,
-                                         min_max=10)
+                                         min_max=10,
+                                         max_row_sum=100000)
       #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
       #                              min_median=0.002,
       #                              min_max_frac=0.1,min_max=10,
