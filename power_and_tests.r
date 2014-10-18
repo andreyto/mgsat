@@ -359,7 +359,8 @@ wilcox.test.multi.fast <- function(tr.mat,group) {
 #when calling 'boot'
 booted.wilcox.test.multi.fast <- function(n,mat,group,indices,test.method) {
   library(GeneSelector)
-  #replace=TRUE to select more samples than in original dataset
+  ##replace=TRUE to select more samples than in original dataset
+  ##TODO: apply strata to keep group count ratio
   ind.n = sample(indices, n, replace = TRUE, prob = NULL)
   d <- t(mat)[,ind.n] # allows boot to select n samples
   g <- group[ind.n]
@@ -1183,7 +1184,8 @@ std.plots <- function(abund.meta.data,
                       res.tests=NULL,
                       clade.meta.x.vars=c(),
                       do.profile=T,
-                      do.clade.meta=T) {
+                      do.clade.meta=T,
+                      do.sample.summary.meta=T) {
   
   report.section = report$add.header("Plots of abundance profiles in multiple representations",section.action="push")
   report$add.descr("Abundance plots are shown with relation to various combinations of meta 
@@ -1241,6 +1243,22 @@ std.plots <- function(abund.meta.data,
                           clade.names=clade.names.meta,
                           x.var=x.var,
                           group.var=id.vars[1])
+          
+        }
+        
+        report$pop.section()
+      }
+      
+      if(do.sample.summary.meta) {
+        report$add.header("Iterating over meta data variables")
+        report$push.section(report.section)
+        
+        for(x.var in clade.meta.x.vars) {
+          
+          show.sample.summaries.meta(m_a=make.sample.summaries(m_a),
+                                     x.var=x.var,
+                                     group.var=id.vars[1])
+          
         }
         
         report$pop.section()
@@ -1997,9 +2015,9 @@ proc.project <- function(
   
   if(do.summary.meta) {
     taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
-                                 meta.file=meta.file,
-                                 load.meta.method=load.meta.method,
-                                 taxa.level=2)
+                                  meta.file=meta.file,
+                                  load.meta.method=load.meta.method,
+                                  taxa.level=2)
     make.global(taxa.meta)
     summary.meta.method(taxa.meta)    
   }
@@ -2008,7 +2026,7 @@ proc.project <- function(
   report$push.section(report.section)
   
   for (taxa.level in taxa.levels) {
-
+    
     taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
                                   meta.file=meta.file,
                                   load.meta.method=load.meta.method,
@@ -2248,12 +2266,43 @@ show.trend <- function(meta.data,x,y,group,title="Group trends") {
   )
 }
 
+make.sample.summaries <- function(m_a.abs) {
+  x = data.frame(
+    count.sum = rowSums(m_a.abs$count),
+    Strep.zeros = (m_a.abs$count[,"Streptococcus_0.1.13.1.2.6.2"] == 0)
+    )
+  return (list(count=x,attr=m_a.abs$attr))
+}
+
+
+show.sample.summaries.meta <- function(m_a,
+                                       x.var,
+                                       group.var,
+                                       summ.names=NULL,
+                                       value.name="Y",
+                                       trans="ident",
+                                       vars.descr="sample summary properties") {
+  if(is.null(summ.names)) {
+    summ.names = names(m_a$count)
+  }
+  show.clade.meta(m_a=m_a,
+                  clade.names=summ.names,
+                  x.var=x.var,
+                  group.var=group.var,
+                  value.name=value.name,
+                  trans=trans,
+                  vars.descr=vars.descr) 
+  
+}
+
+
 show.clade.meta <- function(m_a,
                             clade.names,
                             x.var,
                             group.var,
                             value.name="abundance",
-                            trans="boxcox") {
+                            trans="boxcox",
+                            vars.descr="individual clade abundances") {
   
   
   count = m_a$count[,clade.names,drop=F]
@@ -2271,7 +2320,8 @@ show.clade.meta <- function(m_a,
     trans.msg = ""
   }
   
-  report.section = report$add.header(paste("Plots of individual clade abundances",
+  report.section = report$add.header(paste("Plots of",
+                                           vars.descr,
                                            trans.msg,
                                            "as a function of",
                                            x.var,
@@ -2293,7 +2343,7 @@ show.clade.meta <- function(m_a,
     #labs(title=title)+
     #facet_wrap(~clade,scales="free")
     report$add(pl,
-               caption=paste("Abundance",
+               caption=paste("Value",
                              trans.msg,
                              "of",
                              clade.name,
@@ -3797,13 +3847,13 @@ plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.sample
   m = decostand(m,method="range",MARGIN=2)
   sol = metaMDS(m,autotransform = F,trymax=40)
   if(show.samples) {
-  site.sc <- scores(sol, display = "sites")
-  plot(site.sc)
-  unique_sample.group = unique(sample.group)
-  points(sol,display="sites",col=sample.group)
-  if(!is.null(unique_sample.group)) {
-  legend(-0.5,1,unique_sample.group,col=1:length(sample.group),pch=1)  
-  }
+    site.sc <- scores(sol, display = "sites")
+    plot(site.sc)
+    unique_sample.group = unique(sample.group)
+    points(sol,display="sites",col=sample.group)
+    if(!is.null(unique_sample.group)) {
+      legend(-0.5,1,unique_sample.group,col=1:length(sample.group),pch=1)  
+    }
   }
   if(show.species) {
     species.sc <- scores(sol, display = "species")
@@ -3813,7 +3863,7 @@ plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.sample
   #points(site.sc,col=m_a$attr$T1D)
   #points(species.sc)
   #points(species.sc["Streptococcus_0.1.11.1.2.6.2",1:2,drop=F],pch="+")
-
+  
 }
 
 cut.top.predictions<-function(scores,labels,sample.ids,n.cut,filter.by.label=F) {
@@ -4375,14 +4425,15 @@ report.sample.count.summary <- function(meta.data) {
 
 proc.t1d <- function() {
   #taxa.levels = c("otu")
-  taxa.levels = c("otu",2,3,4,5,6)
-  #taxa.levels = c(2)
+  #taxa.levels = c("otu",2,3,4,5,6)
+  taxa.levels = c(6)
   #batches = list(c(1,2,3),c(1),c(2),c(3),c(2,3),c(1,3))
   batches = list(c(4))
   do.std.plots = T
   do.tests = T
   do.heatmap = T
   do.clade.meta = T
+  do.sample.summary.meta = T
   do.profile = T
   do.summary.meta = T
   
@@ -4410,6 +4461,8 @@ proc.t1d <- function() {
       report$add.p(paste("Before filtering for QAed and redundant samples:",nrow(taxa.meta$data)))
       
       label = paste(label_batch,"l",taxa.level,sep=".",collapse=".")
+      #DEBUG:
+      taxa.meta$data = taxa.meta$data[taxa.meta$data$Streptococcus_0.1.13.1.2.6.2>0,]
       
       aggrBySubject = F
       if(!aggrBySubject) {
@@ -4493,7 +4546,7 @@ proc.t1d <- function() {
         }
         
         with(taxa.meta$data,{
-
+          
           report$add.printed(summary(aov(age~T1D)),
                              caption="ANOVA for age and cohort")
           report$add(qplot(T1D,age,geom="violin"),
@@ -4507,7 +4560,7 @@ proc.t1d <- function() {
                      caption="Plot for age and time since diagnosis with Loess trend line")
           
         })
-
+        
         with(taxa.meta$data,{
           report$add.printed(cor.test(YearsSinceDiagnosis,
                                       Timestamp,
@@ -4565,6 +4618,7 @@ proc.t1d <- function() {
                     label=label,
                     res.tests=res.tests,
                     do.clade.meta=do.clade.meta,
+                    do.sample.summary.meta=do.sample.summary.meta,
                     do.profile=do.profile,
                     clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
           )
@@ -4894,29 +4948,51 @@ power.pieper.t1d <- function(
   alpha.sim = 0.05,
   alpha.orig = 0.05,
   min.median = 100,
-  use.fdrtool = T,
+  mult.adj = "fdrtool",
   data.file="aim3/September 28 analysis_T1D.txt",
-  R = 4000
-  ) {
+  R = 4000,
+  feat.sig.names=NULL,
+  targeted=F
+) {
+  if(F) {
   taxa.meta = read.pieper.t1d(file.name=data.file)
   aggr_var = "SubjectID"
   taxa.meta = aggregate_by_meta_data(taxa.meta$data,
-                                          aggr_var,
-                                          taxa.meta$attr.names)
+                                     aggr_var,
+                                     taxa.meta$attr.names)
   
   make.global(taxa.meta)
+  }
   taxa.meta.attr.names = taxa.meta$attr.names    
   dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
   taxa.meta.data.raw = count_filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
                                     min_max_frac=0,min_max=0,min_median=min.median,min_row_sum=0,other_cnt=NULL)
   print(dim(taxa.meta.data.raw))
-
+  
   taxa.meta.data = all_normalize(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
   make.global(taxa.meta.data)
-  clade.names = get.clade.names(taxa.meta.data,taxa.meta.attr.names)
+  
+  #clade.names = get.clade.names(taxa.meta.data,taxa.meta.attr.names)
   #print(clade.names)
   #pvals = wilcox.test.multi(data=taxa.meta.data,resp.vars=clade.names,group.var="group",subset=NULL)
   m = count_matr_from_df(taxa.meta.data,taxa.meta.attr.names)
+  
+  if(!is.null(feat.sig.names)) {
+    ind.sig = which(colnames(m) %in% feat.sig.names)
+  }
+  else {
+    #ind.sig = which(pvals.adj<=alpha.orig)
+    ind.sig = which(eff.raw <= 0.66 | eff.raw >= 1.5)
+  }
+  
+  if(targeted) {
+    m = m[,ind.sig]
+    ind.sig=1:length(ind.sig)
+  }
+  
+  print(length(ind.sig))
+  #return(0)  
+    
   dim.data.filt = dim(m)
   #mtp.res = MTP(X=t(m),Y=taxa.meta.data$group,get.adjp=F)
   tr.m = t(m)
@@ -4927,18 +5003,17 @@ power.pieper.t1d <- function(
   eff.raw = group.mean.ratio(m.raw,group)
   
   pvals = wilcox.test.multi.fast(tr.m,group)  
-  make.global(pvals)
-  if(use.fdrtool) {
+  #make.global(pvals)
+  
+  if(mult.adj=="fdrtool") {
     pvals.adj = fdrtool(pvals,statistic="pvalue",plot=F,verbose=F)$qval
   }
   else {
-    pvals.adj = p.adjust(pvals,method="BH")
+    pvals.adj = p.adjust(pvals,method=mult.adj)
   }
-  make.global(pvals.adj)
-  #ind.sig = which(pvals.adj<=alpha.orig)
-  ind.sig = which(eff.raw <= 0.66 | eff.raw >= 1.5)
-  print(length(ind.sig))
-  #return(0)  
+
+  #make.global(pvals.adj)
+  
   group.mean = count_matr_from_df(count.summary(m,mean,group),c("group"))
   group.sd = count_matr_from_df(count.summary(m,sd,group),c("group"))
   group.mean.sig = group.mean[,ind.sig]
@@ -4961,11 +5036,11 @@ power.pieper.t1d <- function(
   ## some numerical instability creates pvals that are slightly larger than 1
   pvals.boot[pvals.boot>1] = 1  
   make.global(pvals.boot)
-  if(use.fdrtool) {
+  if(mult.adj=="fdrtool") {
     pvals.boot.adj = aaply(pvals.boot,1,function(x) fdrtool(x,statistic="pvalue",plot=F,verbose=F)$qval)
   }
   else {
-    pvals.boot.adj = aaply(pvals.boot,1,p.adjust,method="BH")
+    pvals.boot.adj = aaply(pvals.boot,1,p.adjust,method=mult.adj)
   }
   make.global(pvals.boot.adj)
   power.sig = colMeans(pvals.boot.adj[,ind.sig] <= alpha.sim)
@@ -5020,7 +5095,7 @@ power.pediatric.cancer.2013<-function() {
   power.res = power.pieper.t1d(
     n = 50,
     data.file="aim3/September 28 analysis_T1D.txt"
-    )
+  )
   print("Power results Aim 3:")
   print(power.res)
   mom = pediatric.cancer.2013.aim2()
@@ -5038,8 +5113,40 @@ power.pieper.prostate.cancer.2014<-function() {
     alpha.sim = 0.05,
     alpha.orig = 0.05,
     R = 400
-    )
+  )
   print("Power results:")
   print(power.res)
 }
 
+power.madupu.kidney_diabetes<-function() {
+  prot.ids = as.data.frame(
+  matrix(
+  c(
+  "MAN2B1","O00754",
+  "GP5","P40197",
+  "FUCA2","Q9BTY2",
+  "ATP1A1","P05023",
+  "CDH5","P33151",
+  "ACE2","Q9BYF1"
+  ),
+  ncol=2,
+  byrow=T
+  )
+  )
+  names(prot.ids) = c("name","uniref100")
+  make.global(prot.ids)
+  power.res = power.pieper.t1d(
+    n = 300,
+    ## this is under the proposal directory
+    data.file = "data/T1D_proteome/Original Collapesed APEX (All information).AT.tsv",
+    min.median = 0,
+    alpha.sim = 0.05,
+    alpha.orig = 0.05,
+    R = 400,
+    mult.adj="bonferroni",
+    feat.sig.names=prot.ids$uniref100,
+    targeted=T
+  )
+  print("Power results:")
+  print(power.res)  
+}

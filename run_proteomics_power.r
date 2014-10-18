@@ -26,5 +26,6 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 ## leave with try.debug=F for production runs
 set_trace_options(try.debug=F)
 
-power.res = power.pieper.prostate.cancer.2014()
+#power.res = power.pieper.prostate.cancer.2014()
+power.madupu.kidney_diabetes()
 print(power.res)
