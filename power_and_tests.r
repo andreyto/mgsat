@@ -1184,8 +1184,7 @@ std.plots <- function(abund.meta.data,
                       res.tests=NULL,
                       clade.meta.x.vars=c(),
                       do.profile=T,
-                      do.clade.meta=T,
-                      do.sample.summary.meta=T) {
+                      do.clade.meta=T) {
   
   report.section = report$add.header("Plots of abundance profiles in multiple representations",section.action="push")
   report$add.descr("Abundance plots are shown with relation to various combinations of meta 
@@ -1249,21 +1248,6 @@ std.plots <- function(abund.meta.data,
         report$pop.section()
       }
       
-      if(do.sample.summary.meta) {
-        report$add.header("Iterating over meta data variables")
-        report$push.section(report.section)
-        
-        for(x.var in clade.meta.x.vars) {
-          
-          show.sample.summaries.meta(m_a=make.sample.summaries(m_a),
-                                     x.var=x.var,
-                                     group.var=id.vars[1])
-          
-        }
-        
-        report$pop.section()
-        
-      }
       if(do.profile) {
         
         report$add.header("Iterating over dodged vs faceted bars")
@@ -1978,7 +1962,7 @@ summary.meta.choc <- function(taxa.meta) {
 ## read.data.project(). The method should create SampleID factor key field and also set row.names to
 ## the values of that field.
 
-load.meta.default <- function(file_name,counts.row.names) {
+load.meta.default <- function(file.name) {
   meta = read.delim(file_name,header=T,stringsAsFactors=T)
   meta$SampleID = as.factor(meta$SampleID)
   row.names(meta) = meta$SampleID
@@ -1986,22 +1970,103 @@ load.meta.default <- function(file_name,counts.row.names) {
 }
 
 
-read.data.project <- function(taxa.summary.file,meta.file,load.meta.method,taxa.level=3) {
-  moth.taxa <- read.mothur.taxa.summary(taxa.summary.file)
-  taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
-  taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0.001,min_row_sum=50,other_cnt="other")
-  meta = load.meta.method(meta.file)
-  return (merge.counts.with.meta(taxa.lev,meta))
+read.data.project <- function(taxa.summary.file,
+                              otu.shared.file,
+                              cons.taxonomy.file,
+                              meta.file,
+                              load.meta.method,
+                              load.meta.options=list(),
+                              count.filter.options=list(min_max_frac=0.001,min_row_sum=50,other_cnt="other"),
+                              taxa.level=3) {
+  if (taxa.level == "otu") {
+    taxa.lev.all = read.mothur.otu.with.taxa(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
+    count.file = otu.shared.file
+  }
+  else {
+    moth.taxa <- read.mothur.taxa.summary(taxa.summary.file)
+    taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
+    count.file = taxa.summary.file
+  }  
+  taxa.lev = do.call(count_filter,c(list(dat=taxa.lev.all,col_ignore=c()),count.filter.options))
+  report$add.p(sprintf("Loaded %i records from count file %s for taxonomic level %s",
+                       nrow(taxa.lev),count.file,taxa.level))
+  meta = do.call(load.meta.method,c(file.name=meta.file,load.meta.options))  
+  taxa.meta = merge.counts.with.meta(taxa.lev,meta)
+  report$add.p(sprintf("After merging with metadata, %i records left",
+                       nrow(taxa.meta)))
+  return (taxa.meta)
 }
+
+mgsat.16s.task.template = within(
+  list(),
+{
+  taxa.levels = c("otu",2,3,4,5,6)
+  
+  load.meta.options=list()
+  
+  count.filter.options=list(min_max_frac=0.001,min_row_sum=50,max_row_sum=100000,other_cnt="other")
+  
+  get.taxa.meta.aggr<-function(taxa.meta) { return (taxa.meta) }
+  
+  count.filter.aggr.options=list(min_max_frac=0.001,min_row_sum=50,other_cnt="other")
+  
+  
+  do.summary.meta = F
+  summary.meta.x.vars = c()
+  summary.meta.group.var = c()
+  
+  do.std.plots = T
+  do.clade.meta=T
+  do.profile=T
+  
+  do.heatmap = T
+  do.std.tests = T
+  
+  do.stability=T
+  do.tests=T
+  do.genesel=T
+  do.glmnet=T
+  do.glmer=T
+  do.adonis=T
+  do.select.samples=F
+  
+  stability.steps = 600
+  n.adonis.perm = 4000  
+  
+  stability.resp.attr = "NULL" 
+  stability.model.family = "binomial"
+  
+  genesel.resp.attr = stability.resp.attr
+  
+  stability.transform.counts="ihs"
+  
+  n.species.select.samples = 20
+  n.select.samples = 20
+  taxa.level.select.samples = 6
+  
+  adonis.tasks = list()
+  
+  glmer.task = list()
+  
+  plot.group = list()            
+  
+  clade.meta.x.vars=c()
+  
+  heatmap.task = list()
+  
+  
+}
+)
+
 
 proc.project <- function(
   taxa.summary.file,
+  otu.shared.file,
+  cons.taxonomy.file,
   meta.file,
   summary.meta.method,
   task.generator.method,
-  load.meta.method=load.meta.default,
-  taxa.levels = c(2,3,4,5,6),
-  do.summary.meta = T
+  load.meta.method=load.meta.default
 ) {
   
   report$add.descr("Set of analysis routines is applied
@@ -2013,60 +2078,64 @@ proc.project <- function(
   
   report.section = report$get.section()
   
-  if(do.summary.meta) {
-    taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
-                                  meta.file=meta.file,
-                                  load.meta.method=load.meta.method,
-                                  taxa.level=2)
-    make.global(taxa.meta)
-    summary.meta.method(taxa.meta)    
-  }
+  report$add.header("Iterating over subsets of data")
+  report$push.section(report.section) #1 {
   
-  report$add.header("Iterating over taxonomic levels")
-  report$push.section(report.section)
+  tasks = task.generator.method()
   
-  for (taxa.level in taxa.levels) {
+  for (task in tasks) {
     
-    taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
-                                  meta.file=meta.file,
-                                  load.meta.method=load.meta.method,
-                                  taxa.level=taxa.level)
+    report$add.header(paste("Subset:",task$descr))
+    report$push.section(report.section) #2 {
     
-    label = paste("16s","l",taxa.level,sep=".",collapse=".")
-    report$add.header(paste("Taxonomic level:",taxa.level))
-    report$push.section(report.section)
-    
-    make.global(taxa.meta)
-    #taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.type.1 != "sibling",]
-    
-    report$add.p(paste("Number of samples:",nrow(taxa.meta$data)))
-    
-    report$add.header("Iterating over subsets of data")
-    report$push.section(report.section)
-    
-    tasks = task.generator.method(taxa.meta)
-    
-    for (task in tasks) {
+    with(task,{
       
-      report$add.header(paste("Subset:",task$descr))
-      report$push.section(report.section)
       
-      with(task,{
+      report$add.header("Iterating over taxonomic levels")
+      report$push.section(report.section) #3 {
+      
+      for (taxa.level in taxa.levels) {
+        
+        label = paste("16s","l",taxa.level,sep=".",collapse=".")
+        report$add.header(paste("Taxonomic level:",taxa.level))
+        report$push.section(report.section) #4 {
+        
+        taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
+                                      otu.shared.file=otu.shared.file,
+                                      cons.taxonomy.file=cons.taxonomy.file,
+                                      meta.file=meta.file,
+                                      load.meta.method=load.meta.method,
+                                      load.meta.options=load.meta.options,
+                                      count.filter.options=count.filter.options,
+                                      taxa.level=taxa.level)
+        
+        
+        make.global(taxa.meta)
+        #taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.type.1 != "sibling",]
+        
+        report$add.p(paste("Number of samples:",nrow(taxa.meta$data)))
+        
+        taxa.meta.aggr = get.taxa.meta.aggr(taxa.meta=taxa.meta)
         
         report$add.p(paste("After aggregating/subsetting samples:",nrow(taxa.meta.aggr$data)))
         
-        taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
-                                           col_ignore=taxa.meta.aggr$attr.names,
-                                           min_max=10)
-        #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
-        #                              min_median=0.002,
-        #                              min_max_frac=0.1,min_max=10,
-        #                              min_row_sum=500,other_cnt="other")
+        taxa.meta.aggr$data = do.call(count_filter,
+                                      c(list(dat=taxa.meta.aggr$data,
+                                        col_ignore=taxa.meta.aggr$attr.names),
+                                        count.filter.aggr.options)
+        )
         
-        
-        report$add.p(paste("After count filtering,",
+        report$add.p(paste("After post-aggregation count filtering,",
                            (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),"clades left."))
         
+        if(do.summary.meta) {
+          summary.meta.method(taxa.meta.aggr)
+          report.sample.count.summary(meta.data=taxa.meta.aggr,
+                                      meta.x.vars=summary.meta.x.vars,
+                                      group.var=summary.meta.group.var)
+          ##only do summary once
+          do.summary.meta = F
+        }
         
         res.tests = NULL
         if (do.std.tests) {
@@ -2090,6 +2159,24 @@ proc.project <- function(
                                 
             )
           )
+          
+          if( do.select.samples && 
+                (taxa.level.select.samples == taxa.level) &&
+                do.stability && 
+                do.glmnet ) {
+            
+            tryCatchAndWarn({    
+              #species.sel=res$stab.feat.genesel$stab_feat$name
+              species.sel=names(take_first(res$stab.feat.glmnet$mean.order.p,
+                                           n.species.select.samples))
+              select.samples(data.norm,attr.names,
+                             species.sel=species.sel,
+                             sample.group.name=stability.resp.attr,
+                             n.select=n.select.samples)
+            })
+            
+          }
+          
         }
         if( do.std.plots || do.heatmap ) {
           report$add.header("Plots")
@@ -2103,7 +2190,6 @@ proc.project <- function(
                       res.tests=res.tests,
                       do.clade.meta=do.clade.meta,
                       do.profile=do.profile,
-                      #clade.meta.x.vars=c("Specimen.Collection.Date","age")                  
                       clade.meta.x.vars=clade.meta.x.vars
             )
           })
@@ -2120,13 +2206,14 @@ proc.project <- function(
             )
           })
         }
-      })
-      report$pop.section()
-    }
-    report$pop.section()
-    report$pop.section()
+        report$pop.section() #4 }
+      }
+      report$pop.section() #3 }
+    })
+    
+    report$pop.section() #2 }
   }
-  report$pop.section()
+  report$pop.section() #1 }
 }
 
 
@@ -2268,9 +2355,8 @@ show.trend <- function(meta.data,x,y,group,title="Group trends") {
 
 make.sample.summaries <- function(m_a.abs) {
   x = data.frame(
-    count.sum = rowSums(m_a.abs$count),
-    Strep.zeros = (m_a.abs$count[,"Streptococcus_0.1.13.1.2.6.2"] == 0)
-    )
+    count.sum = rowSums(m_a.abs$count)
+  )
   return (list(count=x,attr=m_a.abs$attr))
 }
 
@@ -3647,150 +3733,6 @@ load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   return (meta)
 }
 
-load.meta.t1d <- function(file_name,batch=NULL,aggr_var=NULL) {
-  
-  meta =read.delim(file_name, header=TRUE,stringsAsFactors=T, sep="\t")
-  make.global(meta)
-  names(meta) =
-    replace.col.names(
-      names(meta),
-      c("YAP_Aliq_ID","Sample.Name","family.ID", "Subject.ID", 
-        "gender", "autoantibody.status", "T1D.status",
-        "year.of.birth","date.collected","date.of.diagnosis",
-        "timestamp","sample.type"),
-      c("AliquotID","SampleID",      "FamilyID",            "SubjectID",            
-        "gender",           "AA",                  "T1D",
-        "YearOfBirth","Specimen.Collection.Date","Date.of.Diagnosis",
-        "Timestamp","Specimen.Type")
-    )
-  
-  meta = meta[!duplicated(meta$SampleID),]
-  
-  meta$gender = unlist( lapply( meta$gender, substr, 1,1  ))
-  
-  meta$Batch = 4
-  ## We set Batch=0 downstream as a special value, it should not be
-  ## present already
-  stopifnot(sum(meta$Batch==0) == 0)
-  meta$BatchRepeat=as.factor(1)
-  
-  meta$Specimen.Collection.Date = 
-    as.date(as.character(meta$Specimen.Collection.Date),order="mdy")
-  meta$age = as.numeric(
-    meta$Specimen.Collection.Date
-    - 
-      as.date(paste(meta$YearOfBirth,"-06-01",sep=""),order="ymd")
-  )/365
-  
-  ##day is fake
-  meta$Date.of.Diagnosis = as.date(as.character(meta$Date.of.Diagnosis),order="mdy")
-  
-  meta$YearsSinceDiagnosis = as.numeric(
-    meta$Specimen.Collection.Date
-    -
-      meta$Date.of.Diagnosis
-  )/365
-  
-  meta$T1D[meta$T1D=="Unknown"] = "Control"
-  
-  meta$Timestamp = 
-    strptime(as.character(meta$Timestamp),format = "%m/%d/%Y %H:%M")
-  
-  meta$BioSampleID = paste(meta$SubjectID,meta$Specimen.Type,as.numeric(meta$Timestamp),sep="_")
-  
-  make.global(meta)
-  
-  meta$age.quant = quantcut(meta$age)
-  meta$A1C = as.double(as.character(meta$A1C))
-  #meta$A1C[is.na(meta$A1C)] = 6.2
-  meta$A1C.quant = quantcut(as.double(as.character(meta$A1C)))
-  
-  meta = arrange(meta,SubjectID,Timestamp)
-  
-  ## Filtering and aggregation of rows has to be done before we start marking repeats for throwing
-  ## out repeats
-  if(!is.null(batch)) {
-    report$add.p(paste(c("Filtering metadata by batch:",batch),collapse=" "))
-    batch.mask = (meta$Batch %in% batch)
-    meta = meta[batch.mask,]
-  }  
-  
-  ## That would leave only AA defined samples or T1D patients (under
-  ## an assumption that T1D patients are always AA positive even if AA is not measured)
-  #meta = meta[meta$AA!="Unknown" | meta$T1D == "T1D",]
-  
-  ## Subject is at least first repeat, but bio sample is first occurence, in time order 
-  ## (e.g. second visit)
-  isBioRepeatFirst = duplicated(meta$SubjectID) & ! duplicated(meta$BioSampleID)
-  
-  BioSampleIDRep = meta$BioSampleID[isBioRepeatFirst]
-  
-  meta$isBioRepeat = meta$BioSampleID %in% BioSampleIDRep
-  
-  ## Now do the same as above, but ignore failed samples when looking
-  ## for bio repeats
-  meta_qa = meta[meta$Sample.QA=="PASS",]
-  
-  isBioRepeatFirst = duplicated(meta_qa$SubjectID) & ! duplicated(meta_qa$BioSampleID)
-  
-  BioSampleIDRep = meta_qa$BioSampleID[isBioRepeatFirst]
-  
-  ## mark all failed samples or bio repeats following at least one good sample
-  meta$isBioRepeatOrFailed = (meta$BioSampleID %in% BioSampleIDRep) | 
-    ! (meta$Sample.QA=="PASS")
-  
-  SampleIDRep = meta_qa$SampleID[duplicated(meta_qa$SubjectID)]
-  
-  ## mark all failed samples or repeats following at least one good sample
-  meta$isRepeatOrFailed = (meta$SampleID %in% SampleIDRep) | 
-    ! (meta$Sample.QA=="PASS")
-  
-  ##
-  ## This section builds a difference in months between next samples and first sample for every subject
-  ##
-  meta_keys = meta[,c("SubjectID","SampleID","BioSampleID","Timestamp","isBioRepeat","isBioRepeatOrFailed")]  
-  meta_keys_non_rep = meta_keys[!meta$isBioRepeatOrFail,]
-  #join() will keep duplicate names, so we rename the names, except SubjectID merge key
-  names(meta_keys_non_rep) = paste(names(meta_keys_non_rep),".first",sep="")
-  names(meta_keys_non_rep)[1] = "SubjectID"
-  meta_keys_1 = join(meta_keys,meta_keys_non_rep,by=c("SubjectID"),match="first",type="left")
-  stopifnot(meta$SampleID==meta_keys_1$SampleID)
-  stopifnot(is.na(meta_keys_1$Timestamp.first) |
-              (meta_keys_1$Timestamp >= meta_keys_1$Timestamp.first) |
-              ! (meta$Sample.QA=="PASS")) #should not see otherwise
-  meta_keys_1$MonthsAfterFirstBioSample = as.numeric(meta_keys_1$Timestamp - meta_keys_1$Timestamp.first,units="days")/30
-  ## NA will be at records that did not pass QA. Set to 0.
-  meta_keys_1$MonthsAfterFirstBioSample[is.na(meta_keys_1$MonthsAfterFirstBioSample)] = 0
-  ##
-  ## uncheck those bio repeats that passed QA and were made less than 9 mon after the first sampling - they
-  ## are testing intentional repeats and should be aggregated just like batch repeats when analyzing 
-  ## unpaired group differences
-  ##
-  meta_keys_1$isAnnualRepeatOrFailed = meta_keys_1$isBioRepeatOrFailed & 
-    ! (
-      (meta$Sample.QA=="PASS") & 
-        meta_keys_1$MonthsAfterFirstBioSample < 9
-    )
-  make.global(meta_keys_1)
-  meta$isAnnualRepeatOrFailed = meta_keys_1$isAnnualRepeatOrFailed
-  meta$MonthsAfterFirstBioSample = meta_keys_1$MonthsAfterFirstBioSample
-  meta$TimestampMonth = as.numeric(meta$Timestamp - min(meta$Timestamp),units="days")/30  
-  meta$Timestamp = as.numeric(meta$Timestamp)
-  meta$TimestampDate = as.Date(timeDate(meta$Timestamp))
-  
-  row.names(meta) = meta$SampleID
-  
-  ##pass filter argument and filter here before aggregation but after repeats etc are marked
-  
-  if(!is.null(aggr_var)) {
-    
-    meta = aggregate_by_meta_data(meta,
-                                  aggr_var,
-                                  names(meta))  
-  }
-  
-  return (meta)
-}
 
 
 read.t1d <- function(taxa.level="3",batch=NULL,aggr_var_meta = NULL) {
@@ -4418,9 +4360,26 @@ pair.counts <- function(m_a,pair.attr) {
   
 }
 
-report.sample.count.summary <- function(meta.data) {
+report.sample.count.summary <- function(meta.data,meta.x.vars,group.var) {
+  report.section = report$get.section()
   m_a = split_count_df(meta.data$data,col_ignore=meta.data$attr.names)
-  report$add.vector(c(summary(rowSums(m_a$count))),caption="Summary of counts per sample")
+  m_a.summ=make.sample.summaries(m_a)
+  make.global(m_a.summ)
+  report$add.vector(c(summary(m_a.summ$count[,"count.sum"]),caption="Summary of counts per sample"))
+  
+  report$add.header("Iterating over meta data variables")
+  report$push.section(report.section)
+  
+  for(x.var in meta.x.vars) {
+    
+    show.sample.summaries.meta(m_a=m_a.summ,
+                               x.var=x.var,
+                               group.var=group.var)
+    
+  }
+  
+  report$pop.section()
+  
 }
 
 proc.t1d <- function() {
@@ -4461,8 +4420,6 @@ proc.t1d <- function() {
       report$add.p(paste("Before filtering for QAed and redundant samples:",nrow(taxa.meta$data)))
       
       label = paste(label_batch,"l",taxa.level,sep=".",collapse=".")
-      #DEBUG:
-      taxa.meta$data = taxa.meta$data[taxa.meta$data$Streptococcus_0.1.13.1.2.6.2>0,]
       
       aggrBySubject = F
       if(!aggrBySubject) {
@@ -4909,7 +4866,8 @@ proc.mr_oralc <- function() {
 
 count.summary <- function(count,fun,group) {
   group = as.data.frame(group)
-  group.summ = ddply(cbind(as.data.frame(count),group),names(group),colwise(fun))  
+  group.summ = ddply(cbind(as.data.frame(count),group),names(group),colwise(fun))
+  return (group.summ)
 }
 
 group.mean.ratio <- function(count,group) {
@@ -4955,13 +4913,13 @@ power.pieper.t1d <- function(
   targeted=F
 ) {
   if(F) {
-  taxa.meta = read.pieper.t1d(file.name=data.file)
-  aggr_var = "SubjectID"
-  taxa.meta = aggregate_by_meta_data(taxa.meta$data,
-                                     aggr_var,
-                                     taxa.meta$attr.names)
-  
-  make.global(taxa.meta)
+    taxa.meta = read.pieper.t1d(file.name=data.file)
+    aggr_var = "SubjectID"
+    taxa.meta = aggregate_by_meta_data(taxa.meta$data,
+                                       aggr_var,
+                                       taxa.meta$attr.names)
+    
+    make.global(taxa.meta)
   }
   taxa.meta.attr.names = taxa.meta$attr.names    
   dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
@@ -4992,7 +4950,7 @@ power.pieper.t1d <- function(
   
   print(length(ind.sig))
   #return(0)  
-    
+  
   dim.data.filt = dim(m)
   #mtp.res = MTP(X=t(m),Y=taxa.meta.data$group,get.adjp=F)
   tr.m = t(m)
@@ -5011,7 +4969,7 @@ power.pieper.t1d <- function(
   else {
     pvals.adj = p.adjust(pvals,method=mult.adj)
   }
-
+  
   #make.global(pvals.adj)
   
   group.mean = count_matr_from_df(count.summary(m,mean,group),c("group"))
@@ -5120,18 +5078,18 @@ power.pieper.prostate.cancer.2014<-function() {
 
 power.madupu.kidney_diabetes<-function() {
   prot.ids = as.data.frame(
-  matrix(
-  c(
-  "MAN2B1","O00754",
-  "GP5","P40197",
-  "FUCA2","Q9BTY2",
-  "ATP1A1","P05023",
-  "CDH5","P33151",
-  "ACE2","Q9BYF1"
-  ),
-  ncol=2,
-  byrow=T
-  )
+    matrix(
+      c(
+        "MAN2B1","O00754",
+        "GP5","P40197",
+        "FUCA2","Q9BTY2",
+        "ATP1A1","P05023",
+        "CDH5","P33151",
+        "ACE2","Q9BYF1"
+      ),
+      ncol=2,
+      byrow=T
+    )
   )
   names(prot.ids) = c("name","uniref100")
   make.global(prot.ids)
