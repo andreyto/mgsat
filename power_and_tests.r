@@ -100,6 +100,14 @@ str_blank <- function(x) {
   return (nchar(gsub("\\s","",x)))
 }
 
+arg.list.as.str<-function(x) {
+  paste("[",
+        paste(capture.output(str(x,no.list=T,comp.str="",give.attr=F,give.head=F)),collapse=","),
+        "]",
+        sep=""
+  )
+}
+
 ## replace oldnames with newnames in vector allnames
 ## to be used when allnames = names(data.frame)
 replace.col.names<-function(allnames,oldnames,newnames) {
@@ -178,10 +186,18 @@ count_filter<-function(dat,
                        col_ignore=c(),
                        min_max_frac=0.0,
                        min_max=10,
-                       min_median=0,
+                       min_mean=0,
+                       min_mean_frac=0,
                        min_row_sum=100,
                        max_row_sum=.Machine$integer.max,
                        other_cnt="other") {
+  ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
+  ##unbalanced dataset where one group is 60% of samples and has zero presence in some column,
+  ##and another group is 40% and has a large presence, then median filter will always throw this
+  ##column away.
+  #m.call = match.call()
+  #make.global(m.call)
+  #stop("DEBUG")
   x<-split_count_df(dat,col_ignore)
   row_cnt = rowSums(x$count)
   row_sel = row_cnt >= min_row_sum & row_cnt < max_row_sum
@@ -189,22 +205,34 @@ count_filter<-function(dat,
   row_cnt = row_cnt[row_sel]
   attr = x$attr[row_sel,]
   cnt_norm = row_normalize_matr(cnt)
-  col_sum = colSums(cnt_norm)
-  cnt = cnt[,order(col_sum,decreasing=T)]
-  cnt_col_sel = cnt[,apply(cnt_norm,2,max) >= min_max_frac]
-  cnt_col_sel = cnt_col_sel[,apply(cnt_col_sel,2,max) >= min_max]
-  cnt_col_sel = cnt_col_sel[,apply(cnt_col_sel,2,median) >= min_median]  
-  cnt_col_other = as.data.frame(row_cnt - rowSums(cnt_col_sel))
+  ind_col_ord = order(colSums(cnt_norm),decreasing=T)
+  cnt = cnt[,ind_col_ord]
+  cnt_norm = cnt_norm[,ind_col_ord]
+  make.global(cnt)
+  make.global(cnt_norm)
+  ind_col_sel = apply(cnt_norm,2,max) >= min_max_frac
+  cnt = cnt[,ind_col_sel]
+  print (colnames(cnt))
+  cnt_norm = cnt_norm[,ind_col_sel]
+  ind_col_sel = apply(cnt_norm,2,mean) >= min_mean_frac
+  cnt = cnt[,ind_col_sel]
+  print (colnames(cnt))
+  cnt_norm = cnt_norm[,ind_col_sel]  
+  cnt = cnt[,apply(cnt,2,max) >= min_max]
+  print (colnames(cnt))
+  cnt = cnt[,apply(cnt,2,mean) >= min_mean]  
+  cnt_col_other = as.data.frame(row_cnt - rowSums(cnt))
+
   if (!all(cnt_col_other[,1]==0) && !is.null(other_cnt)) {
     names(cnt_col_other) = c(other_cnt)
-    if (other_cnt %in% colnames(cnt_col_sel)) {
-      cnt_col_sel[,other_cnt] = cnt_col_sel[,other_cnt] + cnt_col_other[[other_cnt]]
+    if (other_cnt %in% colnames(cnt)) {
+      cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[[other_cnt]]
     }
     else {
-      return (cbind(attr,as.data.frame(cnt_col_sel),cnt_col_other))
+      return (cbind(attr,as.data.frame(cnt),cnt_col_other))
     }
   }
-  return (cbind(attr,as.data.frame(cnt_col_sel)))
+  return (cbind(attr,as.data.frame(cnt)))
 }
 
 sample.rows<-function(x,size,replace=F,prob=NULL) {
@@ -1835,7 +1863,7 @@ proc.choc <- function() {
                                            col_ignore=taxa.meta.aggr$attr.names,
                                            min_max=10)
         #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
-        #                              min_median=0.002,
+        #                              min_mean=0.002,
         #                              min_max_frac=0.1,min_max=10,
         #                              min_row_sum=500,other_cnt="other")
         
@@ -1987,9 +2015,13 @@ read.data.project <- function(taxa.summary.file,
     taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
     count.file = taxa.summary.file
   }  
+  report$add.p(sprintf("Loaded %i records for %i clades from count file %s for taxonomic level %s",
+                       nrow(taxa.lev.all),ncol(taxa.lev.all),count.file,taxa.level))
+  make.global(taxa.lev.all)
+  report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
   taxa.lev = do.call(count_filter,c(list(dat=taxa.lev.all,col_ignore=c()),count.filter.options))
-  report$add.p(sprintf("Loaded %i records from count file %s for taxonomic level %s",
-                       nrow(taxa.lev),count.file,taxa.level))
+  report$add.p(sprintf("After filtering, left %i records for %i clades for taxonomic level %s",
+                       nrow(taxa.lev),ncol(taxa.lev),taxa.level))
   meta = do.call(load.meta.method,c(file.name=meta.file,load.meta.options))  
   taxa.meta = merge.counts.with.meta(taxa.lev,meta)
   report$add.p(sprintf("After merging with metadata, %i records left",
@@ -2004,11 +2036,11 @@ mgsat.16s.task.template = within(
   
   load.meta.options=list()
   
-  count.filter.options=list(min_max_frac=0.001,min_row_sum=50,max_row_sum=100000,other_cnt="other")
+  count.filter.options=list(min_mean_frac=0.0005,min_row_sum=50,max_row_sum=100000,other_cnt="other")
   
   get.taxa.meta.aggr<-function(taxa.meta) { return (taxa.meta) }
   
-  count.filter.aggr.options=list(min_max_frac=0.001,min_row_sum=50,other_cnt="other")
+  count.filter.aggr.options=list(min_mean_frac=0.0005,min_row_sum=50,other_cnt="other")
   
   
   do.summary.meta = F
@@ -2125,8 +2157,14 @@ proc.project <- function(
                                         count.filter.aggr.options)
         )
         
-        report$add.p(paste("After post-aggregation count filtering,",
-                           (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),"clades left."))
+        report$add.p(paste("After post-aggregation count filtering with arguments",
+                           arg.list.as.str(count.filter.aggr.options),
+                    ",",
+                    (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),
+                    "clades and",
+                    nrow(taxa.meta.aggr$data),
+                    "samples left."))
+
         
         if(do.summary.meta) {
           summary.meta.method(taxa.meta.aggr)
@@ -4466,7 +4504,7 @@ proc.t1d <- function() {
                                          min_max=10,
                                          max_row_sum=100000)
       #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
-      #                              min_median=0.002,
+      #                              min_mean=0.002,
       #                              min_max_frac=0.1,min_max=10,
       #                              min_row_sum=500,other_cnt="other")
       
@@ -4905,7 +4943,7 @@ power.pieper.t1d <- function(
   n = 50,
   alpha.sim = 0.05,
   alpha.orig = 0.05,
-  min.median = 100,
+  min.mean = 100,
   mult.adj = "fdrtool",
   data.file="aim3/September 28 analysis_T1D.txt",
   R = 4000,
@@ -4924,7 +4962,7 @@ power.pieper.t1d <- function(
   taxa.meta.attr.names = taxa.meta$attr.names    
   dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
   taxa.meta.data.raw = count_filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
-                                    min_max_frac=0,min_max=0,min_median=min.median,min_row_sum=0,other_cnt=NULL)
+                                    min_max_frac=0,min_max=0,min_mean=min.mean,min_row_sum=0,other_cnt=NULL)
   print(dim(taxa.meta.data.raw))
   
   taxa.meta.data = all_normalize(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
@@ -5067,7 +5105,7 @@ power.pieper.prostate.cancer.2014<-function() {
     n = 170,
     ## this is under the proposal directory
     data.file = "data/T1D_proteome/Original Collapesed APEX (All information).AT.tsv",
-    min.median = 1200,
+    min.mean = 1200,
     alpha.sim = 0.05,
     alpha.orig = 0.05,
     R = 400
@@ -5097,7 +5135,7 @@ power.madupu.kidney_diabetes<-function() {
     n = 300,
     ## this is under the proposal directory
     data.file = "data/T1D_proteome/Original Collapesed APEX (All information).AT.tsv",
-    min.median = 0,
+    min.mean = 0,
     alpha.sim = 0.05,
     alpha.orig = 0.05,
     R = 400,
