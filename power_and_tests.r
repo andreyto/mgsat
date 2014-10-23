@@ -847,9 +847,7 @@ read.mothur.cons.taxonomy <- function(file_name) {
 
 read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file) {
   otu.df = read.mothur.otu.shared(otu.shared.file)
-  make.global(otu.df)
   taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file)
-  make.global(taxa.df)
   stopifnot(all(names(otu.df) == taxa.df$OTU))
   names(otu.df) = paste(taxa.df$Taxa,taxa.df$OTU,sep=".")
   ## Order columns by taxa name
@@ -857,12 +855,27 @@ read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file) {
   return (otu.df)
 }
 
+make.mothur.taxa.summary.clade.names <- function(taxa.summary) {
+  taxon = taxa.summary$taxon
+  names(taxon) = taxa.summary$rankID
+  ind_unclass = which(taxon == "unclassified")
+  ind_unclass.ini = ind_unclass
+  while(length(ind_unclass)>0) {
+  taxon[ind_unclass] = taxon[unlist(strsplit(names(taxon)[ind_unclass], "\\.[0-9]+$"))]
+  ind_unclass = ind_unclass[taxon[ind_unclass]=="unclassified"]
+  }
+  ind_unclass.ini = ind_unclass.ini[taxon[ind_unclass.ini] != "unknown"]
+  taxon = as.character(taxon)
+  taxon[ind_unclass.ini] = paste("Unclassified",taxon[ind_unclass.ini],sep="_")
+  return(taxon)
+}
+
 read.mothur.taxa.summary <- function(file_name) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   #where this X == NA column comes from, I have no idea. I do not see
   #it in the text file. Maybe R bug?
   data$X = NULL
-  data$clade = paste(data$taxon,data$rankID,sep="_")
+  data$clade = as.factor(make.mothur.taxa.summary.clade.names(data))
   return (data)
 }
 
