@@ -154,6 +154,10 @@ row_normalize_matr<-function(x) {
   x/rowSums(x)
 }
 
+row_normalize.m_a<-function(m_a) {
+  m_a$count = row_normalize_matr(m_a$count)
+  return (m_a)
+}
 
 row_normalize<-function(dat,col_ignore=c()) {
   mask_col_ignore = names(dat) %in% col_ignore
@@ -208,21 +212,16 @@ count_filter<-function(dat,
   ind_col_ord = order(colSums(cnt_norm),decreasing=T)
   cnt = cnt[,ind_col_ord]
   cnt_norm = cnt_norm[,ind_col_ord]
-  make.global(cnt)
-  make.global(cnt_norm)
   ind_col_sel = apply(cnt_norm,2,max) >= min_max_frac
   cnt = cnt[,ind_col_sel]
-  print (colnames(cnt))
   cnt_norm = cnt_norm[,ind_col_sel]
   ind_col_sel = apply(cnt_norm,2,mean) >= min_mean_frac
   cnt = cnt[,ind_col_sel]
-  print (colnames(cnt))
   cnt_norm = cnt_norm[,ind_col_sel]  
   cnt = cnt[,apply(cnt,2,max) >= min_max]
-  print (colnames(cnt))
   cnt = cnt[,apply(cnt,2,mean) >= min_mean]  
   cnt_col_other = as.data.frame(row_cnt - rowSums(cnt))
-
+  
   if (!all(cnt_col_other[,1]==0) && !is.null(other_cnt)) {
     names(cnt_col_other) = c(other_cnt)
     if (other_cnt %in% colnames(cnt)) {
@@ -861,8 +860,8 @@ make.mothur.taxa.summary.clade.names <- function(taxa.summary) {
   ind_unclass = which(taxon == "unclassified")
   ind_unclass.ini = ind_unclass
   while(length(ind_unclass)>0) {
-  taxon[ind_unclass] = taxon[unlist(strsplit(names(taxon)[ind_unclass], "\\.[0-9]+$"))]
-  ind_unclass = ind_unclass[taxon[ind_unclass]=="unclassified"]
+    taxon[ind_unclass] = taxon[unlist(strsplit(names(taxon)[ind_unclass], "\\.[0-9]+$"))]
+    ind_unclass = ind_unclass[taxon[ind_unclass]=="unclassified"]
   }
   ind_unclass.ini = ind_unclass.ini[taxon[ind_unclass.ini] != "unknown"]
   taxon = as.character(taxon)
@@ -1052,9 +1051,8 @@ order.levels <- function(lev,keys) {
   lev[order(keys,decreasing=T)]
 }
 
-plot.abund.meta <- function(data,
+plot.abund.meta <- function(m_a,
                             id.vars,
-                            attr.names,
                             value.name="abundance",
                             file_name=NULL,
                             ggp.comp=NULL,
@@ -1075,6 +1073,11 @@ plot.abund.meta <- function(data,
   if(flip.coords && sqrt.scale) {
     stop("SQRT coordinate transformation cannot be used in flipped horizontal and vertical coords")
   }
+  
+  #TODO: change code in this method to use m_a directly
+  dat = join_count_df(m_a)
+  attr.names = names(m_a$attr)
+  
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
   
   if (is.null(clades.order)) {
@@ -1213,40 +1216,74 @@ plot.abund.meta <- function(data,
   return (gp)
 }
 
+write.table.m_a <- function(m_a,file.base,row.names=F) {
+  fn.count = paste(file.base,"count.tsv")
+  write.table(m_a$count,
+              fn.count,
+              sep="\t",
+              row.names = row.names)
+  fn.attr = paste(file.base,"attr.tsv")
+  write.table(m_a$attr,
+              fn.attr,
+              sep="\t",
+              row.names = row.names)
+  return (list(fn.count=fn.count,fn.attr=fn.attr))
+}
 
-std.plots <- function(abund.meta.data,
-                      abund.meta.attr.names,
-                      id.vars.list,
-                      extra.attr=NULL,
-                      label="",
-                      do.diversity=F,
-                      file.name.root="std.plot",
-                      file.name.sfx="png",
+write.table.file.report.m_a = function(m_a,name.base,descr=NULL,row.names=F) {
+  ## if we write row.names, Excel shifts header row to the left when loading
+  file.base = report$make.file.name(name.base)
+  files = write.table.m_a(m_a=m_a,
+              file.base=file.base,
+              row.names = row.names)
+  if (!is.null(descr)) {
+    .self$add.descr(paste("Wrote counts and metadata for",
+                          descr,
+                          "to files",
+                          paste(files,collapse=",")))
+  }
+  return (files) 
+}
+
+
+export.taxa.meta <- function(taxa.meta,
+                             label,
+                             descr="",
+                             row.proportions=T,
+                             row.names=F) {
+  data = taxa.meta$data
+  attr.names = taxa.meta$attr.names
+  
+  m_a = split_count_df(data,col_ignore=attr.names)
+  
+  write.table.file.report.m_a(m_a=m_a,
+                              name.base=paste("samples.raw",label,sep="."),
+                              descr=paste("raw counts",decsr),
+                              row.names=row.names)  
+  
+  if(row.proportions) {
+    
+    write.table.file.report.m_a(m_a=row_normalize.m_a(m_a),
+                                name.base=paste("samples.proportions",label,sep="."),
+                                descr=paste("proportions counts",decsr),
+                                row.names=row.names)
+  }
+  return (m_a)
+}
+
+
+plot.profiles <- function(m_a,
                       res.tests=NULL,
+                      id.vars.list,
                       clade.meta.x.vars=c(),
                       do.profile=T,
-                      do.clade.meta=T) {
+                      do.clade.meta=T,
+                      show.profile.task=list(),
+                      show.clade.meta.task=list()) {
   
   report.section = report$add.header("Plots of abundance profiles in multiple representations",section.action="push")
   report$add.descr("Abundance plots are shown with relation to various combinations of meta 
                    data variables and in different graphical representations. Lots of plots here.")
-  
-  abund.meta.data.norm = row_normalize(abund.meta.data,col_ignore=abund.meta.attr.names)
-  file.name.root = paste(file.name.root,label,sep=".")
-  
-  #write files w/o row names because Excel will incorrectly shift column names due to first empty name
-  report$write.table.file(abund.meta.data,paste(file.name.root,".count.tsv",sep=""),descr="count matrix joined with metadata")
-  report$write.table.file(abund.meta.data.norm,paste(file.name.root,".freq.tsv",sep=""),descr="frequency matrix joined with metadata")
-  
-  make.graph.file.name <- function(kind) {
-    paste(file.name.root.id.vars,kind,file.name.sfx,sep=".")
-  }
-  
-  m_a = split_count_df(abund.meta.data,col_ignore=abund.meta.attr.names)
-  m_a.norm = split_count_df(abund.meta.data.norm,col_ignore=abund.meta.attr.names)
-  #make.global(m_a)
-  
-  is.count.data = any(m_a$count > 1)
   
   report$add.header("Iterating over all combinations of grouping variables")
   report$push.section(report.section)
@@ -1255,12 +1292,9 @@ std.plots <- function(abund.meta.data,
     
     report$add.header(paste("Grouping variables",paste0(id.vars,collapse=",")))
     
-    file.name.root.id.vars = paste0(c(file.name.root,id.vars),collapse="_")
-    #coord_trans(y="sqrt"),
-    #scale_y_sqrt(),    
     clades.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
-    if (!is.null(names(res.tests)) && !is.null(res.tests$stab.feat)) {
-      clades.order[[2]] = list(ord=res.tests$stab.feat$labels[res.tests$stab.feat$mean.order],
+    if (!is.null(names(res.tests)) && !is.null(res.tests$glmnet.stability)) {
+      clades.order[[2]] = list(ord=res.tests$glmnet.stability$labels[res.tests$glmnet.stability$mean.order],
                                ord_descr="GLMnet feature stability",
                                sfx="glmnet")
     }
@@ -1279,10 +1313,22 @@ std.plots <- function(abund.meta.data,
         
         for(x.var in clade.meta.x.vars) {
           
-          show.clade.meta(m_a=m_a.norm,
+          group.var = id.vars[id.vars != x.var]
+          if(length(group.var)>0) {
+            group.var = group.var[1]
+          }
+          else {
+            group.var = NULL
+          }
+          do.call(show.clade.meta,
+                  c(
+                    list(m_a=m_a.norm,
                           clade.names=clade.names.meta,
                           x.var=x.var,
-                          group.var=id.vars[1])
+                          group.var=group.var),
+                    show.clade.meta.task
+                  )
+          )
           
         }
         
@@ -1320,18 +1366,8 @@ std.plots <- function(abund.meta.data,
             for(geom in c("bar","violin","boxplot")) {
               tryCatchAndWarn({
                 
-                file_name=make.graph.file.name(
-                  paste("abund",
-                        pl.par$sfx,
-                        geom,
-                        id.var.dodge$dodge,
-                        other.params,
-                        sep=".",
-                        collapse="."))
-                
-                pl.hist = plot.abund.meta(abund.meta.data.norm,
+                pl.hist = plot.abund.meta(m_a=m_a,
                                           id.vars=id.vars,
-                                          attr.names=abund.meta.attr.names,
                                           clades.order=pl.par$ord,
                                           geom=geom,
                                           file_name=NULL,
@@ -2011,14 +2047,14 @@ load.meta.default <- function(file.name) {
 }
 
 
-read.data.project <- function(taxa.summary.file,
-                              otu.shared.file,
-                              cons.taxonomy.file,
-                              meta.file,
-                              load.meta.method,
-                              load.meta.options=list(),
-                              count.filter.options=list(min_max_frac=0.001,min_row_sum=50,other_cnt="other"),
-                              taxa.level=3) {
+read.data.project.yap <- function(taxa.summary.file,
+                                  otu.shared.file,
+                                  cons.taxonomy.file,
+                                  meta.file,
+                                  load.meta.method,
+                                  load.meta.options=list(),
+                                  count.filter.options=list(min_max_frac=0.001,min_row_sum=50,other_cnt="other"),
+                                  taxa.level=3) {
   if (taxa.level == "otu") {
     taxa.lev.all = read.mothur.otu.with.taxa(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
     count.file = otu.shared.file
@@ -2042,76 +2078,104 @@ read.data.project <- function(taxa.summary.file,
   return (taxa.meta)
 }
 
-mgsat.16s.task.template = within(
-  list(),
-{
+mgsat.16s.task.template = within(list(), {
+  
+  read.data.task = list(
+    read.data.method=read.data.project.yap,
+    taxa.summary.file=NULL,
+    otu.shared.file=NULL,
+    cons.taxonomy.file=NULL,
+    meta.file=NULL,
+    load.meta.method=load.meta.default,
+    load.meta.options=list(),
+    count.filter.options=list(min_mean_frac=0.0005,min_row_sum=50,max_row_sum=100000,other_cnt="other")
+  )
+  
   taxa.levels = c("otu",2,3,4,5,6)
-  
-  load.meta.options=list()
-  
-  count.filter.options=list(min_mean_frac=0.0005,min_row_sum=50,max_row_sum=100000,other_cnt="other")
   
   get.taxa.meta.aggr<-function(taxa.meta) { return (taxa.meta) }
   
   count.filter.aggr.options=list(min_mean_frac=0.0005,min_row_sum=50,other_cnt="other")
   
-  
   do.summary.meta = F
-  summary.meta.x.vars = c()
-  summary.meta.group.var = c()
   
-  do.std.plots = T
-  do.clade.meta=T
-  do.profile=T
+  do.plots = T
   
-  do.heatmap = T
-  do.std.tests = T
+  do.tests = T
   
-  do.stability=T
-  do.tests=T
-  do.genesel=T
-  do.glmnet=T
-  do.glmer=T
-  do.adonis=T
-  do.select.samples=F
+  summary.meta.task = list(
+    meta.x.vars = c(),
+    group.var = c()
+  )
   
-  stability.steps = 600
-  n.adonis.perm = 4000  
+  test.counts.task = within(list(), {
+    
+    do.genesel=T
+    do.glmnet=T
+    do.glmer=T
+    do.adonis=T
+    do.select.samples=F
+    
+    alpha = 0.05
+    
+    n.adonis.perm = 4000  
+    
+    glmnet.stability.task = list(
+      resp.attr="Group",
+      family="binomial",
+      steps=600,
+      weakness=0.8,
+      standardize.count=T,
+      standardize.pred=T,
+      transform.count="ihs",
+      pred.attr=NULL,
+      fwer.alpha=0.05
+    )
+    
+    
+    genesel.task = list(
+      resp.attr = glmnet.stability.task$resp.attr
+    )
+    
+    select.samples.task = list (
+      n.species = 20,
+      n.samples = 20,
+      taxa.level = 6
+    )
+    
+    adonis.tasks = list()
+    
+    glmer.task = list()
+    
+  })
   
-  stability.resp.attr = "NULL" 
-  stability.model.family = "binomial"
+  plot.counts.task = within(list(), {
+    
+    do.plot.profiles = T
+    do.heatmap = T
+    
+    plot.profiles.task = within(list(), {
+      id.vars.list = list(c("Group"))
+      clade.meta.x.vars=c()
+      do.profile=T
+      do.clade.meta=F
+      show.profile.task=list()
+      show.clade.meta.task=list()      
+    })
+    
+    heatmap.task = list(
+      attr.annot.names=NULL,
+      attr.row.labels=NULL,
+      caption="Heatmap of abundance profile",
+      stand.show="range"
+    )
+  })
   
-  genesel.resp.attr = stability.resp.attr
-  
-  stability.transform.counts="ihs"
-  
-  n.species.select.samples = 20
-  n.select.samples = 20
-  taxa.level.select.samples = 6
-  
-  adonis.tasks = list()
-  
-  glmer.task = list()
-  
-  plot.group = list()            
-  
-  clade.meta.x.vars=c()
-  
-  heatmap.task = list()
-  
-  
-}
-)
+})
 
 
 proc.project <- function(
-  taxa.summary.file,
-  otu.shared.file,
-  cons.taxonomy.file,
-  meta.file,
-  summary.meta.method,
-  task.generator.method,
-  load.meta.method=load.meta.default
+  task.generator.method
 ) {
   
   report$add.descr("Set of analysis routines is applied
@@ -2145,14 +2209,12 @@ proc.project <- function(
         report$add.header(paste("Taxonomic level:",taxa.level))
         report$push.section(report.section) #4 {
         
-        taxa.meta = read.data.project(taxa.summary.file=taxa.summary.file,
-                                      otu.shared.file=otu.shared.file,
-                                      cons.taxonomy.file=cons.taxonomy.file,
-                                      meta.file=meta.file,
-                                      load.meta.method=load.meta.method,
-                                      load.meta.options=load.meta.options,
-                                      count.filter.options=count.filter.options,
-                                      taxa.level=taxa.level)
+        taxa.meta = do.call(read.data.task$read.data.method,
+                            c(
+                              list(taxa.level=taxa.level),
+                              read.data.task
+                            )
+        )
         
         
         make.global(taxa.meta)
@@ -2166,96 +2228,65 @@ proc.project <- function(
         
         taxa.meta.aggr$data = do.call(count_filter,
                                       c(list(dat=taxa.meta.aggr$data,
-                                        col_ignore=taxa.meta.aggr$attr.names),
+                                             col_ignore=taxa.meta.aggr$attr.names),
                                         count.filter.aggr.options)
         )
         
         report$add.p(paste("After post-aggregation count filtering with arguments",
                            arg.list.as.str(count.filter.aggr.options),
-                    ",",
-                    (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),
-                    "clades and",
-                    nrow(taxa.meta.aggr$data),
-                    "samples left."))
-
+                           ",",
+                           (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),
+                           "clades and",
+                           nrow(taxa.meta.aggr$data),
+                           "samples left."))
+        
         
         if(do.summary.meta) {
           summary.meta.method(taxa.meta.aggr)
-          report.sample.count.summary(meta.data=taxa.meta.aggr,
-                                      meta.x.vars=summary.meta.x.vars,
-                                      group.var=summary.meta.group.var)
+          do.call(report.sample.count.summary,c(
+            list(meta.data=taxa.meta.aggr),
+            summary.meta.task
+          )
+          )
           ##only do summary once
           do.summary.meta = F
         }
         
+        m_a = export.taxa.meta(taxa.meta=taxa.meta.aggr,
+                                 label=label,
+                                 descr=descr,
+                                 row.proportions=T,
+                                 row.names=F,
+                                 ret.m_a=T)
+
         res.tests = NULL
+        
         if (do.std.tests) {
-          res.tests = tryCatchAndWarn(
-            test.counts.project(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
-                                label=label,
-                                do.stability=do.stability,
-                                do.tests=do.tests,
-                                do.genesel=do.genesel,
-                                do.glmnet=do.glmnet,
-                                do.glmer=do.glmer,
-                                do.adonis=do.adonis,
-                                genesel.resp.attr = genesel.resp.attr,
-                                stability.resp.attr = stability.resp.attr,
-                                stability.model.family = stability.model.family,
-                                stability.transform.counts=stability.transform.counts,
-                                adonis.tasks = adonis.tasks,
-                                glmer.task = glmer.task,
-                                stability.steps = stability.steps,
-                                n.adonis.perm = n.adonis.perm
-                                
-            )
-          )
-          
-          if( do.select.samples && 
-                (taxa.level.select.samples == taxa.level) &&
-                do.stability && 
-                do.glmnet ) {
-            
-            tryCatchAndWarn({    
-              #species.sel=res$stab.feat.genesel$stab_feat$name
-              species.sel=names(take_first(res$stab.feat.glmnet$mean.order.p,
-                                           n.species.select.samples))
-              select.samples(data.norm,attr.names,
-                             species.sel=species.sel,
-                             sample.group.name=stability.resp.attr,
-                             n.select=n.select.samples)
-            })
-            
+          if(test.counts.task$select.samples.task$taxa.level != taxa.level) {
+            test.counts.task$do.select.samples = F
           }
-          
+          res.tests = tryCatchAndWarn(
+            do.call(test.counts.project,
+                    c(
+                      list(
+                        m_a=m_a,
+                        label=label
+                      ),
+                      test.counts.task
+                    )
+            )
+          )          
         }
-        if( do.std.plots || do.heatmap ) {
+        if( do.plots ) {
           report$add.header("Plots")
-        }
-        if (do.std.plots) {
-          
-          tryCatchAndWarn({
-            std.plots(taxa.meta.aggr$data,taxa.meta.aggr$attr.names,
-                      id.vars.list=plot.group,
-                      label=label,
-                      res.tests=res.tests,
-                      do.clade.meta=do.clade.meta,
-                      do.profile=do.profile,
-                      clade.meta.x.vars=clade.meta.x.vars
-            )
-          })
-        }
-        if (do.heatmap) {
-          tryCatchAndWarn({
-            heatmap.counts(taxa.meta.aggr$data,
-                           taxa.meta.aggr$attr.names,
-                           attr.annot.names=heatmap.task$attr.annot.names,
-                           attr.row.labels=heatmap.task$attr.row.labels,
-                           caption="Heatmap of abundance profile",
-                           stand.show="max",
-                           trans.show=sqrt
-            )
-          })
+          do.call(plot.counts.project,
+                  c(
+                    list(m_a=row_normalize.m_a(m_a),
+                         label=label,
+                         res.tests=res.tests),
+                    plot.counts.task
+                  )
+          )
         }
         report$pop.section() #4 }
       }
@@ -2457,13 +2488,19 @@ show.clade.meta <- function(m_a,
     trans.msg = ""
   }
   
+  if(is.null(group.var)) {
+    group.var.msg = ""
+  }
+  else {
+    group.var.msg = paste("split by",group.var)
+  }
+  
   report.section = report$add.header(paste("Plots of",
                                            vars.descr,
                                            trans.msg,
                                            "as a function of",
                                            x.var,
-                                           "split by",
-                                           group.var),
+                                           group.var.msg),
                                      section.action="push")
   
   id.vars = c(x.var,group.var)
@@ -2486,8 +2523,7 @@ show.clade.meta <- function(m_a,
                              clade.name,
                              "as a function of",
                              x.var,
-                             "split by",
-                             group.var)
+                             group.var.msg)
     )
   }
 }
@@ -2737,7 +2773,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       ## We need to use row-normalized counts here, because we perform Wilcox test
       ## inside, and could false significance due to different depth of sequencing
       res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,stability.resp.attr])
-      res$stab.feat.genesel = res.stab_sel_genesel
+      res$stability.genesel = res.stab_sel_genesel
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcox) is applied to each clade on random
@@ -2828,8 +2864,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
                  plotted as solid lines.")
       }
       
-      res$stab.feat=stab.feat.c060
-      res$stab.feat.glmnet = stab.feat.c060
+      res$glmnet.stability=stab.feat.c060
     }
   }
   
@@ -2946,8 +2981,8 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   if( do.select.samples && do.stability && do.glmnet ) {
     
     tryCatchAndWarn({    
-      species.sel=res$stab.feat.genesel$stab_feat$name
-      species.sel=names(take_first(res$stab.feat.glmnet$mean.order.p,20))
+      species.sel=res$glmnet.stability.genesel$stab_feat$name
+      species.sel=names(take_first(res$glmnet.stability.glmnet$mean.order.p,20))
       select.samples(data.norm,attr.names,
                      species.sel=species.sel,
                      sample.group.name=stability.resp.attr)
@@ -3023,7 +3058,7 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
     #png(stab.path.file)
     #plot(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
     #dev.off()
-    res$stab.feat=stab.feat.c060
+    res$glmnet.stability=stab.feat.c060
   }
   
   if (do.tests) {
@@ -3084,168 +3119,219 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
   return (res)
 }
 
+glmnet.stabpath.report <- function(m_a,
+                                   resp.attr,
+                                   family="gaussian",
+                                   steps=600,
+                                   weakness=0.8,
+                                   standardize.count=T,
+                                   standardize.pred=T,
+                                   transform.count="ihs",
+                                   pred.attr=NULL,
+                                   fwer.alpha=0.05) {
+  
+  m = m_a$count
+  count = switch(transform.count,
+                 boxcox=boxcox.transform.mat(m),
+                 ihs=ihs(m,1),
+                 ident=m,
+                 binary=(m > 0))
+  
+  
+  attr = m_a$attr
+  if(standardize.count) {
+    count = decostand(count,method="standardize",MARGIN=2)
+  }
+  
+  cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
+  registerDoSNOW(cl)  
+  cv.res = cv.glmnet.alpha(attr[,resp.attr],count,family=family,standardize=F)
+  stopCluster(cl)
+  
+  penalty.alpha = cv.res$alpha
+  #alpha = 0.8
+  stab.res.c060 = stabpath(attr[,resp.attr],count,weakness=weakness,
+                           family=family,steps=steps,
+                           alpha=penalty.alpha,standardize=F)
+  #stab.res.c060 = stabpath(m_a$attr$A1C[m_a$attr$T1D=="T1D"],
+  #                               count[m_a$attr$T1D=="T1D",],
+  #                               weakness=0.9,
+  #                               family="gaussian",steps=600,
+  #                               alpha=penalty.alpha,standardize=F)
+  
+  fwer = fwer.alpha
+  pi_thr = 0.6
+  stab.feat.c060 = stability.selection.c060.at(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+  #stab.feat.c060 = stability.selection(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+  
+  pl.stab = tryCatchAndWarn({
+    #p = plot.stability.selection.c060.at(stab.feat.c060,rank="mean")
+    p = plot.stability.selection.c060.at(stab.feat.c060,xvar="fraction",rank="lpos")
+    #ggsave(stab.path.file)
+    p
+  })
+  
+  #report$add.printed(stab.res.c060$fit,
+  #                   caption=paste(
+  #                     "Glmnet stability path analysis for response (",
+  #                     stability.resp.attr,
+  #                     ")"
+  #                     )
+  #)
+  report$add.header(paste(
+    "Glmnet stability path analysis for response (",
+    stability.resp.attr,
+    ")"
+  )
+  )
+  
+  report$add.printed(summary(m_a$attr[,stability.resp.attr]),
+                     caption="Summary of response variable")
+  
+  report$add.package.citation("c060")
+  report$add.descr("This multivariate feature selection method builds glmnet models 
+                 for a given response variable at 
+                 varying strengths of L1 norm
+                 regularization parameter and on multiple random subsamples at each
+                 level of the parameter. The features (e.g. taxonomic clades)
+                 are ranked according to their probability to be included in the
+                 model")
+  report$add.vector(stab.feat.c060$stable,
+                    caption="Features that passed FWER in stability analysis")
+  
+  if(!is.null(pl.stab)) {
+    report$add(pl.stab,caption="Stability path. Probability of each variable 
+             to be included in the model as a function of L1 regularization
+             strength. Paths for top ranked variables are colored. The variables
+             (if any) that passed family wide error rate (FWER) cutoff are
+             plotted as solid lines.")
+  }
+  
+  return (stab.feat.c060)
+}
+
+genesel.stability.report <- function(m_a,resp.attr) {
+  
+  ## m_a$count passed here should be normalized to proportions, because we perform Wilcox test
+  ## inside, and could find false significance due to different depth of sequencing
+  
+  res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
+  report$add.header("GeneSelector stability ranking")
+  report$add.package.citation("GeneSelector")
+  report$add.descr("Univariate test (Wilcox) is applied to each clade on random
+                 subsamples of the data. Consensus ranking is found with a
+                 Monte Carlo procedure. The top clades of the consensus ranking
+                 are returned, along with the p-values computed on the full
+                 original dataset (with multiple testing correction).")
+  
+  report$add.printed(summary(m_a$attr[,resp.attr]),
+                     caption=paste("Summary of response variable",resp.attr))
+  
+  report$add.table(res.stab_sel_genesel$stab_feat,
+                   caption=
+                     paste("GeneSelector stability ranking for response ",resp.attr))
+  
+  report$add.package.citation("vegan")
+  m_a.mds = m_a
+  m_a.mds$count = m_a.mds$count[,res.stab_sel_genesel$stab_feat$name]
+  report$add(
+    plot.features.mds(m_a.mds,sample.group=m_a$attr[,resp.attr]),
+    caption="metaMDS plot of clades selected by GeneSelector. 'x' marks clades, 'o' marks samples"
+  )
+  
+  return (res.stab_sel_genesel)
+  
+}
+
+select.samples.report <- function(m_a,
+                                  glmnet.stability.res,
+                                  resp.attr,
+                                  n.species,
+                                  n.samples) {
+  
+  #species.sel=res$glmnet.stability.genesel$stab_feat$name
+  species.sel=names(take_first(glmnet.stability.res$mean.order.p,
+                               n.species))
+  select.samples(m_a=m_a,
+                 species.sel=species.sel,
+                 sample.group.name=resp.attr,
+                 n.select=n.samples)
+  
+}
 
 
-
-test.counts.project <- function(data,
-                                attr.names,
+plot.counts.project <- function(m_a,
                                 label,
-                                stability.resp.attr=NULL,
-                                stability.model.family=NULL,
-                                genesel.resp.attr=NULL,
+                                res.tests,
+                                do.plot.profiles,
+                                do.heatmap,
+                                plot.profiles.task,
+                                heatmap.task) {
+  
+  
+  if (do.plot.profiles) {
+    
+    tryCatchAndWarn({
+      do.call(plot.profiles,
+              c(list(m_a=m_a,
+                    res.tests=res.tests,
+                    label=label),
+                plot.profiles.task
+              )
+      )
+
+    })
+  }
+  
+  if (do.heatmap) {
+    
+    tryCatchAndWarn({
+      do.call(heatmap.counts,
+              c(list(m_a=m_a),
+                heatmap.task
+              )
+      )
+      
+    })
+  }
+}
+
+test.counts.project <- function(m_a,
+                                label,
+                                glmnet.stability.task=NULL,
+                                genesel.task=NULL,
                                 adonis.tasks=NULL,
                                 glmer.task=NULL,
+                                select.samples.task=NULL,
                                 alpha=0.05,
-                                do.tests=T,do.stability=T,
-                                do.genesel=T,do.glmnet=T,
+                                do.genesel=T,do.glmnet.stability=T,
                                 do.glmer=T,do.adonis=T,
-                                stability.transform.counts="ihs",
-                                stability.steps = 600,
+                                do.select.samples=F,
                                 n.adonis.perm = 4000
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
   
-  if(is.null(genesel.resp.attr)) {
-    genesel.resp.attr = stability.resp.attr
-  }
-  
   res = list()
   
-  m_a.abs = split_count_df(data,col_ignore=attr.names)
-  make.global(m_a.abs)
-  
-  row_summ = summary(rowSums(m_a.abs$count))
-  report$add.printed(row_summ,caption="Summary of absolute counts")
-  
-  data.norm = row_normalize(data,col_ignore=attr.names)
+  m_a.norm = row_normalize.m_a(m_a)
   
   #make.global(data.norm)
   
-  all.clades = get.clade.names(data,attr.names)
-  m_a = split_count_df(data.norm,col_ignore=attr.names)
-  
-  make.global(m_a)
-  
-  m = m_a$count
-  
-  #m = (m_a.abs$count > 0)
-  #storage.mode(m) = "integer"
-  
-  count = switch(stability.transform.counts,
-                 boxcox=boxcox.transform.mat(m),
-                 ihs=ihs(m,1),
-                 ident=m,
-                 binary=(m_a.abs$count > 0))
-  
-  if (do.stability) {
     
     if(do.genesel) {
-      ## We need to use row-normalized counts here, because we perform Wilcox test
-      ## inside, and could false significance due to different depth of sequencing
-      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,genesel.resp.attr])
-      report$add.header("GeneSelector stability ranking")
-      report$add.package.citation("GeneSelector")
-      report$add.descr("Univariate test (Wilcox) is applied to each clade on random
-                       subsamples of the data. Consensus ranking is found with a
-                       Monte Carlo procedure. The top clades of the consensus ranking
-                       are returned, along with the p-values computed on the full
-                       original dataset (with multiple testing correction).")
-      
-      report$add.printed(summary(m_a$attr[,genesel.resp.attr]),
-                         caption="Summary of response variable")
-      
-      report$add.table(res.stab_sel_genesel$stab_feat,
-                       caption=
-                         paste("GeneSelector stability ranking for response ",genesel.resp.attr)
-      )
-      report$add.package.citation("vegan")
-      report$add(
-        plot.features.mds(m_a,species.sel=(colnames(m_a$count) %in% 
-                                             res.stab_sel_genesel$stab_feat$name),
-                          sample.group=m_a$attr[,genesel.resp.attr]),
-        caption="metaMDS plot. 'x' marks top selected clades, 'o' marks samples"
-      )
+      res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
     }
-    if(do.glmnet) {
-      standardize.glm = T
-      if(standardize.glm) {
-        count = decostand(count,method="standardize",MARGIN=2)
-      }
-      
-      cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
-      registerDoSNOW(cl)  
-      cv.res = cv.glmnet.alpha(m_a$attr[,stability.resp.attr],count,family=stability.model.family,standardize=F)
-      stopCluster(cl)
-      
-      penalty.alpha = cv.res$alpha
-      #alpha = 0.8
-      stab.res.c060 = stabpath(m_a$attr[,stability.resp.attr],count,weakness=0.8,
-                               family=stability.model.family,steps=stability.steps,
-                               alpha=penalty.alpha,standardize=F)
-      #stab.res.c060 = stabpath(m_a$attr$A1C[m_a$attr$T1D=="T1D"],
-      #                               count[m_a$attr$T1D=="T1D",],
-      #                               weakness=0.9,
-      #                               family="gaussian",steps=600,
-      #                               alpha=penalty.alpha,standardize=F)
-      
-      fwer = alpha
-      pi_thr = 0.6
-      stab.feat.c060 = stability.selection.c060.at(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
-      #stab.feat.c060 = stability.selection(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
-      
-      stab.path.file = paste("stability.path",label,"png",sep=".")
-      
-      pl.stab = tryCatchAndWarn({
-        #p = plot.stability.selection.c060.at(stab.feat.c060,rank="mean")
-        p = plot.stability.selection.c060.at(stab.feat.c060,xvar="fraction",rank="lpos")
-        #ggsave(stab.path.file)
-        p
-      })
-      
-      #report$add.printed(stab.res.c060$fit,
-      #                   caption=paste(
-      #                     "Glmnet stability path analysis for response (",
-      #                     stability.resp.attr,
-      #                     ")"
-      #                     )
-      #)
-      report$add.header(paste(
-        "Glmnet stability path analysis for response (",
-        stability.resp.attr,
-        ")"
-      )
-      )
-      
-      report$add.printed(summary(m_a$attr[,stability.resp.attr]),
-                         caption="Summary of response variable")
-      
-      report$add.package.citation("c060")
-      report$add.descr("This multivariate feature selection method builds glmnet models 
-                       for a given response variable at 
-                       varying strengths of L1 norm
-                       regularization parameter and on multiple random subsamples at each
-                       level of the parameter. The features (e.g. taxonomic clades)
-                       are ranked according to their probability to be included in the
-                       model")
-      report$add.vector(stab.feat.c060$stable,
-                        caption="Features that passed FWER in stability analysis")
-      
-      if(!is.null(pl.stab)) {
-        report$add(pl.stab,caption="Stability path. Probability of each variable 
-                   to be included in the model as a function of L1 regularization
-                   strength. Paths for top ranked variables are colored. The variables
-                   (if any) that passed family wide error rate (FWER) cutoff are
-                   plotted as solid lines.")
-      }
-      
-      res$stab.feat=stab.feat.c060
-    }
-  }
   
-  if (do.tests) {
+    if(do.glmnet.stability) {
+      res$glmnet.stability = do.call(glmnet.stabpath,c(list(m_a=m_a.norm),
+                                                       glmnet.stability.task
+      )
+      )
+    }
+  
     if(do.glmer) {  
-      res$glmer = test_taxa_count_glmer(m_a.abs,alpha=alpha,
+      res$glmer = test_taxa_count_glmer(m_a,alpha=alpha,
                                         formula_rhs=glmer.task$formula.rhs,
                                         linfct=glmer.task$linfct)
       report$add.header("Binomial mixed model analysis")
@@ -3256,7 +3342,7 @@ test.counts.project <- function(data,
     if(do.adonis) {
       ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
       ##the influence of very abundant species:
-      count = decostand(m_a$count,method="range",MARGIN=2)
+      count = decostand(m_a.norm$count,method="range",MARGIN=2)
       #or, no standartization:
       #count = m_a$count
       adonis.dist = "bray" #"jaccard" #"bray"
@@ -3272,8 +3358,8 @@ test.counts.project <- function(data,
         formula_str = paste("count",adonis.task$formula_rhs,sep="~")
         ad.res = adonis(
           as.formula(formula_str),
-          data=m_a$attr,
-          strata=if(!is.null(adonis.task$strata)) m_a$attr[,adonis.task$strata] else NULL,
+          data=m_a.norm$attr,
+          strata=if(!is.null(adonis.task$strata)) m_a.norm$attr[,adonis.task$strata] else NULL,
           permutations=n.adonis.perm,
           method=adonis.dist)
         
@@ -3282,6 +3368,20 @@ test.counts.project <- function(data,
       }
       
     }
+  
+  if( do.select.samples && do.glmnet.stability ) {
+    
+    tryCatchAndWarn({ 
+      do.call(select.samples.report,
+              c(
+                list(m_a=m_a.norm,
+                     glmnet.stability.res=res$glmnet.stability
+                ),
+                select.samples.task
+              )
+      )
+    })
+    
   }
   return (res)
 }
@@ -3481,8 +3581,11 @@ environment(plot.annHeatmap2AT) <- asNamespace('Heatplus')
 ## taxa count columns in meta.data must be already sorted by some abundance metrics
 heatmap.counts <- function(meta.data,attr.names,attr.annot.names,attr.row.labels,
                            caption="Heatmap",
-                           max.species.show=30, stand.clust="range", stand.show="range",
-                           trans.show=sqrt,
+                           max.species.show=30, 
+                           stand.clust="range",
+                           trans.clust=NULL,
+                           stand.show="range",
+                           trans.show=ihs,
                            attr.order=NULL,
                            agglo.fun.order=sum,
                            cluster.row.cuth=2) {
@@ -3500,12 +3603,13 @@ heatmap.counts <- function(meta.data,attr.names,attr.annot.names,attr.row.labels
   perm.ind = sample(nrow(m_a$count))
   
   count.src = m_a$count[perm.ind,]
+  count = count.src
   
-  if(!is.null(stand.clust)) {
-    count = decostand(count.src,method=stand.clust,MARGIN=2)
+  if(!is.null(trans.clust)) {
+    count = do.call(trans.clust,list(count))
   }
-  else {
-    count = count.src
+  if(!is.null(stand.clust)) {
+    count = decostand(count,method=stand.clust,MARGIN=2)
   }
   
   attr = m_a$attr[perm.ind,]
@@ -3532,11 +3636,11 @@ heatmap.counts <- function(meta.data,attr.names,attr.annot.names,attr.row.labels
   
   ## go back to un-normalized
   count.sub = count.src[,1:min(ncol(count),max.species.show)]
+  if(!is.null(trans.show)) {
+    count.sub = do.call(trans.show,list(count.sub))
+  }
   if(!is.null(stand.show)) {
     count.sub = decostand(count.sub,method=stand.show,MARGIN=2)
-  }
-  if(!is.null(trans.show)) {
-    count.sub = trans.show(count.sub)
   }
   
   pl.heat = annHeatmap2AT(count.sub,
@@ -3835,6 +3939,7 @@ read.t1d <- function(taxa.level="3",batch=NULL,aggr_var_meta = NULL) {
 plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.samples=T,show.species=T) {
   ##https://stat.ethz.ch/pipermail/r-help/2008-April/159351.html
   ##http://cran.r-project.org/web/packages/vegan/vignettes/intro-vegan.pdf
+  
   m = m_a$count
   ##default distance is bray
   m = decostand(m,method="range",MARGIN=2)
@@ -3850,8 +3955,14 @@ plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.sample
   }
   if(show.species) {
     species.sc <- scores(sol, display = "species")
-    points(sol,display="species",pch="x",select=species.sel)
-    text(sol,display="species", cex=0.7, col="blue",select=species.sel)
+    if(!is.null(species.sel)) {
+      species.sel.mask=(colnames(m_a$count) %in% species.sel)
+    }
+    else {
+      species.sel.mask=rep(T,length(colnames(m_a$count)))
+    }
+    points(sol,display="species",pch="x",select=species.sel.mask)
+    text(sol,display="species", cex=0.7, col="blue",select=species.sel.mask)
   }
   #points(site.sc,col=m_a$attr$T1D)
   #points(species.sc)
@@ -3922,8 +4033,7 @@ show.pred.perf <- function(pred,pred.score,labels) {
   report$add(plot(perf),caption="Accuracy")
 }
 
-select.samples <- function(meta.data,
-                           attr.names,
+select.samples <- function(m_a,
                            species.sel,
                            sample.group.name,
                            n.select=20,
@@ -3958,10 +4068,6 @@ select.samples <- function(meta.data,
                          selected samples assuming that the number of selected
                          samples is a small fraction of the total. For reference, a purely
                          random binary classifier would result in a 50% accuracy."))
-  
-  data.norm = row_normalize(meta.data,col_ignore=attr.names)
-  
-  m_a = split_count_df(data.norm,col_ignore=attr.names)
   
   sample.group = m_a$attr[,sample.group.name]
   
@@ -4041,7 +4147,6 @@ select.samples <- function(meta.data,
                                 sample.ids,
                                 n.cut=n.select,
                                 filter.by.label=filter.by.label)
-  make.global(cut.res)
   ids.sel = c(laply(cut.res,function(x) x[["ids"]]))
   mask.sel = sample.ids %in% ids.sel
   ids.sel = sample.ids[mask.sel]
@@ -4064,15 +4169,14 @@ select.samples <- function(meta.data,
   
   report$add.header("Abundance Plots")
   
-  data.norm.sel = data.norm[mask.sel,]
+  m_a.sel = m_a
   
-  m_a.sel = split_count_df(data.norm.sel,col_ignore=attr.names)
+  m_a.sel$attr = m_a.sel$attr[mask.sel,]
   
-  m_a.sel$count = m_a.sel$count[,species.sel]
+  m_a.sel$count = m_a.sel$count[mask.sel,species.sel]
   
-  pl.hist = plot.abund.meta(join_count_df(m_a.sel),
+  pl.hist = plot.abund.meta(m_a=m_a.sel,
                             id.vars=c(sample.group.name),
-                            attr.names=attr.names,
                             geom="bar",
                             id.var.dodge=sample.group.name
   )
@@ -4084,9 +4188,10 @@ select.samples <- function(meta.data,
                            sample.group.name,"(only clades that were used for selection are shown)")
   )
   
-  pl.hist = plot.abund.meta(data.norm.sel,
+  m_a.sel$count = m_a$count[mask.sel,]
+  
+  pl.hist = plot.abund.meta(m_a=m_a.sel,
                             id.vars=c(sample.group.name),
-                            attr.names=attr.names,
                             geom="bar",
                             id.var.dodge=sample.group.name
   )
@@ -4787,7 +4892,7 @@ test.counts.mr_oralc <- function(data,attr.names,label,alpha=0.05,
     #png(stab.path.file)
     #plot(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
     #dev.off()
-    res$stab.feat=stab.feat.c060
+    res$glmnet.stability=stab.feat.c060
   }
   
   if (do.tests) {
