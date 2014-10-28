@@ -1234,8 +1234,8 @@ write.table.file.report.m_a = function(m_a,name.base,descr=NULL,row.names=F) {
   ## if we write row.names, Excel shifts header row to the left when loading
   file.base = report$make.file.name(name.base)
   files = write.table.m_a(m_a=m_a,
-              file.base=file.base,
-              row.names = row.names)
+                          file.base=file.base,
+                          row.names = row.names)
   if (!is.null(descr)) {
     .self$add.descr(paste("Wrote counts and metadata for",
                           descr,
@@ -1273,13 +1273,13 @@ export.taxa.meta <- function(taxa.meta,
 
 
 plot.profiles <- function(m_a,
-                      res.tests=NULL,
-                      id.vars.list,
-                      clade.meta.x.vars=c(),
-                      do.profile=T,
-                      do.clade.meta=T,
-                      show.profile.task=list(),
-                      show.clade.meta.task=list()) {
+                          res.tests=NULL,
+                          id.vars.list,
+                          clade.meta.x.vars=c(),
+                          do.profile=T,
+                          do.clade.meta=T,
+                          show.profile.task=list(),
+                          show.clade.meta.task=list()) {
   
   report.section = report$add.header("Plots of abundance profiles in multiple representations",section.action="push")
   report$add.descr("Abundance plots are shown with relation to various combinations of meta 
@@ -1323,9 +1323,9 @@ plot.profiles <- function(m_a,
           do.call(show.clade.meta,
                   c(
                     list(m_a=m_a.norm,
-                          clade.names=clade.names.meta,
-                          x.var=x.var,
-                          group.var=group.var),
+                         clade.names=clade.names.meta,
+                         x.var=x.var,
+                         group.var=group.var),
                     show.clade.meta.task
                   )
           )
@@ -2080,6 +2080,8 @@ read.data.project.yap <- function(taxa.summary.file,
 
 mgsat.16s.task.template = within(list(), {
   
+  main.meta.var = "Group"
+  
   read.data.task = list(
     read.data.method=read.data.project.yap,
     taxa.summary.file=NULL,
@@ -2105,7 +2107,7 @@ mgsat.16s.task.template = within(list(), {
   
   summary.meta.task = list(
     meta.x.vars = c(),
-    group.var = c()
+    group.var = c(main.meta.var)
   )
   
   test.counts.task = within(list(), {
@@ -2118,15 +2120,12 @@ mgsat.16s.task.template = within(list(), {
     
     alpha = 0.05
     
-    n.adonis.perm = 4000  
-    
     glmnet.stability.task = list(
-      resp.attr="Group",
+      resp.attr=main.meta.var,
       family="binomial",
       steps=600,
       weakness=0.8,
       standardize.count=T,
-      standardize.pred=T,
       transform.count="ihs",
       pred.attr=NULL,
       fwer.alpha=0.05
@@ -2134,7 +2133,7 @@ mgsat.16s.task.template = within(list(), {
     
     
     genesel.task = list(
-      resp.attr = glmnet.stability.task$resp.attr
+      resp.attr = main.meta.var
     )
     
     select.samples.task = list (
@@ -2143,7 +2142,26 @@ mgsat.16s.task.template = within(list(), {
       taxa.level = 6
     )
     
-    adonis.tasks = list()
+    adonis.task = within(list(), {
+      task.template = list(
+        formula.rhs=main.meta.var,
+        strata=NULL,
+        descr=paste("Association with",main.meta.var)
+      )
+      tasks=list(task.template)
+      n.perm=4000
+      dist.metr="bray"
+      col.trans="range"
+      data.descr="proportions of counts" 
+    })
+
+    glmer.task = within(list(), {
+      
+    task.template = list(
+      formula.rhs = paste(main.meta.var,"(1|SampleID)",sep="+")
+      linfct=c("YearsSinceDiagnosis = 0"),
+      descr=sprintf(glmer.descr.tpl,"YearsSinceDiagnosis")
+    )  
     
     glmer.task = list()
     
@@ -2253,12 +2271,12 @@ proc.project <- function(
         }
         
         m_a = export.taxa.meta(taxa.meta=taxa.meta.aggr,
-                                 label=label,
-                                 descr=descr,
-                                 row.proportions=T,
-                                 row.names=F,
-                                 ret.m_a=T)
-
+                               label=label,
+                               descr=descr,
+                               row.proportions=T,
+                               row.names=F,
+                               ret.m_a=T)
+        
         res.tests = NULL
         
         if (do.std.tests) {
@@ -2889,9 +2907,9 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
         #formula_rhs = paste(formula_rhs,"+TimestampMonth",sep="")
         linfct=c("T1DT1D = 0")
       }
-      res$glmer = test_taxa_count_glmer(m_a.abs,alpha=alpha,
-                                        formula_rhs=formula_rhs,
-                                        linfct=linfct)
+      res$glmer = test.counts.glmer(m_a.abs,alpha=alpha,
+                                    formula_rhs=formula_rhs,
+                                    linfct=linfct)
       report$add.header("Binomial mixed model analysis")
       report$add.package.citation("lme4")
       report$add.descr("The random effect terms in the model formula describe that: 
@@ -3125,7 +3143,6 @@ glmnet.stabpath.report <- function(m_a,
                                    steps=600,
                                    weakness=0.8,
                                    standardize.count=T,
-                                   standardize.pred=T,
                                    transform.count="ihs",
                                    pred.attr=NULL,
                                    fwer.alpha=0.05) {
@@ -3243,6 +3260,71 @@ genesel.stability.report <- function(m_a,resp.attr) {
   
 }
 
+test.counts.glmer.report <- function(m_a,
+                                     tasks,
+                                     alpha=0.05) {
+  report$add.header("Binomial mixed model analysis")
+  report$add.package.citation("lme4")
+  res = lapply(tasks,function(task) {
+    with(task,{
+      res.glmer = test.counts.glmer(m_a,alpha=alpha,
+                                    formula_rhs=formula.rhs,
+                                    linfct=linfct)
+      
+    report$add.descr(descr)
+    report.counts.glmer(report,res.glmer)
+    res.glmer
+    })
+  })
+  return(res)
+}
+
+test.counts.adonis.report <- function(m_a,
+                                      tasks,
+                                      n.perm=4000,
+                                      dist.metr="bray",
+                                      col.trans="range",
+                                      data.descr="proportions of counts") {
+  ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
+  ##the influence of very abundant species:
+  count = m_a$count
+  if(!is.null(col.trans)) {
+    count = decostand(count,method=col.trans,MARGIN=2)
+    col.trans.descr = sprintf(" Profile columns are normalized with %s method of decostand function.",col.trans)
+  }
+  else {
+    col.trans.descr = ""
+  }
+  
+  #print(ad.res)
+  report$add.header(paste("PermANOVA (adonis) analysis of profile of",data.descr))
+  report$add.package.citation("vegan")
+  report$add.descr(sprintf("Non-parametric multivariate test for association between
+                 profile of %s and meta-data variables.%s Distance metric is %s.",
+                           data.descr,
+                           col.trans.descr,
+                           dist.metr))
+  
+  res = lapply(tasks,function(task) {
+    with(task,{
+      formula_str = paste("count",formula.rhs,sep="~")
+      ad.res = adonis(
+        as.formula(formula_str),
+        data=m_a$attr,
+        strata=if(!is.null(strata)) m_a$attr[,strata] else NULL,
+        permutations=n.adonis.perm,
+        method=dist.metr)
+      
+      report$add.printed(paste("Adonis formula:",formula_str))
+      report$add.printed(ad.res,descr)
+      ad.res
+    })
+  })
+  
+  return (res)
+  
+}
+
 select.samples.report <- function(m_a,
                                   glmnet.stability.res,
                                   resp.attr,
@@ -3274,12 +3356,12 @@ plot.counts.project <- function(m_a,
     tryCatchAndWarn({
       do.call(plot.profiles,
               c(list(m_a=m_a,
-                    res.tests=res.tests,
-                    label=label),
+                     res.tests=res.tests,
+                     label=label),
                 plot.profiles.task
               )
       )
-
+      
     })
   }
   
@@ -3300,7 +3382,7 @@ test.counts.project <- function(m_a,
                                 label,
                                 glmnet.stability.task=NULL,
                                 genesel.task=NULL,
-                                adonis.tasks=NULL,
+                                adonis.task=NULL,
                                 glmer.task=NULL,
                                 select.samples.task=NULL,
                                 alpha=0.05,
@@ -3318,56 +3400,37 @@ test.counts.project <- function(m_a,
   
   #make.global(data.norm)
   
-    
-    if(do.genesel) {
-      res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
-    }
   
-    if(do.glmnet.stability) {
-      res$glmnet.stability = do.call(glmnet.stabpath,c(list(m_a=m_a.norm),
-                                                       glmnet.stability.task
-      )
-      )
-    }
+  if(do.genesel) {
+    res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
+  }
   
-    if(do.glmer) {  
-      res$glmer = test_taxa_count_glmer(m_a,alpha=alpha,
-                                        formula_rhs=glmer.task$formula.rhs,
-                                        linfct=glmer.task$linfct)
-      report$add.header("Binomial mixed model analysis")
-      report$add.package.citation("lme4")
-      report$add.descr(glmer.task$descr)
-      report.taxa_count_glmer(report,res$glmer)
-    }
-    if(do.adonis) {
-      ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
-      ##the influence of very abundant species:
-      count = decostand(m_a.norm$count,method="range",MARGIN=2)
-      #or, no standartization:
-      #count = m_a$count
-      adonis.dist = "bray" #"jaccard" #"bray"
-      #ad.res = adonis(count~T1D + Batch,data=m_a$attr,permutations=n.adonis.perm,method=adonis.dist)
-      #print(ad.res)
-      report$add.header("PermANOVA (adonis) analysis of taxonomic profiles")
-      report$add.package.citation("vegan")
-      report$add.descr("Non-parametric multivariate test for association between
-                       taxonomic profiles and meta-data variables. Profile is normalized
-                       to proportions across clades and then to range across samples.")
-      
-      for(adonis.task in adonis.tasks) {
-        formula_str = paste("count",adonis.task$formula_rhs,sep="~")
-        ad.res = adonis(
-          as.formula(formula_str),
-          data=m_a.norm$attr,
-          strata=if(!is.null(adonis.task$strata)) m_a.norm$attr[,adonis.task$strata] else NULL,
-          permutations=n.adonis.perm,
-          method=adonis.dist)
-        
-        report$add.printed(paste("Adonis formula:",formula_str))
-        report$add.printed(ad.res,adonis.task$descr)
-      }
-      
-    }
+  if(do.glmnet.stability) {
+    res$glmnet.stability = do.call(glmnet.stabpath,c(list(m_a=m_a.norm),
+                                                     glmnet.stability.task
+    )
+    )
+  }
+  
+  if(do.glmer) {  
+    res$glmer = do.call(test.counts.glmer.report,
+                        c(
+                          list(m_a=m_a,
+                               alpha=alpha),
+                          glmer.task
+                        )
+    )
+  }
+  
+  if(do.adonis) {
+    res$adonis = do.call(test.counts.adonis.report,
+                         c(
+                           list(m_a=m_a.norm,
+                                data.descr="proportions of counts"),
+                           adonis.task
+                         )
+    )
+  }
   
   if( do.select.samples && do.glmnet.stability ) {
     
@@ -4221,11 +4284,11 @@ proc.t1d.som <- function() {
 ## (Binomial regression model with a subject specific random effect)
 ## Value: p value of testing against a null hypothesis that 
 ## model coefficients are zero (ignoring intercept; two-sided)
-test_taxa_count_glmer_col <- function(taxa.count,
-                                      attr,
-                                      taxa.count_rowsum,
-                                      formula_rhs,
-                                      linfct) {
+test.counts.glmer.col <- function(taxa.count,
+                                  attr,
+                                  taxa.count_rowsum,
+                                  formula_rhs,
+                                  linfct) {
   
   
   ## T1D groups samples into patient and control groups (fixed effect).
@@ -4307,7 +4370,7 @@ test_taxa_count_glmer_col <- function(taxa.count,
   
   if (!ok) {
     
-    print("Warnings or errors in glmer, returning NA, making data available for debugging")
+    print("Warnings or errors in glmer, returning NA")
     
     #cat(xtabs(~(response[,"taxa.count"]>0)+attr$Batch+attr$T1D))
     
@@ -4325,36 +4388,27 @@ test_taxa_count_glmer_col <- function(taxa.count,
 
 ## Test all clades pairwise using Poisson regression model with 
 ## a subject specific random effect
-test_taxa_count_glmer <- function(m_a,
-                                  formula_rhs,
-                                  linfct,
-                                  alpha=0.05,
-                                  p_adjust_method="BH") {
+test.counts.glmer <- function(m_a,
+                              formula_rhs,
+                              linfct,
+                              alpha=0.05,
+                              p_adjust_method="BH") {
   ##http://thebiobucket.blogspot.com/2011/06/glmm-with-custom-multiple-comparisons.html
   library(lme4)
   library(multcomp)
   cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
   registerDoSNOW(cl)
   count = m_a$count
-  if(F) {
-    count = m_a$count[,c(1:7)]
-  }
-  if(F) {
-    count = m_a$count[,c("Bifidobacterium_0.1.1.1.2.1.2",
-                         "Asaccharobacter_0.1.1.1.3.1.2",
-                         "Escherichia_Shigella_0.1.5.5.1.1.1",
-                         "Eggerthella_0.1.1.1.3.1.6",
-                         "Streptococcus_0.1.11.1.2.6.2")]
-  }
   count_rowsum = rowSums(count)
   #attr = m_a$attr[,c("T1D","FamilyID","SampleID","Batch")]
   attr = m_a$attr
   # Not working properly with .parallel=T in the presence
   # of warnings or errors - getting all NAs no matter what
   # I try for error handling in tryCatch
+  ##TODO: try foreach
   p_vals = aaply(count,
                  2,
-                 test_taxa_count_glmer_col,
+                 test.counts.glmer.col,
                  attr,
                  count_rowsum,
                  formula_rhs=formula_rhs,
@@ -4393,7 +4447,7 @@ print.taxa_count_glmer <- function(x,...) {
   print(x$p_vals_adj_signif)
 }
 
-report.taxa_count_glmer <- function(report,x,...) {
+report.counts.glmer <- function(report,x,...) {
   report$add.p("Test results from fitting mixed effects binomial model for each clade")
   report$add.p("Right-hand side of formula:")
   report$add.p(x$formula_rhs)
@@ -4407,13 +4461,13 @@ report.taxa_count_glmer <- function(report,x,...) {
   report$add.vector(x$p_vals_adj_signif,"p_value",
                     caption="p-values that pass significance cutoff after BH multiple testing correction.",
                     style="rmarkdown")
-  report$add.vector(x$p_vals_adj[1:min(10,length(x$p_vals_adj))],"p_value",
-                    caption="Top 10 p-values after BH multiple testing correction.",
+  report$add.vector(x$p_vals_adj[1:min(20,length(x$p_vals_adj))],"p_value",
+                    caption="Top 20 p-values after BH multiple testing correction.",
                     style="rmarkdown")
   failed.names = names(x$p_vals[is.na(x$p_vals)])
   if(length(failed.names)>0) {
     report$add(list(failed.names),
-               caption="Clades for which the model could not be built (e.g. too many all-zeros samples)")
+               caption="Clades for which the model could not be built for any reason")
   }
 }
 
