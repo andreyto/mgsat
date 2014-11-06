@@ -1040,7 +1040,6 @@ melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
 }
 
 order.factor.by.total <- function(factor.val,sort.val) {
-  
   o = aggregate(sort.val, list(factor.val), sum)
   o = o[order(o$x, decreasing=TRUE),1]  
   
@@ -1075,7 +1074,7 @@ plot.abund.meta <- function(m_a,
   }
   
   #TODO: change code in this method to use m_a directly
-  dat = join_count_df(m_a)
+  data = join_count_df(m_a)
   attr.names = names(m_a$attr)
   
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
@@ -1216,6 +1215,21 @@ plot.abund.meta <- function(m_a,
   return (gp)
 }
 
+read.table.m_a <- function(file.base) {
+  fn.count = paste(file.base,"count.tsv",sep=".")
+  count = as.matrix(read.table(fn.count,
+              sep="\t",
+              header=T,
+              stringsAsFactors=T))
+  fn.attr = paste(file.base,"attr.tsv",sep=".")
+  attr = read.table(fn.attr,
+              sep="\t",
+              header=T,
+              stringsAsFactors=T)
+  rownames(count) = attr$SampleID
+  return (list(count=count,attr=attr))
+}
+
 write.table.m_a <- function(m_a,file.base,row.names=F) {
   fn.count = paste(file.base,"count.tsv")
   write.table(m_a$count,
@@ -1237,7 +1251,7 @@ write.table.file.report.m_a = function(m_a,name.base,descr=NULL,row.names=F) {
                           file.base=file.base,
                           row.names = row.names)
   if (!is.null(descr)) {
-    .self$add.descr(paste("Wrote counts and metadata for",
+    report$add.descr(paste("Wrote counts and metadata for",
                           descr,
                           "to files",
                           paste(files,collapse=",")))
@@ -1258,14 +1272,14 @@ export.taxa.meta <- function(taxa.meta,
   
   write.table.file.report.m_a(m_a=m_a,
                               name.base=paste("samples.raw",label,sep="."),
-                              descr=paste("raw counts",decsr),
+                              descr=paste("raw counts",descr),
                               row.names=row.names)  
   
   if(row.proportions) {
     
     write.table.file.report.m_a(m_a=row_normalize.m_a(m_a),
                                 name.base=paste("samples.proportions",label,sep="."),
-                                descr=paste("proportions counts",decsr),
+                                descr=paste("proportions counts",descr),
                                 row.names=row.names)
   }
   return (m_a)
@@ -1305,7 +1319,7 @@ plot.profiles <- function(m_a,
     for(pl.par in clades.order) {
       report$add.header(paste("Clade sorting order:",pl.par$ord_descr))
       if(do.clade.meta) {
-        clade.names.meta=if(is.null(pl.par$ord)) colnames(m_a.norm$count) else pl.par$ord
+        clade.names.meta=if(is.null(pl.par$ord)) colnames(m_a$count) else pl.par$ord
         clade.names.meta = clade.names.meta[1:min(length(clade.names.meta),20)]
         
         report$add.header("Iterating over meta data variables")
@@ -1322,7 +1336,7 @@ plot.profiles <- function(m_a,
           }
           do.call(show.clade.meta,
                   c(
-                    list(m_a=m_a.norm,
+                    list(m_a=m_a,
                          clade.names=clade.names.meta,
                          x.var=x.var,
                          group.var=group.var),
@@ -1365,7 +1379,6 @@ plot.profiles <- function(m_a,
             
             for(geom in c("bar","violin","boxplot")) {
               tryCatchAndWarn({
-                
                 pl.hist = plot.abund.meta(m_a=m_a,
                                           id.vars=id.vars,
                                           clades.order=pl.par$ord,
@@ -1586,10 +1599,10 @@ gen.tasks.choc <- function(taxa.meta) {
   stability.steps = 600
   n.adonis.perm = 4000  
   
-  stability.resp.attr = "NULL" 
+  resp.attr = "NULL" 
   stability.model.family = "binomial"
   
-  genesel.resp.attr = stability.resp.attr
+  genesel.resp.attr = resp.attr
   
   stability.transform.counts="ihs"
   
@@ -1621,10 +1634,10 @@ task1 = within(
   
   taxa.meta.aggr = taxa.meta
   
-  stability.resp.attr = "Sample.type.1" 
+  resp.attr = "Sample.type.1" 
   stability.model.family = "multinomial"
   
-  genesel.resp.attr = stability.resp.attr
+  genesel.resp.attr = resp.attr
   
   plot.group = list(
     c("TherapyStatus","Sample.type"),
@@ -1652,10 +1665,10 @@ task2 = within(
   taxa.meta.aggr = aggregate_by_meta_data(subset(taxa.meta$data,TherapyStatus=="before.chemo"),
                                           "SubjectID",
                                           taxa.meta$attr.names)
-  stability.resp.attr = "Sample.type" 
+  resp.attr = "Sample.type" 
   stability.model.family = "binomial"
   
-  genesel.resp.attr = stability.resp.attr
+  genesel.resp.attr = resp.attr
   
   adonis.tasks = list(
     list(formula_rhs="Sample.type",
@@ -1716,7 +1729,7 @@ task3 = within(
   
   taxa.meta.aggr$data = subset(taxa.meta.aggr$data,Sample.type=="patient")
   
-  stability.resp.attr = "visit" 
+  resp.attr = "visit" 
   stability.model.family = "gaussian"
   
   genesel.resp.attr = "TherapyStatus" 
@@ -1756,10 +1769,10 @@ task4 = within(
   
   taxa.meta.aggr$data = subset(taxa.meta.aggr$data,Sample.type=="sibling" | visit.max>=2)
   
-  stability.resp.attr = "Sample.type.1" 
+  resp.attr = "Sample.type.1" 
   stability.model.family = "multinomial"
   
-  genesel.resp.attr = stability.resp.attr
+  genesel.resp.attr = resp.attr
   
   plot.group = list(
     c("Sample.type","visit")
@@ -1792,10 +1805,10 @@ task5 = within(
   
   taxa.meta.aggr$data = subset(taxa.meta.aggr$data,Sample.type=="patient")
   
-  stability.resp.attr = "Sample.type.1" 
+  resp.attr = "Sample.type.1" 
   stability.model.family = "multinomial"
   
-  genesel.resp.attr = stability.resp.attr
+  genesel.resp.attr = resp.attr
   
   plot.group = list(
     c("Antibiotic","visit")
@@ -1933,7 +1946,7 @@ proc.choc <- function() {
                                 do.glmer=do.glmer,
                                 do.adonis=do.adonis,
                                 genesel.resp.attr = genesel.resp.attr,
-                                stability.resp.attr = stability.resp.attr,
+                                resp.attr = resp.attr,
                                 stability.model.family = stability.model.family,
                                 stability.transform.counts=stability.transform.counts,
                                 adonis.tasks = adonis.tasks,
@@ -2078,12 +2091,25 @@ read.data.project.yap <- function(taxa.summary.file,
   return (taxa.meta)
 }
 
+
+summary.meta.method.default <- function(taxa.meta) {
+  
+  report$add.header("Summary of metadata variables")
+  
+  m_a = split_count_df(taxa.meta$data,col_ignore=taxa.meta$attr.names)
+  
+  report$add.printed(summary(m_a$attr),caption="Summary of metadata variables")
+  
+}
+
+
 mgsat.16s.task.template = within(list(), {
   
   main.meta.var = "Group"
+
+  read.data.method=read.data.project.yap  
   
   read.data.task = list(
-    read.data.method=read.data.project.yap,
     taxa.summary.file=NULL,
     otu.shared.file=NULL,
     cons.taxonomy.file=NULL,
@@ -2099,6 +2125,8 @@ mgsat.16s.task.template = within(list(), {
   
   count.filter.aggr.options=list(min_mean_frac=0.0005,min_row_sum=50,other_cnt="other")
   
+  summary.meta.method=summary.meta.method.default
+  
   do.summary.meta = F
   
   do.plots = T
@@ -2111,9 +2139,9 @@ mgsat.16s.task.template = within(list(), {
   )
   
   test.counts.task = within(list(), {
-    
+
     do.genesel=T
-    do.glmnet=T
+    do.glmnet.stability=T
     do.glmer=T
     do.adonis=T
     do.select.samples=F
@@ -2143,27 +2171,27 @@ mgsat.16s.task.template = within(list(), {
     )
     
     adonis.task = within(list(), {
-      task.template = list(
+
+      tasks=list(list(
         formula.rhs=main.meta.var,
         strata=NULL,
         descr=paste("Association with",main.meta.var)
-      )
-      tasks=list(task.template)
+      ))
+      
       n.perm=4000
       dist.metr="bray"
       col.trans="range"
-      data.descr="proportions of counts" 
     })
 
     glmer.task = within(list(), {
-      
-    task.template = list(
-      formula.rhs = paste(main.meta.var,"(1|SampleID)",sep="+")
-      linfct=c("YearsSinceDiagnosis = 0"),
-      descr=sprintf(glmer.descr.tpl,"YearsSinceDiagnosis")
-    )  
     
-    glmer.task = list()
+    tasks = list(list(
+      descr.extra = "",
+      formula.rhs = paste(main.meta.var,"(1|SampleID)",sep="+"),
+      linfct=c("YearsSinceDiagnosis = 0")
+    ))
+    
+    })
     
   })
   
@@ -2173,7 +2201,7 @@ mgsat.16s.task.template = within(list(), {
     do.heatmap = T
     
     plot.profiles.task = within(list(), {
-      id.vars.list = list(c("Group"))
+      id.vars.list = list(c(main.meta.var))
       clade.meta.x.vars=c()
       do.profile=T
       do.clade.meta=F
@@ -2227,7 +2255,7 @@ proc.project <- function(
         report$add.header(paste("Taxonomic level:",taxa.level))
         report$push.section(report.section) #4 {
         
-        taxa.meta = do.call(read.data.task$read.data.method,
+        taxa.meta = do.call(read.data.method,
                             c(
                               list(taxa.level=taxa.level),
                               read.data.task
@@ -2274,12 +2302,11 @@ proc.project <- function(
                                label=label,
                                descr=descr,
                                row.proportions=T,
-                               row.names=F,
-                               ret.m_a=T)
+                               row.names=F)
         
         res.tests = NULL
         
-        if (do.std.tests) {
+        if (do.tests) {
           if(test.counts.task$select.samples.task$taxa.level != taxa.level) {
             test.counts.task$do.select.samples = F
           }
@@ -2744,7 +2771,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   
   report.section = report$add.header("Data analysis",section.action="push")
   n.batch.levels = sum(table(data$Batch) > 0)
-  stability.resp.attr = "T1D"
+  resp.attr = "T1D"
   stability.model.family = "binomial"
   n.adonis.perm = 4000
   
@@ -2790,7 +2817,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
     if(do.genesel) {
       ## We need to use row-normalized counts here, because we perform Wilcox test
       ## inside, and could false significance due to different depth of sequencing
-      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,stability.resp.attr])
+      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
       res$stability.genesel = res.stab_sel_genesel
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
@@ -2801,13 +2828,13 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
                      original dataset (with multiple testing correction).")
       report$add.table(res.stab_sel_genesel$stab_feat,
                        caption=
-                         paste("GeneSelector stability ranking for response ",stability.resp.attr)
+                         paste("GeneSelector stability ranking for response ",resp.attr)
       )
       report$add.package.citation("vegan")
       report$add(
         plot.features.mds(m_a,species.sel=(colnames(m_a$count) %in% 
                                              res.stab_sel_genesel$stab_feat$name),
-                          sample.group=m_a$attr[,stability.resp.attr]),
+                          sample.group=m_a$attr[,resp.attr]),
         caption="metaMDS plot of abundance profile. 'x' marks top selected clades, 'o' marks samples"
       )
     }
@@ -2819,12 +2846,12 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       
       cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
       registerDoSNOW(cl)  
-      cv.res = cv.glmnet.alpha(m_a$attr[,stability.resp.attr],count,family=stability.model.family,standardize=F)
+      cv.res = cv.glmnet.alpha(m_a$attr[,resp.attr],count,family=stability.model.family,standardize=F)
       stopCluster(cl)
       
       penalty.alpha = cv.res$alpha
       #alpha = 0.8
-      stab.res.c060 = stabpath(m_a$attr[,stability.resp.attr],count,weakness=0.8,
+      stab.res.c060 = stabpath(m_a$attr[,resp.attr],count,weakness=0.8,
                                family=stability.model.family,steps=600,
                                alpha=penalty.alpha,standardize=F)
       #stab.res.c060 = stabpath(m_a$attr$A1C[m_a$attr$T1D=="T1D"],
@@ -2850,13 +2877,13 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       #report$add.printed(stab.res.c060$fit,
       #                   caption=paste(
       #                     "Glmnet stability path analysis for response (",
-      #                     stability.resp.attr,
+      #                     resp.attr,
       #                     ")"
       #                     )
       #)
       report$add.header(paste(
         "Glmnet stability path analysis for response (",
-        stability.resp.attr,
+        resp.attr,
         ")"
       )
       )
@@ -3003,7 +3030,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       species.sel=names(take_first(res$glmnet.stability.glmnet$mean.order.p,20))
       select.samples(data.norm,attr.names,
                      species.sel=species.sel,
-                     sample.group.name=stability.resp.attr)
+                     sample.group.name=resp.attr)
     })
     
   }
@@ -3191,18 +3218,18 @@ glmnet.stabpath.report <- function(m_a,
   #report$add.printed(stab.res.c060$fit,
   #                   caption=paste(
   #                     "Glmnet stability path analysis for response (",
-  #                     stability.resp.attr,
+  #                     resp.attr,
   #                     ")"
   #                     )
   #)
   report$add.header(paste(
     "Glmnet stability path analysis for response (",
-    stability.resp.attr,
+    resp.attr,
     ")"
   )
   )
   
-  report$add.printed(summary(m_a$attr[,stability.resp.attr]),
+  report$add.printed(summary(m_a$attr[,resp.attr]),
                      caption="Summary of response variable")
   
   report$add.package.citation("c060")
@@ -3263,6 +3290,21 @@ genesel.stability.report <- function(m_a,resp.attr) {
 test.counts.glmer.report <- function(m_a,
                                      tasks,
                                      alpha=0.05) {
+  descr.tpl = "
+  Mixed model analysis of count data.
+  The binomial family
+  is used to build a set of univariate models, with each
+  model describing the counts for one clade.
+  We add a random effect for each sample to account
+  for the overdispersion;
+  P-values are estimated from the model under a null hypothesis
+  of zero coefficients and a two-sided alternative. 
+  Benjamini & Hochberg (1995) method is used 
+  for multiple testing correction, and the significant clades
+  are reported.
+  %s
+  "
+  
   report$add.header("Binomial mixed model analysis")
   report$add.package.citation("lme4")
   res = lapply(tasks,function(task) {
@@ -3271,6 +3313,7 @@ test.counts.glmer.report <- function(m_a,
                                     formula_rhs=formula.rhs,
                                     linfct=linfct)
       
+    descr = sprintf(descr.tpl,descr.extra)
     report$add.descr(descr)
     report.counts.glmer(report,res.glmer)
     res.glmer
@@ -3312,7 +3355,7 @@ test.counts.adonis.report <- function(m_a,
         as.formula(formula_str),
         data=m_a$attr,
         strata=if(!is.null(strata)) m_a$attr[,strata] else NULL,
-        permutations=n.adonis.perm,
+        permutations=n.perm,
         method=dist.metr)
       
       report$add.printed(paste("Adonis formula:",formula_str))
@@ -3356,8 +3399,7 @@ plot.counts.project <- function(m_a,
     tryCatchAndWarn({
       do.call(plot.profiles,
               c(list(m_a=m_a,
-                     res.tests=res.tests,
-                     label=label),
+                     res.tests=res.tests),
                 plot.profiles.task
               )
       )
@@ -3380,16 +3422,17 @@ plot.counts.project <- function(m_a,
 
 test.counts.project <- function(m_a,
                                 label,
+                                do.genesel=T,
+                                do.glmnet.stability=T,
+                                do.glmer=T,
+                                do.adonis=T,
+                                do.select.samples=F,
                                 glmnet.stability.task=NULL,
                                 genesel.task=NULL,
                                 adonis.task=NULL,
                                 glmer.task=NULL,
                                 select.samples.task=NULL,
-                                alpha=0.05,
-                                do.genesel=T,do.glmnet.stability=T,
-                                do.glmer=T,do.adonis=T,
-                                do.select.samples=F,
-                                n.adonis.perm = 4000
+                                alpha=0.05
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
@@ -3406,7 +3449,7 @@ test.counts.project <- function(m_a,
   }
   
   if(do.glmnet.stability) {
-    res$glmnet.stability = do.call(glmnet.stabpath,c(list(m_a=m_a.norm),
+    res$glmnet.stability = do.call(glmnet.stabpath.report,c(list(m_a=m_a.norm),
                                                      glmnet.stability.task
     )
     )
@@ -3642,7 +3685,8 @@ plot.annHeatmap2AT <-
 environment(plot.annHeatmap2AT) <- asNamespace('Heatplus')
 
 ## taxa count columns in meta.data must be already sorted by some abundance metrics
-heatmap.counts <- function(meta.data,attr.names,attr.annot.names,attr.row.labels,
+heatmap.counts <- function(m_a,attr.annot.names,
+                           attr.row.labels=NULL,
                            caption="Heatmap",
                            max.species.show=30, 
                            stand.clust="range",
@@ -3656,10 +3700,6 @@ heatmap.counts <- function(meta.data,attr.names,attr.annot.names,attr.row.labels
   library(RColorBrewer)
   library(Heatplus)
   library(vegan)
-  
-  data.norm = row_normalize(meta.data,col_ignore=attr.names)
-  
-  m_a = split_count_df(data.norm,col_ignore=attr.names)
   
   ##permute samples to make sure that our dendrogram
   ##clustering is not influenced by the original order
@@ -4280,8 +4320,9 @@ proc.t1d.som <- function() {
 
 
 ## Build mixed effects model for count data of a single clade
-## as a function of patient-control classification
-## (Binomial regression model with a subject specific random effect)
+## as a function of attr metadata var (e.g. patient-control classification)
+## (Binomial regression model. Add a sample specific random effect
+## to account for overdispersion.)
 ## Value: p value of testing against a null hypothesis that 
 ## model coefficients are zero (ignoring intercept; two-sided)
 test.counts.glmer.col <- function(taxa.count,

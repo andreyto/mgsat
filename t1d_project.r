@@ -150,19 +150,6 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
 }
 
 
-load.meta.example <- function(file_name,counts.row.names) {
-  meta = load.meta.default(file_name,counts.row.names)
-  meta.visit.max = join(meta,
-                        ddply(meta,"SubjectID",summarise,visit.max=max(visit)),
-                        by="SubjectID",
-                        match="first")
-  stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
-              nrow(meta.visit.max)==nrow(meta))
-  meta = meta.visit.max
-  return (meta)
-}
-
-
 ## This function should carry out analysis specific to metadata fields by themselves, without
 ## relation to the abundance profiles. You can write it to do nothing (empty body).
 
@@ -223,36 +210,6 @@ summary.meta.t1d <- function(taxa.meta) {
 
 gen.tasks.t1d <- function() {
   
-  glmer.descr.tpl = "The random effect terms in the model formula describe that: 
-  - intercept varies among matched groups
-  and among individuals within matched groups (nested random effects);
-  - when there are multiple observations (samples) per
-  individual, we add a random effect for each observation to account
-  for the overdispersion;
-  The fixed effect is %s. The binomial family
-  is used to build a set of univariate models, with each
-  model describing the observed counts of one clade.
-  P-values are estimated from the model under a null hypothesis
-  of zero coefficients and a two-sided alternative. 
-  Benjamini & Hochberg (1995) method is used 
-  for multiple testing correction, and the significant clades
-  are reported."
-  
-  
-  task1 = within(
-    mgsat.16s.task.template,
-{
-  
-  descr = "All samples, aggregated by AliquotID"
-  
-  #taxa.levels = c(3)
-  
-  load.meta.options=list(aggr.var="AliquotID")
-  
-  do.summary.meta = T
-  summary.meta.x.vars = c("Timestamp")
-  summary.meta.group.var = c("T1D")
-  
   get.taxa.meta.aggr.base<-function(taxa.meta) { 
     taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.QA=="PASS",]
     taxa.meta.aggr = taxa.meta
@@ -264,49 +221,118 @@ gen.tasks.t1d <- function() {
     
     return (taxa.meta.aggr)
   }
+
+  task0 = within( mgsat.16s.task.template, {
+  
+  descr = "All samples, aggregated by AliquotID"
+  
+  main.meta.var = "T1D"
+  
+  read.data.task = within(read.data.task, {
+    taxa.summary.file = "a93eeedeef2878be17d30f27b1b0de1c.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+    otu.shared.file="d9f44114ac6369cc66978002228bc5d3.files_x1.sorted.0.03.shared"
+    cons.taxonomy.file="4272870500ad07a7270f9772581fe7fe.files_x1.sorted.0.03.cons.taxonomy"
+    meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922.tsv"
+    load.meta.method=load.meta.t1d
+    load.meta.options=list(aggr.var="AliquotID")    
+  })
   
   get.taxa.meta.aggr<-function(taxa.meta) { 
     return (get.taxa.meta.aggr.base(taxa.meta))
   }
   
-  stability.resp.attr = "T1D" 
-  stability.model.family = "binomial"
+  summary.meta.method=summary.meta.t1d
   
-  genesel.resp.attr = stability.resp.attr
+  })
   
-  adonis.tasks = list(
-    list(formula_rhs="T1D",
-         strata=NULL,
-         descr="Association with the patient/control status unpaired"),
-    list(formula_rhs="T1D",
-         strata="FamilyID",
-         descr="Association with the patient/control status paired by family"),
-    list(formula_rhs="T1D*age",
-         strata=NULL,
-         descr="Association with the patient/control status and age unpaired")
+  task1 = within( task0, {
+  
+  #taxa.levels = c(2,3)
     
-  )
+  do.summary.meta = T
   
+  do.plots = T
   
-  glmer.task = list(
-    formula.rhs = "T1D + (1|FamilyID/SubjectID)",
-    linfct=c("T1DT1D = 0"),
-    descr=sprintf(glmer.descr.tpl,"T1D")
-  )  
+  do.tests = T
+
+  summary.meta.task = within(summary.meta.task, {
+    meta.x.vars = c("Timestamp")
+    group.var = c(main.meta.var)
+  })
   
-  plot.group = list(
-    c("T1D")
-  )            
+  #DEBUG:
+  get.taxa.meta.aggr<-function(taxa.meta) { 
+    d = get.taxa.meta.aggr.base(taxa.meta)
+    d$data = d$data[sample.int(nrow(d$data),40),]
+    d
+  }
+
+  test.counts.task = within(test.counts.task, {
+    
+    do.adonis = T
+    
+    genesel.task = within(genesel.task, {
+      resp.attr = main.meta.var
+    })
+    
+    glmnet.stability.task = within(glmnet.stability.task, {
+      resp.attr=main.meta.var
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs="T1D",
+             strata=NULL,
+             descr="Association with the patient/control status unpaired"),
+        list(formula.rhs="T1D",
+             strata="FamilyID",
+             descr="Association with the patient/control status paired by family"),
+        list(formula.rhs="T1D*age",
+             strata=NULL,
+             descr="Association with the patient/control status and age unpaired")
+        
+      )
+      
+    })
+    
+    glmer.task = within(glmer.task, {
+      
+      tasks = list(list(
+        descr.extra = "",
+        formula.rhs = paste(main.meta.var,"(1|SampleID)",sep="+"),
+        linfct=c("T1DT1D = 0")
+      ))
+    })
+    
+  })
   
-  clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
+  plot.counts.task = within(plot.counts.task, {
+    
+    do.plot.profiles = T
+    do.heatmap = T
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+      clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
+      do.profile=T
+      do.clade.meta=T
+      show.profile.task=list()
+      show.clade.meta.task=list()      
+    })
+    
+    heatmap.task = within(heatmap.task,{
+      attr.annot.names=c(main.meta.var)
+    })
+  })
   
-  heatmap.task = list(
-    attr.annot.names=c("T1D"),
-    attr.row.labels=NULL
-  )
-  
+})
+
+return (list(task1))
 }
-  )
+
+hide_debug <- function() {
+
 
 task2 = within(
   task1,
@@ -408,20 +434,8 @@ report <- PandocAT$new(author="atovtchi@jcvi.org",
                        incremental.save=T)
 
 
-##All samples up to 2014-09-22
-taxa.summary.file = "a93eeedeef2878be17d30f27b1b0de1c.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-otu.shared.file="d9f44114ac6369cc66978002228bc5d3.files_x1.sorted.0.03.shared"
-cons.taxonomy.file="4272870500ad07a7270f9772581fe7fe.files_x1.sorted.0.03.cons.taxonomy"
-meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922.tsv"
-
 proc.project(
-  taxa.summary.file=taxa.summary.file,
-  otu.shared.file=otu.shared.file,
-  cons.taxonomy.file=cons.taxonomy.file,  
-  meta.file=meta.file,
-  summary.meta.method=summary.meta.t1d,
-  task.generator.method=gen.tasks.t1d,
-  load.meta.method=load.meta.t1d
+  task.generator.method=gen.tasks.t1d
 )
 
 report$save()
