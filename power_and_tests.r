@@ -100,14 +100,6 @@ str_blank <- function(x) {
   return (nchar(gsub("\\s","",x)))
 }
 
-arg.list.as.str<-function(x) {
-  paste("[",
-        paste(capture.output(str(x,no.list=T,comp.str="",give.attr=F,give.head=F)),collapse=","),
-        "]",
-        sep=""
-  )
-}
-
 ## replace oldnames with newnames in vector allnames
 ## to be used when allnames = names(data.frame)
 replace.col.names<-function(allnames,oldnames,newnames) {
@@ -150,6 +142,24 @@ join_count_df<-function(m_a) {
   
 }
 
+as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T) {
+  dds <- DESeqDataSetFromMatrix(countData = t(m_a$count),
+                                colData = m_a$attr,
+                                design = as.formula(paste("~",formula.rhs)))  
+  
+  if(force.lib.size) {
+    ## from phyloseq vignette at 
+    ## http://www.bioconductor.org/packages/release/bioc/vignettes/phyloseq/inst/doc/phyloseq-mixture-models.html
+    gm_mean = function(x, na.rm=TRUE){
+      exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+    }
+    geoMeans = apply(counts(dds), 1, gm_mean)
+    dds = estimateSizeFactors(dds, geoMeans = geoMeans)
+  }
+  
+  return(dds)
+}
+
 row_normalize_matr<-function(x) {
   x/rowSums(x)
 }
@@ -179,6 +189,59 @@ all_normalize<-function(dat,col_ignore=c(),norm.func=NULL) {
   matnorm<-norm.func(x$count)
   datnorm<-as.data.frame(matnorm) 
   cbind(x$attr,datnorm)
+}
+
+# CLR transform is copied from SpiecEasi package
+# https://github.com/zdk123/SpiecEasi
+# If data is non-normalized count OTU/data table with samples on rows
+# and features/OTUs in columns, then the transform is applied as
+# clr(data)
+# By default, it adds an offset of 1 before applying the transform, and acts
+# on rows, returning matrix in the same order as input. The defaul base=2 in
+# order to produce fold change between columns:
+# (m[,k]/m[,l] == 2**(clr.mgsat(m)[,k]-clr.mgsat(m)[,l]))
+# Note that in the original SpiecEasi implementation the transform should
+# be applied as
+# t(clr(data+1, 1, base=2))
+# because it uses apply(mar=1) which transposes the result, and default base=exp(1)
+# See `compositions` package for other Aitchison transforms
+
+#' Centered log-ratio functions
+#' @export
+mgsat.clr <- function(x, ...) {
+  UseMethod('mgsat.clr', x)
+}
+
+#' @method clr default
+#' @export
+mgsat.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
+  x.f = x.f + offset
+  nzero <- (x.f >= tol)
+  LOG <- log(ifelse(nzero, x.f, 1), base)
+  ifelse(nzero, LOG - mean(LOG)/mean(nzero), 0.0)
+}
+
+#' @method clr matrix
+#' @export
+mgsat.clr.matrix <- function(x.f, mar=1, ...) {
+  aaply(x.f, mar, mgsat.clr, ...)
+}
+
+#' @method clr data.frame
+#' @export
+mgsat.clr.data.frame <- function(x.f, mar=1, ...) {
+  as.data.frame(mgsat.clr(as.matrix(x.f), mar, ...))
+}
+
+
+#' @method clr on results of DESeq2 Rlog transform
+mgsat.clr.rlog.dds <- function(dds) {
+  aaply(rlog.dds(dds),1,function(x) (x - mean(x)))
+}
+
+#' @method extract Rlog transformed values from DESeq2 object as sample-row matrix
+rlog.dds <- function(dds) {
+  t(assay(rlog(dds)))
 }
 
 ## If the other_cnt column is already present, it will be incremented with counts of clades
@@ -1218,25 +1281,25 @@ plot.abund.meta <- function(m_a,
 read.table.m_a <- function(file.base) {
   fn.count = paste(file.base,"count.tsv",sep=".")
   count = as.matrix(read.table(fn.count,
-              sep="\t",
-              header=T,
-              stringsAsFactors=T))
+                               sep="\t",
+                               header=T,
+                               stringsAsFactors=T))
   fn.attr = paste(file.base,"attr.tsv",sep=".")
   attr = read.table(fn.attr,
-              sep="\t",
-              header=T,
-              stringsAsFactors=T)
+                    sep="\t",
+                    header=T,
+                    stringsAsFactors=T)
   rownames(count) = attr$SampleID
   return (list(count=count,attr=attr))
 }
 
 write.table.m_a <- function(m_a,file.base,row.names=F) {
-  fn.count = paste(file.base,"count.tsv")
+  fn.count = paste(file.base,"count.tsv",sep=".")
   write.table(m_a$count,
               fn.count,
               sep="\t",
               row.names = row.names)
-  fn.attr = paste(file.base,"attr.tsv")
+  fn.attr = paste(file.base,"attr.tsv",sep=".")
   write.table(m_a$attr,
               fn.attr,
               sep="\t",
@@ -1252,9 +1315,9 @@ write.table.file.report.m_a = function(m_a,name.base,descr=NULL,row.names=F) {
                           row.names = row.names)
   if (!is.null(descr)) {
     report$add.descr(paste("Wrote counts and metadata for",
-                          descr,
-                          "to files",
-                          paste(files,collapse=",")))
+                           descr,
+                           "to files",
+                           paste(files,collapse=",")))
   }
   return (files) 
 }
@@ -2106,7 +2169,7 @@ summary.meta.method.default <- function(taxa.meta) {
 mgsat.16s.task.template = within(list(), {
   
   main.meta.var = "Group"
-
+  
   read.data.method=read.data.project.yap  
   
   read.data.task = list(
@@ -2139,7 +2202,8 @@ mgsat.16s.task.template = within(list(), {
   )
   
   test.counts.task = within(list(), {
-
+    
+    do.deseq2 = T
     do.genesel=T
     do.glmnet.stability=T
     do.glmer=T
@@ -2147,6 +2211,10 @@ mgsat.16s.task.template = within(list(), {
     do.select.samples=F
     
     alpha = 0.05
+    
+    deseq2.task = within(list(), {
+      formula.rhs=main.meta.var
+    })
     
     glmnet.stability.task = list(
       resp.attr=main.meta.var,
@@ -2171,7 +2239,7 @@ mgsat.16s.task.template = within(list(), {
     )
     
     adonis.task = within(list(), {
-
+      
       tasks=list(list(
         formula.rhs=main.meta.var,
         strata=NULL,
@@ -2182,15 +2250,15 @@ mgsat.16s.task.template = within(list(), {
       dist.metr="bray"
       col.trans="range"
     })
-
+    
     glmer.task = within(list(), {
-    
-    tasks = list(list(
-      descr.extra = "",
-      formula.rhs = paste(main.meta.var,"(1|SampleID)",sep="+"),
-      linfct=c("YearsSinceDiagnosis = 0")
-    ))
-    
+      
+      tasks = list(list(
+        descr.extra = "",
+        formula.rhs = paste(main.meta.var,"(1|SampleID)",sep="+"),
+        linfct=c("YearsSinceDiagnosis = 0")
+      ))
+      
     })
     
   })
@@ -2238,18 +2306,23 @@ proc.project <- function(
   
   tasks = task.generator.method()
   
-  for (task in tasks) {
+  res.tasks = foreach(task=tasks) %do% {
     
     report$add.header(paste("Subset:",task$descr))
     report$push.section(report.section) #2 {
     
-    with(task,{
-      
+    res.task = list(task=task)
+    
+    res.task$res.taxa.levels = with(task,{
       
       report$add.header("Iterating over taxonomic levels")
       report$push.section(report.section) #3 {
       
+      res.taxa.levels = list()
+      
       for (taxa.level in taxa.levels) {
+        
+        res.level = list(taxa.level=taxa.level)
         
         label = paste("16s","l",taxa.level,sep=".",collapse=".")
         report$add.header(paste("Taxonomic level:",taxa.level))
@@ -2262,9 +2335,6 @@ proc.project <- function(
                             )
         )
         
-        
-        make.global(taxa.meta)
-        #taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.type.1 != "sibling",]
         
         report$add.p(paste("Number of samples:",nrow(taxa.meta$data)))
         
@@ -2322,6 +2392,9 @@ proc.project <- function(
             )
           )          
         }
+        
+        res.level$res.tests = res.tests
+        
         if( do.plots ) {
           report$add.header("Plots")
           do.call(plot.counts.project,
@@ -2334,13 +2407,20 @@ proc.project <- function(
           )
         }
         report$pop.section() #4 }
+        res.taxa.levels[[taxa.level]] = res.level
       }
       report$pop.section() #3 }
+      res.taxa.levels
     })
     
     report$pop.section() #2 }
+    
+    res.task
   }
+  
   report$pop.section() #1 }
+  
+  return (res.tasks)
 }
 
 
@@ -3164,6 +3244,38 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
   return (res)
 }
 
+
+deseq2.report <- function(m_a,
+                          formula.rhs,
+                          test.task=list(),
+                          result.tasks=list(list())
+) {
+  report.section = report$add.header("DESeq2 tests and data normalization",section.action="push")
+  report$add.package.citation("DESeq2")
+  dds = as.dds.m_a(m_a=m_a,
+                   formula.rhs=formula.rhs,
+                   force.lib.size=T)
+  make.global(dds)
+  dds = do.call(DESeq,
+                c(list(object=dds),
+                  test.task)
+  )
+  res.all = foreach(result.task=result.tasks) %do% {
+    res = do.call(results,
+                  c(list(object=dds),
+                    result.task)
+    )
+    res = res[order(res$padj),]  
+    res.df = cbind(feature = rownames(res),as.data.frame(res))
+    report$add.table(as.data.frame(res.df),
+                     caption=paste("DESeq2 results for task:",
+                                   arg.list.as.str(result.task)),
+                     show.row.names=F)
+    res
+  }
+  return (list(dds=dds,results=res.all))
+}
+
 glmnet.stabpath.report <- function(m_a,
                                    resp.attr,
                                    family="gaussian",
@@ -3179,7 +3291,8 @@ glmnet.stabpath.report <- function(m_a,
                  boxcox=boxcox.transform.mat(m),
                  ihs=ihs(m,1),
                  ident=m,
-                 binary=(m > 0))
+                 binary=(m > 0),
+                 clr=mgsat.clr(m))
   
   
   attr = m_a$attr
@@ -3313,10 +3426,10 @@ test.counts.glmer.report <- function(m_a,
                                     formula_rhs=formula.rhs,
                                     linfct=linfct)
       
-    descr = sprintf(descr.tpl,descr.extra)
-    report$add.descr(descr)
-    report.counts.glmer(report,res.glmer)
-    res.glmer
+      descr = sprintf(descr.tpl,descr.extra)
+      report$add.descr(descr)
+      report.counts.glmer(report,res.glmer)
+      res.glmer
     })
   })
   return(res)
@@ -3427,11 +3540,13 @@ test.counts.project <- function(m_a,
                                 do.glmer=T,
                                 do.adonis=T,
                                 do.select.samples=F,
+                                do.deseq2,
                                 glmnet.stability.task=NULL,
                                 genesel.task=NULL,
                                 adonis.task=NULL,
                                 glmer.task=NULL,
                                 select.samples.task=NULL,
+                                deseq2.task=NULL,
                                 alpha=0.05
 ) {
   
@@ -3441,16 +3556,20 @@ test.counts.project <- function(m_a,
   
   m_a.norm = row_normalize.m_a(m_a)
   
-  #make.global(data.norm)
+  #make.global(data.norm)  
   
+  if(do.deseq2) {
+    res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
+  }
   
   if(do.genesel) {
     res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
   }
   
   if(do.glmnet.stability) {
-    res$glmnet.stability = do.call(glmnet.stabpath.report,c(list(m_a=m_a.norm),
-                                                     glmnet.stability.task
+    #DEBUG:
+    res$glmnet.stability = do.call(glmnet.stabpath.report,c(list(m_a=m_a),
+                                                            glmnet.stability.task
     )
     )
   }
@@ -3612,6 +3731,7 @@ annHeatmap2AT <-
     ret
   }
 
+library(Heatplus)
 environment(annHeatmap2AT) <- asNamespace('Heatplus')
 
 plot.annHeatmap2AT <-

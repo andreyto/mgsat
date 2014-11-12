@@ -23,6 +23,15 @@ make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
 }
 
+# print a named list as a string of named function arguments
+arg.list.as.str<-function(x) {
+  paste("[",
+        paste(capture.output(str(x,no.list=T,comp.str="",give.attr=F,give.head=F)),collapse=","),
+        "]",
+        sep=""
+  )
+}
+
 mget.stack<-function(x,ifnotfound) {
   pars = lapply(rev(sys.parents()),sys.frame)
   #print(pars)
@@ -383,7 +392,7 @@ PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.l
   sect_ord = sort.list(
     unlist(lapply(.self$sections,function(x) paste(x,sep="",collapse="."))),
     method="shell")
-  lapply(.self$body[sect_ord], function(x) cat(paste(pandoc.return(x$result), collapse = '\n'), file = fp, append = TRUE))
+  lapply(.self$body[sect_ord], function(x) cat(paste(pander.return(x$result), collapse = '\n'), file = fp, append = TRUE))
   
   for(out.format in out.formats.loc) {
     Pandoc.convert(fp,format=out.format,open=F,footer=F,portable.html=portable.html.loc)

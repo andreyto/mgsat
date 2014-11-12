@@ -40,7 +40,8 @@ bio_packages = c(
   "multtest",
   "GeneSelector",
   "RColorBrewer",
-  "Heatplus"
+  "Heatplus",
+  "DESeq2"
 )
 
 install_required_packages <- function() {

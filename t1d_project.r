@@ -146,6 +146,8 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
                                   names(meta))  
   }
   
+  ##Setting Control to base level plays nice with DESeq2 defaults
+  meta$T1D = relevel(meta$T1D,"Control")
   return (meta)
 }
 
@@ -247,11 +249,11 @@ gen.tasks.t1d <- function() {
   
   task1 = within( task0, {
   
-  #taxa.levels = c(2,3)
+  taxa.levels = c(2)
     
-  do.summary.meta = T
+  do.summary.meta = F
   
-  do.plots = T
+  do.plots = F
   
   do.tests = T
 
@@ -261,15 +263,23 @@ gen.tasks.t1d <- function() {
   })
   
   #DEBUG:
-  get.taxa.meta.aggr<-function(taxa.meta) { 
-    d = get.taxa.meta.aggr.base(taxa.meta)
-    d$data = d$data[sample.int(nrow(d$data),40),]
-    d
-  }
+  #get.taxa.meta.aggr<-function(taxa.meta) { 
+  #  d = get.taxa.meta.aggr.base(taxa.meta)
+  #  d$data = d$data[sample.int(nrow(d$data),40),]
+  #  d
+  #}
 
   test.counts.task = within(test.counts.task, {
     
-    do.adonis = T
+    do.deseq2 = T
+    do.adonis = F
+    do.genesel = F
+    do.glmnet.stability = F
+    do.glmer = F
+
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var
+    })
     
     genesel.task = within(genesel.task, {
       resp.attr = main.meta.var
@@ -277,6 +287,8 @@ gen.tasks.t1d <- function() {
     
     glmnet.stability.task = within(glmnet.stability.task, {
       resp.attr=main.meta.var
+      standardize.count=T
+      transform.count="clr"
     })
     
     adonis.task = within(adonis.task, {
@@ -401,6 +413,9 @@ options(mc.cores=4)
 options(boot.ncpus=4)
 ## parallel backend
 options(boot.parallel="snow")
+library("BiocParallel")
+register(SnowParam(4))
+
 
 ## location of MGSAT code
 MGSAT_SRC = "~/work/mgsat"
@@ -434,7 +449,7 @@ report <- PandocAT$new(author="atovtchi@jcvi.org",
                        incremental.save=T)
 
 
-proc.project(
+res = proc.project(
   task.generator.method=gen.tasks.t1d
 )
 
