@@ -233,15 +233,14 @@ mgsat.clr.data.frame <- function(x.f, mar=1, ...) {
   as.data.frame(mgsat.clr(as.matrix(x.f), mar, ...))
 }
 
-
 #' @method clr on results of DESeq2 Rlog transform
-mgsat.clr.rlog.dds <- function(dds) {
-  aaply(rlog.dds(dds),1,function(x) (x - mean(x)))
+mgsat.clr.rlog.dds <- function(dds,...) {
+  aaply(rlog.dds(dds,...),1,function(x) (x - mean(x)))
 }
 
 #' @method extract Rlog transformed values from DESeq2 object as sample-row matrix
-rlog.dds <- function(dds) {
-  t(assay(rlog(dds)))
+rlog.dds <- function(dds,blind=F,fast=T) {
+  t(assay(rlog(dds,blind=blind,fast=fast)))
 }
 
 ## If the other_cnt column is already present, it will be incremented with counts of clades
@@ -2211,6 +2210,7 @@ mgsat.16s.task.template = within(list(), {
     do.select.samples=F
     
     alpha = 0.05
+    norm.method = "prop"
     
     deseq2.task = within(list(), {
       formula.rhs=main.meta.var
@@ -2222,7 +2222,7 @@ mgsat.16s.task.template = within(list(), {
       steps=600,
       weakness=0.8,
       standardize.count=T,
-      transform.count="ihs",
+      transform.count="ident",
       pred.attr=NULL,
       fwer.alpha=0.05
     )
@@ -2268,6 +2268,8 @@ mgsat.16s.task.template = within(list(), {
     do.plot.profiles = T
     do.heatmap = T
     
+    norm.method = "prop"
+    
     plot.profiles.task = within(list(), {
       id.vars.list = list(c(main.meta.var))
       clade.meta.x.vars=c()
@@ -2280,6 +2282,8 @@ mgsat.16s.task.template = within(list(), {
     heatmap.task = list(
       attr.annot.names=NULL,
       attr.row.labels=NULL,
+      stand.clust=NULL,
+      dist.metr="euclidean",
       caption="Heatmap of abundance profile",
       stand.show="range"
     )
@@ -2399,7 +2403,7 @@ proc.project <- function(
           report$add.header("Plots")
           do.call(plot.counts.project,
                   c(
-                    list(m_a=row_normalize.m_a(m_a),
+                    list(m_a=m_a,
                          label=label,
                          res.tests=res.tests),
                     plot.counts.task
@@ -3282,9 +3286,16 @@ glmnet.stabpath.report <- function(m_a,
                                    steps=600,
                                    weakness=0.8,
                                    standardize.count=T,
-                                   transform.count="ihs",
+                                   transform.count="ident",
                                    pred.attr=NULL,
                                    fwer.alpha=0.05) {
+  
+  report$add.header(paste(
+    "Glmnet stability path analysis for response (",
+    resp.attr,
+    ")"
+  )
+  )
   
   m = m_a$count
   count = switch(transform.count,
@@ -3335,12 +3346,6 @@ glmnet.stabpath.report <- function(m_a,
   #                     ")"
   #                     )
   #)
-  report$add.header(paste(
-    "Glmnet stability path analysis for response (",
-    resp.attr,
-    ")"
-  )
-  )
   
   report$add.printed(summary(m_a$attr[,resp.attr]),
                      caption="Summary of response variable")
@@ -3444,7 +3449,7 @@ test.counts.adonis.report <- function(m_a,
   ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
   ##the influence of very abundant species:
   count = m_a$count
-  if(!is.null(col.trans)) {
+  if(!is.null(col.trans) && col.trans != "ident") {
     count = decostand(count,method=col.trans,MARGIN=2)
     col.trans.descr = sprintf(" Profile columns are normalized with %s method of decostand function.",col.trans)
   }
@@ -3504,14 +3509,17 @@ plot.counts.project <- function(m_a,
                                 do.plot.profiles,
                                 do.heatmap,
                                 plot.profiles.task,
-                                heatmap.task) {
+                                heatmap.task,
+                                norm.method="prop") {
   
+  report$add.descr(paste("Count normalization method:",norm.method))
+  m_a.norm = norm.count.m_a(m_a,dds=res.tests$deseq2$dds,method=norm.method)
   
   if (do.plot.profiles) {
     
     tryCatchAndWarn({
       do.call(plot.profiles,
-              c(list(m_a=m_a,
+              c(list(m_a=m_a.norm,
                      res.tests=res.tests),
                 plot.profiles.task
               )
@@ -3524,13 +3532,34 @@ plot.counts.project <- function(m_a,
     
     tryCatchAndWarn({
       do.call(heatmap.counts,
-              c(list(m_a=m_a),
+              c(list(m_a=m_a.norm),
                 heatmap.task
               )
       )
       
     })
   }
+}
+
+## normalize raw count data according to one of the
+## predefined methods.
+## If deseq2 normalization is needed, it will be taken
+## from DESeq2 object `dds`
+
+norm.count <- function(count,dds,method) {
+  count = switch(method,
+                 rlog=rlog.dds(dds),
+                 clr.rlog=mgsat.clr.rlog.dds(dds),
+                 prop=row_normalize_matr(count),
+                 ident=count,
+                 clr=mgsat.clr(count))
+  return (count)
+}
+
+norm.count.m_a <- function(m_a,...) {
+  m_a.norm = m_a
+  m_a.norm$count = norm.count(count=m_a.norm$count,...)
+  return(m_a.norm)
 }
 
 test.counts.project <- function(m_a,
@@ -3547,28 +3576,33 @@ test.counts.project <- function(m_a,
                                 glmer.task=NULL,
                                 select.samples.task=NULL,
                                 deseq2.task=NULL,
-                                alpha=0.05
+                                alpha=0.05,
+                                norm.method="prop"
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
   
   res = list()
-  
-  m_a.norm = row_normalize.m_a(m_a)
-  
+    
   #make.global(data.norm)  
   
   if(do.deseq2) {
     res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
   }
+
+  ## this is done after an optional call to deseq2 in case the norm.method
+  ## wants deseq2 normalization
+  report$add.descr(paste("Count normalization method:",norm.method))
+  m_a.norm = norm.count.m_a(m_a,dds=res$deseq2$dds,method=norm.method)
+  make.global(m_a.norm)
+  make.global(m_a)
   
   if(do.genesel) {
     res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
   }
   
   if(do.glmnet.stability) {
-    #DEBUG:
-    res$glmnet.stability = do.call(glmnet.stabpath.report,c(list(m_a=m_a),
+    res$glmnet.stability = do.call(glmnet.stabpath.report,c(list(m_a=m_a.norm),
                                                             glmnet.stability.task
     )
     )
@@ -3809,10 +3843,11 @@ heatmap.counts <- function(m_a,attr.annot.names,
                            attr.row.labels=NULL,
                            caption="Heatmap",
                            max.species.show=30, 
-                           stand.clust="range",
+                           stand.clust=NULL,
                            trans.clust=NULL,
+                           dist.metr="euclidean",
                            stand.show="range",
-                           trans.show=ihs,
+                           trans.show=NULL,
                            attr.order=NULL,
                            agglo.fun.order=sum,
                            cluster.row.cuth=2) {
@@ -3836,7 +3871,7 @@ heatmap.counts <- function(m_a,attr.annot.names,
   }
   
   attr = m_a$attr[perm.ind,]
-  data.dist.samp <- vegdist(count, method = "bray")
+  data.dist.samp <- vegdist(count, method = dist.metr)
   row.clus <- hclust(data.dist.samp, "ward")
   row.dendro = as.dendrogram(row.clus)
   
@@ -3854,7 +3889,7 @@ heatmap.counts <- function(m_a,attr.annot.names,
   ## cluster on normalized columns
   count.sub = count[,1:min(ncol(count),max.species.show)]
   # you have to transpose the dataset to get the taxa as rows
-  data.dist.taxa <- vegdist(t(count.sub), method = "bray")
+  data.dist.taxa <- vegdist(t(count.sub), method = dist.metr)
   col.clus <- hclust(data.dist.taxa, "ward")
   
   ## go back to un-normalized

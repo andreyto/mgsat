@@ -249,11 +249,11 @@ gen.tasks.t1d <- function() {
   
   task1 = within( task0, {
   
-  taxa.levels = c(2)
+  taxa.levels = c(6)
     
   do.summary.meta = F
   
-  do.plots = F
+  do.plots = T
   
   do.tests = T
 
@@ -271,10 +271,12 @@ gen.tasks.t1d <- function() {
 
   test.counts.task = within(test.counts.task, {
     
+    norm.method = "clr.rlog"
+    
     do.deseq2 = T
-    do.adonis = F
-    do.genesel = F
-    do.glmnet.stability = F
+    do.adonis = T
+    do.genesel = T
+    do.glmnet.stability = T
     do.glmer = F
 
     deseq2.task = within(deseq2.task, {
@@ -288,10 +290,14 @@ gen.tasks.t1d <- function() {
     glmnet.stability.task = within(glmnet.stability.task, {
       resp.attr=main.meta.var
       standardize.count=T
-      transform.count="clr"
+      transform.count="ident"
     })
     
     adonis.task = within(adonis.task, {
+      
+      dist.metr="euclidean"
+      col.trans="normalize"
+      data.descr="normalized counts"
       
       tasks = list(
         list(formula.rhs="T1D",
@@ -321,7 +327,7 @@ gen.tasks.t1d <- function() {
   
   plot.counts.task = within(plot.counts.task, {
     
-    do.plot.profiles = T
+    do.plot.profiles = F
     do.heatmap = T
     
     plot.profiles.task = within(plot.profiles.task, {
@@ -335,6 +341,7 @@ gen.tasks.t1d <- function() {
     
     heatmap.task = within(heatmap.task,{
       attr.annot.names=c(main.meta.var)
+      stand.clust="normalize"
     })
   })
   
