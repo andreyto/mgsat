@@ -239,8 +239,8 @@ mgsat.clr.rlog.dds <- function(dds,...) {
 }
 
 #' @method extract Rlog transformed values from DESeq2 object as sample-row matrix
-rlog.dds <- function(dds,blind=F,fast=T) {
-  t(assay(rlog(dds,blind=blind,fast=fast)))
+rlog.dds <- function(dds,blind=T,fast=T,fitType="local") {
+  t(assay(rlog(dds,blind=blind,fast=fast,fitType=fitType)))
 }
 
 ## If the other_cnt column is already present, it will be incremented with counts of clades
@@ -2178,14 +2178,14 @@ mgsat.16s.task.template = within(list(), {
     meta.file=NULL,
     load.meta.method=load.meta.default,
     load.meta.options=list(),
-    count.filter.options=list(min_mean_frac=0.0005,min_row_sum=50,max_row_sum=100000,other_cnt="other")
+    count.filter.options=list(min_mean_frac=0.0005,min_row_sum=400,max_row_sum=100000,other_cnt="other")
   )
   
   taxa.levels = c("otu",2,3,4,5,6)
   
   get.taxa.meta.aggr<-function(taxa.meta) { return (taxa.meta) }
   
-  count.filter.aggr.options=list(min_mean_frac=0.0005,min_row_sum=50,other_cnt="other")
+  count.filter.aggr.options=list(min_mean_frac=0.0005,min_row_sum=400,other_cnt="other")
   
   summary.meta.method=summary.meta.method.default
   
@@ -2214,6 +2214,9 @@ mgsat.16s.task.template = within(list(), {
     
     deseq2.task = within(list(), {
       formula.rhs=main.meta.var
+      test.task=list(
+        fitType="local"
+        )
     })
     
     glmnet.stability.task = list(
@@ -2905,7 +2908,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       res$stability.genesel = res.stab_sel_genesel
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
-      report$add.descr("Univariate test (Wilcox) is applied to each clade on random
+      report$add.descr("Univariate test (Wilcoxon) is applied to each clade on random
                      subsamples of the data. Consensus ranking is found with a
                      Monte Carlo procedure. The top clades of the consensus ranking
                      are returned, along with the p-values computed on the full
@@ -3259,7 +3262,6 @@ deseq2.report <- function(m_a,
   dds = as.dds.m_a(m_a=m_a,
                    formula.rhs=formula.rhs,
                    force.lib.size=T)
-  make.global(dds)
   dds = do.call(DESeq,
                 c(list(object=dds),
                   test.task)
@@ -3374,18 +3376,19 @@ glmnet.stabpath.report <- function(m_a,
 
 genesel.stability.report <- function(m_a,resp.attr) {
   
-  ## m_a$count passed here should be normalized to proportions, because we perform Wilcox test
+  ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
-  
-  res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
+
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
   report$add.descr("Univariate test (Wilcox) is applied to each clade on random
-                 subsamples of the data. Consensus ranking is found with a
-                 Monte Carlo procedure. The top clades of the consensus ranking
-                 are returned, along with the p-values computed on the full
-                 original dataset (with multiple testing correction).")
+                   subsamples of the data. Consensus ranking is found with a
+                   Monte Carlo procedure. The top clades of the consensus ranking
+                   are returned, along with the p-values computed on the full
+                   original dataset (with multiple testing correction).")
   
+  
+  res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
   report$add.printed(summary(m_a$attr[,resp.attr]),
                      caption=paste("Summary of response variable",resp.attr))
   
@@ -3546,13 +3549,18 @@ plot.counts.project <- function(m_a,
 ## If deseq2 normalization is needed, it will be taken
 ## from DESeq2 object `dds`
 
-norm.count <- function(count,dds,method) {
+norm.count <- function(count,dds,method,drop.features=c("other")) {
   count = switch(method,
                  rlog=rlog.dds(dds),
                  clr.rlog=mgsat.clr.rlog.dds(dds),
                  prop=row_normalize_matr(count),
+                 ihs.prop=ihs(row_normalize_matr(count)),
                  ident=count,
-                 clr=mgsat.clr(count))
+                 clr=mgsat.clr(count),
+                 ihs=ihs(count))
+  if(!is.null(drop.features)) {
+    count = count[,!colnames(count) %in% drop.features]
+  }
   return (count)
 }
 
@@ -3621,8 +3629,7 @@ test.counts.project <- function(m_a,
   if(do.adonis) {
     res$adonis = do.call(test.counts.adonis.report,
                          c(
-                           list(m_a=m_a.norm,
-                                data.descr="proportions of counts"),
+                           list(m_a=m_a.norm),
                            adonis.task
                          )
     )
@@ -4678,7 +4685,7 @@ stab_sel_genesel <- function(x,
                              type="unpaired",
                              replicates=400,
                              fold_ratio=0.5,
-                             maxrank=10,
+                             maxrank=20,
                              samp_filter=NULL) {
   library(GeneSelector)
   if(!samp_in_col) {

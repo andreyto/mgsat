@@ -253,7 +253,7 @@ gen.tasks.t1d <- function() {
     
   do.summary.meta = F
   
-  do.plots = T
+  do.plots = F
   
   do.tests = T
 
@@ -269,18 +269,24 @@ gen.tasks.t1d <- function() {
   #  d
   #}
 
+  get.taxa.meta.aggr<-function(taxa.meta) { 
+    taxa.meta.aggr = get.taxa.meta.aggr.base(taxa.meta)
+    taxa.meta.aggr$data = subset(taxa.meta.aggr$data,T1D=="T1D")  
+    return (taxa.meta.aggr)
+  }
+    
   test.counts.task = within(test.counts.task, {
     
-    norm.method = "clr.rlog"
+    norm.method = "ihs.prop"
     
     do.deseq2 = T
-    do.adonis = T
-    do.genesel = T
+    do.adonis = F
+    do.genesel = F
     do.glmnet.stability = T
     do.glmer = F
 
     deseq2.task = within(deseq2.task, {
-      formula.rhs = main.meta.var
+      formula.rhs = "A1C"
     })
     
     genesel.task = within(genesel.task, {
@@ -327,6 +333,7 @@ gen.tasks.t1d <- function() {
   
   plot.counts.task = within(plot.counts.task, {
     
+    norm.method = "ihs.prop"
     do.plot.profiles = F
     do.heatmap = T
     
