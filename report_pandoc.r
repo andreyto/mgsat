@@ -24,9 +24,9 @@ make.global <- function(var) {
 }
 
 # print a named list as a string of named function arguments
-arg.list.as.str<-function(x) {
+arg.list.as.str<-function(x,collapse=",") {
   paste("[",
-        paste(capture.output(str(x,no.list=T,comp.str="",give.attr=F,give.head=F)),collapse=","),
+        paste(capture.output(str(x,no.list=T,comp.str="",give.attr=F,give.head=F)),collapse=collapse),
         "]",
         sep=""
   )

@@ -81,6 +81,7 @@ set_trace_options<-function(try.debug=T) {
                 q()
               }
             }))
+  #options(error=recover)
 }
 
 
@@ -160,19 +161,32 @@ as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T) {
   return(dds)
 }
 
-row_normalize_matr<-function(x) {
-  x/rowSums(x)
+norm.prop <- function(x, ...) {
+  UseMethod('norm.prop', x)
 }
 
-row_normalize.m_a<-function(m_a) {
-  m_a$count = row_normalize_matr(m_a$count)
+norm.prop.default <- function(x.f) {
+  x.f/sum(x.f)
+}
+
+norm.prop.matrix<-function(x.f,mar=1) {
+  if(mar==1)
+    x.f/rowSums(x.f)
+  else if(mar==2)
+    x.f/colSums(x.f)
+  else
+    stop("mar can be only 1 or 2")
+}
+
+norm.prop.m_a<-function(m_a,mar=1) {
+  m_a$count = norm.prop(m_a$count,mar=mar)
   return (m_a)
 }
 
-row_normalize<-function(dat,col_ignore=c()) {
+norm.prop.data.frame<-function(dat,col_ignore=c(),mar=1) {
   mask_col_ignore = names(dat) %in% col_ignore
   x<-split_count_df(dat,col_ignore)
-  matnorm<-row_normalize_matr(x$count)
+  matnorm<-norm.prop(x$count,mar=mar)
   datnorm<-as.data.frame(matnorm) 
   res = cbind(x$attr,datnorm)
   #print(apply(res[!(names(res) %in% col_ignore)],1,sum) == 1)
@@ -180,13 +194,13 @@ row_normalize<-function(dat,col_ignore=c()) {
   res
 }
 
-all_normalize<-function(dat,col_ignore=c(),norm.func=NULL) {
+norm.meta.data<-function(dat,col_ignore=c(),norm.func=NULL,...) {
   mask_col_ignore = names(dat) %in% col_ignore
   x<-split_count_df(dat,col_ignore)
   if( is.null(norm.func) ) {
     norm.func = ihs
   }
-  matnorm<-norm.func(x$count)
+  matnorm<-norm.func(x$count,...)
   datnorm<-as.data.frame(matnorm) 
   cbind(x$attr,datnorm)
 }
@@ -208,13 +222,13 @@ all_normalize<-function(dat,col_ignore=c(),norm.func=NULL) {
 
 #' Centered log-ratio functions
 #' @export
-mgsat.clr <- function(x, ...) {
-  UseMethod('mgsat.clr', x)
+norm.clr <- function(x, ...) {
+  UseMethod('norm.clr', x)
 }
 
 #' @method clr default
 #' @export
-mgsat.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
+norm.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
   x.f = x.f + offset
   nzero <- (x.f >= tol)
   LOG <- log(ifelse(nzero, x.f, 1), base)
@@ -223,25 +237,145 @@ mgsat.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
 
 #' @method clr matrix
 #' @export
-mgsat.clr.matrix <- function(x.f, mar=1, ...) {
-  aaply(x.f, mar, mgsat.clr, ...)
+norm.clr.matrix <- function(x.f, mar=1, ...) {
+  aaply(x.f, mar, norm.clr, ...)
 }
 
 #' @method clr data.frame
 #' @export
-mgsat.clr.data.frame <- function(x.f, mar=1, ...) {
-  as.data.frame(mgsat.clr(as.matrix(x.f), mar, ...))
+norm.clr.data.frame <- function(x.f, mar=1, ...) {
+  as.data.frame(norm.clr(as.matrix(x.f), mar, ...))
 }
 
-#' @method clr on results of DESeq2 Rlog transform
-mgsat.clr.rlog.dds <- function(dds,...) {
+#' @method clr on results of DESeq2 Rlog transform. x.f is not used
+norm.clr.rlog.dds <- function(x.f,dds,...) {
   aaply(rlog.dds(dds,...),1,function(x) (x - mean(x)))
+}
+
+#' @method results of DESeq2 Rlog transform. x.f is not used
+norm.rlog.dds <- function(x.f,dds,...) {
+  rlog.dds(dds,...)
 }
 
 #' @method extract Rlog transformed values from DESeq2 object as sample-row matrix
 rlog.dds <- function(dds,blind=T,fast=T,fitType="local") {
   t(assay(rlog(dds,blind=blind,fast=fast,fitType=fitType)))
 }
+
+
+## IHS (inverse hyperbolic sign) transform
+## This is the same as log(x+(x**2+1)**0.5)
+ihs <- function(x,theta=1) {
+  asinh(theta*x)/theta
+}
+
+#Function for symbolic derivative of arbitrary order
+#Copied from help page for 'deriv()'
+#Use as:
+#dd.expr = DD(expression(log(x+(x**2+1)**0.5)),"x",2)
+#To create a function from the 'expression' output:
+#f = function(x) eval(dd.expr)
+DD <- function(expr, name, order = 1) {
+  if(order < 1) stop("'order' must be >= 1")
+  if(order == 1) D(expr, name)
+  else DD(D(expr, name), name, order - 1)
+}
+
+## Return a function that computes the derivative of expr
+make.DD <- function(expr,name,order = 1) {
+  dn.expr = DD(expr,name,order=order)
+  return (function(x) {eval(dn.expr)})
+}
+
+ihs.d1 = make.DD(expression(log(x+(x**2+1)**0.5)),"x",1)
+ihs.d2 = make.DD(expression(log(x+(x**2+1)**0.5)),"x",2)
+
+norm.ihs = ihs
+
+## Boxcox transform
+boxcox <- function(x,lambda1,lambda2=0) {
+  #print(paste("l1=",lambda1,"l2=",lambda2))
+  if (lambda1 != 0) {
+    ((x+lambda2)**lambda1-1)/lambda1
+  }
+  else {
+    log(x+lambda2)
+  }
+}
+
+## Fit boxcox transform to the data and transform the data
+boxcox.transform.vec <- function(x) {
+  l.2 = T
+  if(!all(x>0)) {
+    b = boxcoxfit(x,lambda2=T)
+  }
+  else {
+    b = boxcoxfit(x)
+    l.2 = F
+  }
+  #b = try(boxcoxfit(x,lambda2=T),TRUE)
+  #for some reason the above fails if all(b>0)
+  #we just repeat it with lambda2 NULL
+  #if (inherits(b, "try-error")) {
+  #  b = boxcoxfit(x)
+  #  l.2 = T
+  #  print("err")
+  #  print(b)
+  #}
+  lambda1 = NA
+  lambda2 = 0
+  if (l.2) { 
+    lambda1 = b$lambda["lambda"] 
+    lambda2 = b$lambda["lambda2"] 
+  }
+  else {
+    lambda1 = b$lambda
+  }
+  return (list(x=boxcox(x,lambda1=lambda1,lambda2=lambda2),
+               boxcox=b))
+}
+
+norm.boxcox <- function(x, ...) {
+  UseMethod('norm.boxcox', x)
+}
+
+norm.boxcox.default <- function(x.f) {
+  boxcox.transform.vec(x.f)$x
+}
+
+norm.boxcox.matrix <- function(x.f, mar=2, ...) {
+  aaply(x.f, mar, norm.boxcox, ...)
+}
+
+norm.ihs.prop <- function(x,theta=1,mar=1) {
+  norm.ihs(norm.prop(x,mar=mar),theta=theta)
+}
+
+## normalize raw count data according to one of the
+## methods defined above.
+
+norm.count <- function(x, ...) {
+  UseMethod('norm.count', x)
+}
+
+norm.count.matrix <- function(count,method,drop.features=c("other"),method.args=list()) {
+  count = do.call(method,c(
+    list(count),
+    method.args
+  )
+  )
+  if(!is.null(drop.features)) {
+    count = count[,!colnames(count) %in% drop.features]
+  }
+  return (count)
+}
+
+norm.count.m_a <- function(m_a,...) {
+  m_a.norm = m_a
+  m_a.norm$count = norm.count(m_a.norm$count,...)
+  return(m_a.norm)
+}
+
 
 ## If the other_cnt column is already present, it will be incremented with counts of clades
 ## relegated to the "other" in this call; otherwise, the new column with this name will be
@@ -270,7 +404,7 @@ count_filter<-function(dat,
   cnt = x$count[row_sel,]
   row_cnt = row_cnt[row_sel]
   attr = x$attr[row_sel,]
-  cnt_norm = row_normalize_matr(cnt)
+  cnt_norm = norm.prop(cnt)
   ind_col_ord = order(colSums(cnt_norm),decreasing=T)
   cnt = cnt[,ind_col_ord]
   cnt_norm = cnt_norm[,ind_col_ord]
@@ -355,7 +489,7 @@ tryCatchAndWarn<-function(expr,catch.warnings=F,catch.errors=T) {
 }
 
 sorted.freq<-function(count.df,col_ignore=c(),col_group="group") {
-  freq = row_normalize(count.df,col_ignore=col_ignore)
+  freq = norm.prop(count.df,col_ignore=col_ignore)
   freq_m = count_matr_from_df(freq,col_ignore=col_ignore)
   group = count.df[,col_group]
   freq.mean = aggregate(freq_m,list(group),mean,simplify=TRUE)
@@ -738,7 +872,7 @@ power.dirmult.range<-function(
       dm.counts <- rbind(dm.counts,Dirichlet.multinomial(n.seq[[i.group]], dm.par[[i.group]]$gamma))
       dm.group <- c(dm.group,rep(groups[i.group],n.samp.grp[i.group]))
     }
-    dm.freq = row_normalize_matr(dm.counts)
+    dm.freq = norm.prop(dm.counts)
     dm.group = as.factor(dm.group)
     ad.res = adonis(dm.freq~dm.group,permutations=n.adonis.perm,method="bray")
     #print (ad.res)
@@ -1339,7 +1473,7 @@ export.taxa.meta <- function(taxa.meta,
   
   if(row.proportions) {
     
-    write.table.file.report.m_a(m_a=row_normalize.m_a(m_a),
+    write.table.file.report.m_a(m_a=norm.prop.m_a(m_a),
                                 name.base=paste("samples.proportions",label,sep="."),
                                 descr=paste("proportions counts",descr),
                                 row.names=row.names)
@@ -1415,11 +1549,11 @@ plot.profiles <- function(m_a,
         
         report$add.header("Iterating over dodged vs faceted bars")
         report$add.descr("The same abundance profiles are shown in multiple combinations of graphical representations. 
-                   This is the same data, but each plot highlights slightly different aspects of it. For example,
-                   abundance transformed with square root and shown on separate facets makes it easier to compare 
-                    overall profile shapes between groups for very uneven distributions. Profiles in original
-                   linear scale on dodged (non-faceted) plots give more direct idea of a fold change between groups
-                   for each clade. It is not likely that you will need every plot - pick only what you need.")
+                         This is the same data, but each plot highlights slightly different aspects of it. For example,
+                         abundance transformed with square root and shown on separate facets makes it easier to compare 
+                         overall profile shapes between groups for very uneven distributions. Profiles in original
+                         linear scale on dodged (non-faceted) plots give more direct idea of a fold change between groups
+                         for each clade. It is not likely that you will need every plot - pick only what you need.")
         report$push.section(report.section)
         
         for(id.var.dodge in list(list(dodge=NULL,descr="faceted"),list(dodge=id.vars[1],descr="dodged"))) {
@@ -1513,7 +1647,7 @@ power.choc<-function(taxa.meta.data,taxa.meta.attr.names) {
   dm.par.kelv = dirmult.kelvin("v35.16sTaxa.TotFilt_1000.allSamples.summary_table.xls",c("Stool"))[[1]]
   
   
-  abund_matr_norm = row_normalize_matr(count_matr_from_df(taxa.meta.data,col_ignore=taxa.meta.attr.names))
+  abund_matr_norm = norm.prop(count_matr_from_df(taxa.meta.data,col_ignore=taxa.meta.attr.names))
   
   #assign("abund_matr_norm",abund_matr_norm,envir=globalenv())
   
@@ -2204,31 +2338,40 @@ mgsat.16s.task.template = within(list(), {
     
     do.deseq2 = T
     do.genesel=T
-    do.glmnet.stability=T
+    do.stabsel=T
     do.glmer=T
     do.adonis=T
     do.select.samples=F
     
     alpha = 0.05
-    norm.method = "prop"
+    
+    norm.count.task = within(list(), {
+      method = "norm.ihs.prop"
+      method.args = list()
+      drop.features=c("other")
+      ##method="norm.rlog"
+      ##method.args=list(dds=NA) #signals to pull Deseq2 object
+    })
     
     deseq2.task = within(list(), {
       formula.rhs=main.meta.var
       test.task=list(
         fitType="local"
-        )
+      )
     })
     
-    glmnet.stability.task = list(
-      resp.attr=main.meta.var,
-      family="binomial",
-      steps=600,
-      weakness=0.8,
-      standardize.count=T,
-      transform.count="ident",
-      pred.attr=NULL,
-      fwer.alpha=0.05
-    )
+    stabsel.task = list(
+      resp.attr = main.meta.var,      
+      args.fitfun = list(
+        family="binomial",
+        standardize=T                                        
+      ),
+      args.stabsel = list(
+        PFER=0.05,
+        sampling.type="SS",
+        assumption="r-concave"
+      )
+      )
     
     
     genesel.task = list(
@@ -2295,6 +2438,16 @@ mgsat.16s.task.template = within(list(), {
 })
 
 
+start.cluster.project <- function() {
+  cl<-makeCluster(getOption("mc.cores", 2L),type = "SOCK") #number of CPU cores
+  registerDoSNOW(cl)
+  return(cl)
+}
+
+stop.cluster.project <- function(cl) {
+  stopCluster(cl)
+}
+
 proc.project <- function(
   task.generator.method
 ) {
@@ -2312,6 +2465,8 @@ proc.project <- function(
   report$push.section(report.section) #1 {
   
   tasks = task.generator.method()
+  
+  cl = start.cluster.project()
   
   res.tasks = foreach(task=tasks) %do% {
     
@@ -2427,27 +2582,11 @@ proc.project <- function(
   
   report$pop.section() #1 }
   
+  stop.cluster.project(cl)
+  
   return (res.tasks)
 }
 
-
-#Function for symbolic derivative of arbitrary order
-#Copied from help page for 'deriv()'
-#Use as:
-#dd.expr = DD(expression(log(x+(x**2+1)**0.5)),"x",2)
-#To create a function from the 'expression' output:
-#f = function(x) eval(dd.expr)
-DD <- function(expr, name, order = 1) {
-  if(order < 1) stop("'order' must be >= 1")
-  if(order == 1) D(expr, name)
-  else DD(D(expr, name), name, order - 1)
-}
-
-## Return a function that computes the derivative of expr
-make.DD <- function(expr,name,order = 1) {
-  dn.expr = DD(expr,name,order=order)
-  return (function(x) {eval(dn.expr)})
-}
 
 ##Delta method to approximate mean and variance of
 ##a function of random variable
@@ -2468,62 +2607,6 @@ cohens.d.from.mom <- function(mean.gr,var.gr,n.gr) {
   csd <- sqrt(csd)                     ## common sd computation
   
   md/csd                        ## cohen's d
-}
-
-## IHS (inverse hyperbolic sign) transform
-## This is the same as log(x+(x**2+1)**0.5)
-ihs <- function(x,theta=1) {
-  asinh(theta*x)/theta
-}
-
-ihs.d1 = make.DD(expression(log(x+(x**2+1)**0.5)),"x",1)
-ihs.d2 = make.DD(expression(log(x+(x**2+1)**0.5)),"x",2)
-
-## Boxcox transform
-boxcox <- function(x,lambda1,lambda2=0) {
-  #print(paste("l1=",lambda1,"l2=",lambda2))
-  if (lambda1 != 0) {
-    ((x+lambda2)**lambda1-1)/lambda1
-  }
-  else {
-    log(x+lambda2)
-  }
-}
-
-## Fit boxcox transform to the data and transform the data
-boxcox.transform.vec <- function(x) {
-  l.2 = T
-  if(!all(x>0)) {
-    b = boxcoxfit(x,lambda2=T)
-  }
-  else {
-    b = boxcoxfit(x)
-    l.2 = F
-  }
-  #b = try(boxcoxfit(x,lambda2=T),TRUE)
-  #for some reason the above fails if all(b>0)
-  #we just repeat it with lambda2 NULL
-  #if (inherits(b, "try-error")) {
-  #  b = boxcoxfit(x)
-  #  l.2 = T
-  #  print("err")
-  #  print(b)
-  #}
-  lambda1 = NA
-  lambda2 = 0
-  if (l.2) { 
-    lambda1 = b$lambda["lambda"] 
-    lambda2 = b$lambda["lambda2"] 
-  }
-  else {
-    lambda1 = b$lambda
-  }
-  return (list(x=boxcox(x,lambda1=lambda1,lambda2=lambda2),
-               boxcox=b))
-}
-
-boxcox.transform.mat <- function(m) {
-  foreach(x=iter(m,by="col"),.combine=cbind) %do% (boxcox.transform.vec(x)$x)
 }
 
 show.distr <- function(x) {
@@ -2608,7 +2691,7 @@ show.clade.meta <- function(m_a,
   count = m_a$count[,clade.names,drop=F]
   
   count = switch(trans,
-                 boxcox=boxcox.transform.mat(count),
+                 boxcox=norm.boxcox(count),
                  ihs=ihs(count,1),
                  ident=count,
                  binary=(count > 0))  
@@ -2662,23 +2745,31 @@ show.clade.meta <- function(m_a,
 
 
 ##Code adapted from Jyoti Shankar. Find best alpha through cross-validation as
-##per the recipe from cv.glmnet help page
-cv.glmnet.alpha <- function(y, x, family, seed=NULL, standardize=T) {
+##per the recipe from cv.glmnet help page.
+##Extra argument q=dfmax+1 to make this function compatible with 
+##the parameter list for stabs::stabsel (see how this is used in
+##stabsel.report).
+cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) {
   # This seed is taken from LASSO's example. 
   if (!is.null(seed) ) { set.seed(seed) }
   # Setting the number of folds to the number of samples (leave one out)
   #is not recommended by cv.glmnet help page
   numfolds <- min(15,dim(x)[1])
   # Grid for alpha crossvalidation
-  alphas <- c(0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 0.95, 0.99, 0.999)
+  alphas <- c(0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 0.95, 0.99, 0.999,1.0)
   # In a k fold crossvalidation, fold ID gives the iteration in which the sample would be in the test set.
   
   foldid <- sample(rep(seq(numfolds),length=dim(x)[1]))
   # Go through alpha grid
   # Run crossvalidation for lambda.
   # Each model for each alpha is run by a parallel core and put into a list called lassomodels
-  lassomodels <- foreach(i = c(1:length(alphas))) %dopar%
-{
+  if(!is.null(q)) {
+    dfmax = q - 1
+  }
+  else {
+    dfmax = ncol(x) + 1
+  }
+  lassomodels <- foreach(i = c(1:length(alphas)),.packages=c("glmnet")) %dopar% {
   #re-import required for windows parallelism with doSNOW
   library(glmnet)
   # set.seed(seed)
@@ -2691,7 +2782,9 @@ cv.glmnet.alpha <- function(y, x, family, seed=NULL, standardize=T) {
                           type.measure="deviance", 
                           foldid=foldid,
                           standardize=standardize, 
-                          alpha=alphas[i])})
+                          alpha=alphas[i],
+                          dfmax=dfmax,
+                          ...)})
 }
 # there are two lambdas per model
 # minimum lamda
@@ -2722,16 +2815,21 @@ for (i in c(1:length(alphas))) {
   }
 }
 #print(best_alpha_index)
-out <- list(c(), c(), c())
+
 if (best_alpha_index != 0) {
   # print the lassomodel at the best_alpha_index
   lasso_model <- lassomodels[[best_alpha_index]]
   alpha <- alphas[best_alpha_index]
   # Use lambda which gives the lowest cross validated error
   lambda <- lasso_model$lambda.min
-  out <- list(lasso_model, alpha, lambda)
+  out <- list(param=list(alpha=alpha),
+              glmnet.model=lasso_model, 
+              lambda=lambda
+  )
 }
-names(out) <- c("glmnet.model", "alpha", "lambda")
+else {
+  out = list()
+}
 out
 }
 
@@ -2871,7 +2969,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   
   m_a.abs = split_count_df(data,col_ignore=attr.names)
   
-  data.norm = row_normalize(data,col_ignore=attr.names)
+  data.norm = norm.prop(data,col_ignore=attr.names)
   
   #make.global(tbl)
   #make.global(fams)
@@ -2894,7 +2992,7 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
   #storage.mode(m) = "integer"
   
   count = switch(stability.transform.counts,
-                 boxcox=boxcox.transform.mat(m),
+                 boxcox=norm.boxcox(m),
                  ihs=ihs(m,1),
                  ident=m,
                  binary=(m_a.abs$count > 0))
@@ -2909,10 +3007,10 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcoxon) is applied to each clade on random
-                     subsamples of the data. Consensus ranking is found with a
-                     Monte Carlo procedure. The top clades of the consensus ranking
-                     are returned, along with the p-values computed on the full
-                     original dataset (with multiple testing correction).")
+                       subsamples of the data. Consensus ranking is found with a
+                       Monte Carlo procedure. The top clades of the consensus ranking
+                       are returned, along with the p-values computed on the full
+                       original dataset (with multiple testing correction).")
       report$add.table(res.stab_sel_genesel$stab_feat,
                        caption=
                          paste("GeneSelector stability ranking for response ",resp.attr)
@@ -2976,24 +3074,26 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       )
       report$add.package.citation("c060")
       report$add.descr(paste("This multivariate feature selection method builds glmnet models 
-                     for a given response variable at 
-                     varying strengths of L1 norm
-                     regularization parameter and on multiple random subsamples at each
-                     level of the parameter. The features (e.g. taxonomic clades)
-                     are ranked according to their overall probability to be included in the
-                     model over the range of regularization parameter values.
-                     Input frequency profiles are transformed with",
+                             for a given response variable at 
+                             varying strengths of L1 norm
+                             regularization parameter and on multiple random subsamples at each
+                             level of the parameter. The features (e.g. taxonomic clades)
+                             are ranked according to their overall probability to be included in the
+                             model over the range of regularization parameter values.
+                             Input frequency profiles are transformed with",
                              stability.transform.counts,
                              "then standardized across samples."))
+      report$add.descr(paste("Alpha penalty parameter was chosen in cross-validation as",
+                             penalty.alpha))
       report$add.printed(stab.feat.c060$stable,
                          caption="Features that passed FWER in stability analysis:")
       
       if(!is.null(pl.stab)) {
         report$add(pl.stab,caption="Stability path. Probability of each variable 
-                 to be included in the model as a function of L1 regularization
-                 strength. Paths for top ranked variables are colored. The variables
-                 (if any) that passed family wide error rate (FWER) cutoff are
-                 plotted as solid lines.")
+                   to be included in the model as a function of L1 regularization
+                   strength. Paths for top ranked variables are colored. The variables
+                   (if any) that passed family wide error rate (FWER) cutoff are
+                   plotted as solid lines.")
       }
       
       res$glmnet.stability=stab.feat.c060
@@ -3027,11 +3127,11 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       report$add.header("Binomial mixed model analysis")
       report$add.package.citation("lme4")
       report$add.descr("The random effect terms in the model formula describe that: 
-                         - intercept varies among families 
-                           and among individuals within families (nested random effects);
-                         - when there are multiple observations (samples) per
-                           individual, we add a random effect for each observation to account
-                           for the overdispersion;
+                       - intercept varies among families 
+                       and among individuals within families (nested random effects);
+                       - when there are multiple observations (samples) per
+                       individual, we add a random effect for each observation to account
+                       for the overdispersion;
                        The fixed effect is T1D status. The binomial family
                        is used to build a set of univariate models, with each
                        model describing the observed counts of one clade.
@@ -3056,9 +3156,9 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       report$add.descr(
         paste(
           "Non-parametric multivariate test for association between
-                     taxonomic profiles and meta-data variables. Profile is normalized
-                     to proportions across clades and then to range across samples.
-                       Distance metric is",
+          taxonomic profiles and meta-data variables. Profile is normalized
+          to proportions across clades and then to range across samples.
+          Distance metric is",
           adonis.dist
         )
       )
@@ -3134,7 +3234,7 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
   res = list()
   m_a.abs = split_count_df(data,col_ignore=attr.names)
   
-  data.norm = row_normalize(data,col_ignore=attr.names)
+  data.norm = norm.prop(data,col_ignore=attr.names)
   
   #make.global(tbl)
   #make.global(fams)
@@ -3150,7 +3250,7 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
   #storage.mode(m) = "integer"
   
   count = switch(stability.transform.counts,
-                 boxcox=boxcox.transform.mat(m),
+                 boxcox=norm.boxcox(m),
                  ihs=ihs(m,1),
                  ident=m,
                  binary=(m_a.abs$count > 0))
@@ -3282,15 +3382,15 @@ deseq2.report <- function(m_a,
   return (list(dds=dds,results=res.all))
 }
 
-glmnet.stabpath.report <- function(m_a,
-                                   resp.attr,
-                                   family="gaussian",
-                                   steps=600,
-                                   weakness=0.8,
-                                   standardize.count=T,
-                                   transform.count="ident",
-                                   pred.attr=NULL,
-                                   fwer.alpha=0.05) {
+glmnet.stabpath.c060.report <- function(m_a,
+                                        resp.attr,
+                                        family="gaussian",
+                                        steps=600,
+                                        weakness=0.8,
+                                        standardize.count=T,
+                                        transform.count="ident",
+                                        pred.attr=NULL,
+                                        fwer.alpha=0.05) {
   
   report$add.header(paste(
     "Glmnet stability path analysis for response (",
@@ -3301,11 +3401,11 @@ glmnet.stabpath.report <- function(m_a,
   
   m = m_a$count
   count = switch(transform.count,
-                 boxcox=boxcox.transform.mat(m),
+                 boxcox=norm.boxcox(m),
                  ihs=ihs(m,1),
                  ident=m,
                  binary=(m > 0),
-                 clr=mgsat.clr(m))
+                 clr=norm.clr(m))
   
   
   attr = m_a$attr
@@ -3333,6 +3433,7 @@ glmnet.stabpath.report <- function(m_a,
   pi_thr = 0.6
   stab.feat.c060 = stability.selection.c060.at(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
   #stab.feat.c060 = stability.selection(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
+  stab.feat.c060$penalty.alpha = penalty.alpha
   
   pl.stab = tryCatchAndWarn({
     #p = plot.stability.selection.c060.at(stab.feat.c060,rank="mean")
@@ -3353,32 +3454,113 @@ glmnet.stabpath.report <- function(m_a,
                      caption="Summary of response variable")
   
   report$add.package.citation("c060")
-  report$add.descr("This multivariate feature selection method builds glmnet models 
-                 for a given response variable at 
-                 varying strengths of L1 norm
-                 regularization parameter and on multiple random subsamples at each
-                 level of the parameter. The features (e.g. taxonomic clades)
-                 are ranked according to their probability to be included in the
-                 model")
+  report$add.descr("This multivariate feature selection method implements 
+                  stability selection procedure by Meinshausen and Buehlmann (2010) 
+                  The features (e.g. taxonomic clades)
+                   are ranked according to their probability to be selected
+                   by models built on multiple random subsamples of the input dataset.")
+  
+  report$add.descr(paste("Alpha penalty parameter was chosen in cross-validation as",
+                         penalty.alpha))
+  
   report$add.vector(stab.feat.c060$stable,
                     caption="Features that passed FWER in stability analysis")
   
   if(!is.null(pl.stab)) {
     report$add(pl.stab,caption="Stability path. Probability of each variable 
-             to be included in the model as a function of L1 regularization
-             strength. Paths for top ranked variables are colored. The variables
-             (if any) that passed family wide error rate (FWER) cutoff are
-             plotted as solid lines.")
+               to be included in the model as a function of L1 regularization
+               strength. Paths for top ranked variables are colored. The variables
+               (if any) that passed family wide error rate (FWER) cutoff are
+               plotted as solid lines.")
   }
   
   return (stab.feat.c060)
 }
 
+
+stabsel.report <- function(m_a,
+                           resp.attr,
+                           fitfun="glmnet.lasso",
+                           parfitfun="cv.glmnet.alpha",
+                           args.fitfun = list(
+                             family="gaussian",
+                             standardize=T                                        
+                           ),
+                           args.stabsel = list(
+                             PFER=0.05,
+                             sampling.type="SS",
+                             assumption="r-concave"
+                           )
+) {
+  
+  require(stabs)
+  report$add.header(paste(
+    "Stability selection analysis for response (",
+    resp.attr,
+    ")"
+  )
+  )
+  
+  resp = m_a$attr[,resp.attr]
+  count = m_a$count
+  
+  #MB's paper
+  q = ceiling(sqrt(0.8*nrow(count)))
+  
+  param.fit = do.call(parfitfun,
+                      c(list(x=count,y=resp,q=q),
+                        args.fitfun
+                      )
+  )$param
+  
+  args.fitfun = c(args.fitfun,param.fit)
+  args.stabsel$q = q
+  stab.res = do.call(stabsel,c(
+    list(x=count,y=resp,
+         fitfun=fitfun,
+         args.fitfun=args.fitfun),
+    args.stabsel
+  )
+  )
+  
+  report$add.printed(summary(resp),
+                     caption=paste("Summary of response variable",resp.attr))
+  
+  report$add.package.citation("stabs")
+  report$add.descr("This multivariate feature selection method implements 
+                  stability selection procedure by Meinshausen and Buehlmann (2010) 
+                  and the improved error bounds by Shah and Samworth (2013). 
+                  The features (e.g. taxonomic clades)
+                   are ranked according to their probability to be selected
+                   by models built on multiple random subsamples of the input dataset.")
+  
+  report$add.descr(paste("Base selection method parameters that were chosen based on
+                         cross-validation are:",
+                         arg.list.as.str(param.fit)))
+  
+  report$add.descr(paste("All base selection method parameters are:",
+                         arg.list.as.str(args.fitfun)))  
+  
+  report$add.descr(paste("Stability selection method parameters are:",
+                         arg.list.as.str(args.stabsel)))
+  
+  report$add.printed(stab.res)
+  
+  report$add(plot(stab.res, main = NULL, type = "maxsel",
+                  ymargin = 16, np = 20),
+             caption=sprintf("Selection probability for the top ranked variables.
+               Vertical line indicates probability
+               cutoff corresponding to per family error rate PFER=%s",args.stabsel$PFER))
+  
+  return (stab.res)
+}
+
+
 genesel.stability.report <- function(m_a,resp.attr) {
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
-
+  
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
   report$add.descr("Univariate test (Wilcox) is applied to each clade on random
@@ -3464,7 +3646,7 @@ test.counts.adonis.report <- function(m_a,
   report$add.header(paste("PermANOVA (adonis) analysis of profile of",data.descr))
   report$add.package.citation("vegan")
   report$add.descr(sprintf("Non-parametric multivariate test for association between
-                 profile of %s and meta-data variables.%s Distance metric is %s.",
+                           profile of %s and meta-data variables.%s Distance metric is %s.",
                            data.descr,
                            col.trans.descr,
                            dist.metr))
@@ -3544,64 +3726,61 @@ plot.counts.project <- function(m_a,
   }
 }
 
-## normalize raw count data according to one of the
-## predefined methods.
-## If deseq2 normalization is needed, it will be taken
-## from DESeq2 object `dds`
-
-norm.count <- function(count,dds,method,drop.features=c("other")) {
-  count = switch(method,
-                 rlog=rlog.dds(dds),
-                 clr.rlog=mgsat.clr.rlog.dds(dds),
-                 prop=row_normalize_matr(count),
-                 ihs.prop=ihs(row_normalize_matr(count)),
-                 ident=count,
-                 clr=mgsat.clr(count),
-                 ihs=ihs(count))
-  if(!is.null(drop.features)) {
-    count = count[,!colnames(count) %in% drop.features]
-  }
-  return (count)
-}
-
-norm.count.m_a <- function(m_a,...) {
-  m_a.norm = m_a
-  m_a.norm$count = norm.count(count=m_a.norm$count,...)
-  return(m_a.norm)
-}
-
 test.counts.project <- function(m_a,
                                 label,
                                 do.genesel=T,
-                                do.glmnet.stability=T,
+                                do.stabsel=T,
                                 do.glmer=T,
                                 do.adonis=T,
                                 do.select.samples=F,
                                 do.deseq2,
-                                glmnet.stability.task=NULL,
+                                norm.count.task=NULL,
+                                stabsel.task=NULL,
                                 genesel.task=NULL,
                                 adonis.task=NULL,
                                 glmer.task=NULL,
                                 select.samples.task=NULL,
                                 deseq2.task=NULL,
                                 alpha=0.05,
-                                norm.method="prop"
+                                do.return.data=T
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
   
   res = list()
-    
+  
   #make.global(data.norm)  
   
   if(do.deseq2) {
     res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
   }
-
+  
   ## this is done after an optional call to deseq2 in case the norm.method
   ## wants deseq2 normalization
-  report$add.descr(paste("Count normalization method:",norm.method))
-  m_a.norm = norm.count.m_a(m_a,dds=res$deseq2$dds,method=norm.method)
+  
+  if(!is.null(norm.count.task)) {
+    
+    report$add.descr(paste("Count normalization method:",arg.list.as.str(norm.count.task)))
+    
+    ## if dds is required but not defined (set to NA)
+    if(!is.null(norm.count.task$method.args$dds) && 
+         is.na(norm.count.task$method.args$dds)) {
+      norm.count.task$method.args$dds = res$deseq2$dds
+    }
+    
+    m_a.norm <- do.call(norm.count.m_a,
+                        c(list(m_a),
+                          norm.count.task)
+    )
+    
+  }
+  else {
+    
+    report$add.descr(paste("Counts are not normalized."))
+    m_a.norm = m_a
+    
+  }
+  
   make.global(m_a.norm)
   make.global(m_a)
   
@@ -3609,9 +3788,9 @@ test.counts.project <- function(m_a,
     res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
   }
   
-  if(do.glmnet.stability) {
-    res$glmnet.stability = do.call(glmnet.stabpath.report,c(list(m_a=m_a.norm),
-                                                            glmnet.stability.task
+  if(do.stabsel) {
+    res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
+                                                            stabsel.task
     )
     )
   }
@@ -3635,7 +3814,7 @@ test.counts.project <- function(m_a,
     )
   }
   
-  if( do.select.samples && do.glmnet.stability ) {
+  if( do.select.samples && do.stabsel ) {
     
     tryCatchAndWarn({ 
       do.call(select.samples.report,
@@ -3648,6 +3827,9 @@ test.counts.project <- function(m_a,
       )
     })
     
+  }
+  if(do.return.data) {
+    res$m_a = m_a
   }
   return (res)
 }
@@ -4313,18 +4495,18 @@ select.samples <- function(m_a,
   report$add.descr(paste("This procedure selects those samples that are most different with regard to a grouping variable"
                          ,sample.group.name,". This can be used to select a subset for WGS or 
                          transcriptomics sequencing based on 16S profiles. Support Vector Machine is built using previously selected clades,
-                   and",n.select,"samples corresponding to each of the two levels
+                         and",n.select,"samples corresponding to each of the two levels
                          of the grouping variable are picked. Samples are picked as 
-                        predicted correctly by the linear SVM after applying to the frequency 
-                        profiles the 
-                        inverse hyperbolic sign transform and normalizing across columns, 
-                        and selecting samples that are maximally
+                         predicted correctly by the linear SVM after applying to the frequency 
+                         profiles the 
+                         inverse hyperbolic sign transform and normalizing across columns, 
+                         and selecting samples that are maximally
                          distant from the SVM separating plane. The nuisanse parameter
                          of the SVM is picked through a grid search maximizing
                          prediction accuracy in training with resampling.
                          Accuracy of the final model is reported both on the
                          training set and with cross-validation. Several
-                        performance charts are shown for the training set.
+                         performance charts are shown for the training set.
                          After selecting samples, the same metrics are shown
                          for the selected samples only. Additionally, the
                          abundance profiles are plotted for the selected samples.
@@ -4346,7 +4528,7 @@ select.samples <- function(m_a,
   #S = np.exp(-D * gamma), where one heuristic for choosing gamma is 1 / num_features
   #or
   #S = 1. / (D / np.max(D))
-  #m = boxcox.transform.mat(m)
+  #m = norm.boxcox(m)
   
   m = ihs(m)
   
@@ -4599,8 +4781,6 @@ test.counts.glmer <- function(m_a,
   ##http://thebiobucket.blogspot.com/2011/06/glmm-with-custom-multiple-comparisons.html
   library(lme4)
   library(multcomp)
-  cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
-  registerDoSNOW(cl)
   count = m_a$count
   count_rowsum = rowSums(count)
   #attr = m_a$attr[,c("T1D","FamilyID","SampleID","Batch")]
@@ -4619,7 +4799,6 @@ test.counts.glmer <- function(m_a,
                  .inform=F,
                  .parallel=F,
                  .paropts=list(.packages=c("lme4","multcomp")))
-  stopCluster(cl)
   names(p_vals) = colnames(count)
   p_vals = p_vals[order(p_vals,na.last=T)]
   p_vals_signif = p_vals[!is.na(p_vals) & p_vals<=alpha]
@@ -5093,7 +5272,7 @@ test.counts.mr_oralc <- function(data,attr.names,label,alpha=0.05,
   
   m_a.abs = split_count_df(data,col_ignore=attr.names)
   
-  data.norm = row_normalize(data,col_ignore=attr.names)
+  data.norm = norm.prop(data,col_ignore=attr.names)
   
   #make.global(tbl)
   #make.global(fams)
@@ -5110,7 +5289,7 @@ test.counts.mr_oralc <- function(data,attr.names,label,alpha=0.05,
   #storage.mode(m) = "integer"
   
   count = switch(stability.transform.counts,
-                 boxcox=boxcox.transform.mat(m),
+                 boxcox=norm.boxcox(m),
                  ihs=ihs(m,1),
                  ident=m,
                  binary=(m_a.abs$count > 0))
@@ -5340,7 +5519,7 @@ power.pieper.t1d <- function(
                                     min_max_frac=0,min_max=0,min_mean=min.mean,min_row_sum=0,other_cnt=NULL)
   print(dim(taxa.meta.data.raw))
   
-  taxa.meta.data = all_normalize(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
+  taxa.meta.data = norm.meta.data(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
   make.global(taxa.meta.data)
   
   #clade.names = get.clade.names(taxa.meta.data,taxa.meta.attr.names)

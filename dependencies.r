@@ -12,8 +12,9 @@ vanilla_packages = c(
   "LiblineaR", 
   ## glmnet is exported to snow cluster by c060, but it
   ## forgets to load it first, so we do it here
-  "glmnet", 
-  "c060", 
+  "glmnet",
+  "stabs",
+  #"c060", 
   "geoR", 
   "foreach", 
   "iterators", 

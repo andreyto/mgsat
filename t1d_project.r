@@ -269,34 +269,34 @@ gen.tasks.t1d <- function() {
   #  d
   #}
 
-  get.taxa.meta.aggr<-function(taxa.meta) { 
-    taxa.meta.aggr = get.taxa.meta.aggr.base(taxa.meta)
-    taxa.meta.aggr$data = subset(taxa.meta.aggr$data,T1D=="T1D")  
-    return (taxa.meta.aggr)
-  }
+  #get.taxa.meta.aggr<-function(taxa.meta) { 
+  #  taxa.meta.aggr = get.taxa.meta.aggr.base(taxa.meta)
+  #  taxa.meta.aggr$data = subset(taxa.meta.aggr$data,T1D=="T1D")  
+  #  return (taxa.meta.aggr)
+  #}
     
   test.counts.task = within(test.counts.task, {
     
-    norm.method = "ihs.prop"
+    norm.count.task = within(norm.count.task, {
+      method="norm.ihs.prop"
+    })
     
-    do.deseq2 = T
+    do.deseq2 = F
     do.adonis = F
     do.genesel = F
-    do.glmnet.stability = T
+    do.stabsel = T
     do.glmer = F
 
     deseq2.task = within(deseq2.task, {
-      formula.rhs = "A1C"
+      formula.rhs = main.meta.var
     })
     
     genesel.task = within(genesel.task, {
       resp.attr = main.meta.var
     })
     
-    glmnet.stability.task = within(glmnet.stability.task, {
+    stabsel.task = within(stabsel.task, {
       resp.attr=main.meta.var
-      standardize.count=T
-      transform.count="ident"
     })
     
     adonis.task = within(adonis.task, {
