@@ -376,19 +376,26 @@ norm.count.m_a <- function(m_a,...) {
   return(m_a.norm)
 }
 
+## subset method that will use the same subset argument on all data objects in m_a
+subset.m_a <- function(m_a,subset,select.count=NULL,select.attr=NULL) {
+  if(is.null(select.count)) select.count = T
+  if(is.null(select.attr)) select.attr = T
+  m_a$count = m_a$count[subset,select.count,drop=F]
+  m_a$attr = m_a$attr[subset,select.attr,drop=F]
+  return(m_a)
+}
 
 ## If the other_cnt column is already present, it will be incremented with counts of clades
 ## relegated to the "other" in this call; otherwise, the new column with this name will be
 ## created.
 ## Count columns will be sorted in decreasing order of the column mean frequencies, so that
 ## you can easily subset the count matrix later to only keep N most abundant columns.
-count_filter<-function(dat,
-                       col_ignore=c(),
+count.filter.m_a<-function(m_a,
                        min_max_frac=0.0,
-                       min_max=10,
+                       min_max=0,
                        min_mean=0,
-                       min_mean_frac=0,
-                       min_row_sum=100,
+                       min_mean_frac=0.0,
+                       min_row_sum=0,
                        max_row_sum=.Machine$integer.max,
                        other_cnt="other") {
   ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
@@ -398,7 +405,7 @@ count_filter<-function(dat,
   #m.call = match.call()
   #make.global(m.call)
   #stop("DEBUG")
-  x<-split_count_df(dat,col_ignore)
+  x = m_a
   row_cnt = rowSums(x$count)
   row_sel = row_cnt >= min_row_sum & row_cnt < max_row_sum
   cnt = x$count[row_sel,]
@@ -415,7 +422,8 @@ count_filter<-function(dat,
   cnt = cnt[,ind_col_sel]
   cnt_norm = cnt_norm[,ind_col_sel]  
   cnt = cnt[,apply(cnt,2,max) >= min_max]
-  cnt = cnt[,apply(cnt,2,mean) >= min_mean]  
+  cnt = cnt[,apply(cnt,2,mean) >= min_mean]
+  
   cnt_col_other = as.data.frame(row_cnt - rowSums(cnt))
   
   if (!all(cnt_col_other[,1]==0) && !is.null(other_cnt)) {
@@ -424,10 +432,27 @@ count_filter<-function(dat,
       cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[[other_cnt]]
     }
     else {
-      return (cbind(attr,as.data.frame(cnt),cnt_col_other))
+      cnt = cbind(cnt,cnt_col_other[,1])
     }
   }
-  return (cbind(attr,as.data.frame(cnt)))
+  x$attr = attr
+  x$count = cnt
+  return(x)
+}
+
+count.filter<-function(dat,
+                       col_ignore=c(),
+                       ...) {
+  ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
+  ##unbalanced dataset where one group is 60% of samples and has zero presence in some column,
+  ##and another group is 40% and has a large presence, then median filter will always throw this
+  ##column away.
+  #m.call = match.call()
+  #make.global(m.call)
+  #stop("DEBUG")
+  x<-split_count_df(dat,col_ignore)
+  x = count.filter.m_a(x,...)
+  return (join_count_df(x))
 }
 
 sample.rows<-function(x,size,replace=F,prob=NULL) {
@@ -525,7 +550,7 @@ power.kelvin<-function() {
   data = data_all[data_all$group %in% group_sel,]
   
   ##x = Data.filter(data$x, "sample", 1000, 10)
-  data = count_filter(data,col_ignore=attr_names,min_max_frac=0.25,min_row_sum=5000)
+  data = count.filter(data,col_ignore=attr_names,min_max_frac=0.25,min_row_sum=5000)
   cnt_m = count_matr_from_df(data,col_ignore=attr_names)
   
   
@@ -617,7 +642,7 @@ power.koren<-function() {
   
   data = read.koren("GG_OTU_table_L6.txt")
   data_factors = c("time","id_repl")
-  #data = count_filter(data,col_ignore=data_factors,min_max_frac=0.1,min_row_sum=0)
+  #data = count.filter(data,col_ignore=data_factors,min_max_frac=0.1,min_row_sum=0)
   data_col = melt(data,id.vars=data_factors,variable.name="clade",value.name="freq")
   data_time = merge(data_col[data_col$time==1,],data_col[data_col$time==2,],by=c("id_repl","clade"))
   data_time_summary = ddply(data_time,c("clade"),summarize,
@@ -951,7 +976,7 @@ sorted.freq.kelvin<-function() {
   data_all = read.kelvin.summary.matr("v35.16sTaxa.TotFilt_1000.allSamples.summary_table.xls")
   
   data = data_all[data_all$group %in% group_sel,]
-  data = count_filter(data,col_ignore=attr_names,min_max_frac=0.2,min_row_sum=2000)  
+  data = count.filter(data,col_ignore=attr_names,min_max_frac=0.2,min_row_sum=2000)  
   
   freq.mean = sorted.freq(data,col_ignore=attr_names)
   
@@ -965,7 +990,7 @@ sorted.freq.nistal<-function() {
   attr_names = c("group")
   data_all = read.nistal("children.txt")
   data = data_all
-  #data = count_filter(data,col_ignore=attr_names,min_max_frac=0.2,min_row_sum=2000)  
+  #data = count.filter(data,col_ignore=attr_names,min_max_frac=0.2,min_row_sum=2000)  
   #return(data_all)
   
   freq.mean = sorted.freq(data,col_ignore=attr_names)
@@ -1075,12 +1100,18 @@ read.mothur.taxa.summary <- function(file_name) {
 }
 
 
-multi.mothur.to.abund.df <- function(data,level) {
+multi.mothur.to.abund.m_a <- function(data,level) {
   data.level = data[data$taxlevel==level,]
   attr = c("taxlevel","rankID","taxon","daughterlevels","total","clade")
   x = split_count_df(data.level,col_ignore=attr)
   row.names(x$count) = x$attr$clade
-  return (as.data.frame(t(x$count)))
+  x$count = t(x$count)
+  return (x)
+}
+
+multi.mothur.to.abund.df <- function(data,level) {
+  x = multi.mothur.to.abund.m_a(data,level)
+  return (as.data.frame(x$count))
 }
 
 mgrast.to.abund.df <- function(data,level) {
@@ -1098,6 +1129,7 @@ mgrast.to.abund.df <- function(data,level) {
 #merge on a component of row.names(counts), first
 #get row.names(counts), split them into components, merge with 
 #meta data frame, and then use the resulting frame as a new meta data
+##TODO: remove intermediate conversion into data.frame
 merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
   mrg = merge(x,y,by="row.names",suffixes=suffixes)
   #Row.names column is generated by merge() when by="row.names"
@@ -1105,21 +1137,21 @@ merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
   #not duplicated as a result of merge
   row.names(mrg) = mrg$Row.names
   mrg$Row.names = NULL
-  all.names = names(mrg)
-  attr.names = all.names[!(all.names %in% names(x))]
-  return (list(data=mrg,attr.names=attr.names))
+  all.names = colnames(mrg)
+  attr.names = all.names[!(all.names %in% colnames(x))]
+  return (split_count_df(mrg,col_ignore=attr.names))
 }
 
-aggregate_by_meta_data <- function(meta_data,
+aggregate_by_meta_data.m_a <- function(m_a,
                                    group_col,
-                                   col_ignore=c(),
                                    count_aggr=sum,
                                    attr_aggr=NULL,
                                    group_col_result_name="SampleID") {
-  x = split_count_df(meta_data,col_ignore=col_ignore)
-  #This is my way of assigning list attribute name from a variable
-  groups = list(x$attr[,group_col])
-  names(groups) = group_col_result_name
+  x = m_a
+
+  groups = list()
+  groups[[group_col_result_name]] = x$attr[,group_col]
+
   #We need to drop resulting grouping name from the input,
   #otherwise we will get duplicated names (e.g. two SampleID columns. 
   #The assumption here is that if such name is supplied for the grouping
@@ -1143,10 +1175,20 @@ aggregate_by_meta_data <- function(meta_data,
     return (merge.counts.with.meta(x$count,x$attr))
   }
   else {
-    return (x$attr)
+    return (x)
   }
   
 }
+
+
+aggregate_by_meta_data <- function(meta_data,
+                                   col_ignore=c(),
+                                   ...) {
+  m_a = split_count_df(meta_data,col_ignore=col_ignore)
+  m_a = aggregate_by_meta_data.m_a(m_a,...)
+  return (join_count_df(m_a))
+}
+  
 
 load.meta.choc <- function(file_name,counts.row.names) {
   meta = read.delim(file_name,header=T,stringsAsFactors=T)
@@ -1456,16 +1498,11 @@ write.table.file.report.m_a = function(m_a,name.base,descr=NULL,row.names=F) {
 }
 
 
-export.taxa.meta <- function(taxa.meta,
+export.taxa.meta <- function(m_a,
                              label,
                              descr="",
                              row.proportions=T,
                              row.names=F) {
-  data = taxa.meta$data
-  attr.names = taxa.meta$attr.names
-  
-  m_a = split_count_df(data,col_ignore=attr.names)
-  
   write.table.file.report.m_a(m_a=m_a,
                               name.base=paste("samples.raw",label,sep="."),
                               descr=paste("raw counts",descr),
@@ -1478,7 +1515,6 @@ export.taxa.meta <- function(taxa.meta,
                                 descr=paste("proportions counts",descr),
                                 row.names=row.names)
   }
-  return (m_a)
 }
 
 
@@ -1628,7 +1664,7 @@ dirmult.kelvin <- function(file_name,group_sel) {
   attr_names = c("id_repl","group")
   
   data_all = read.kelvin.summary.matr(file_name)
-  data_all = count_filter(data_all,col_ignore=attr_names,min_max_frac=0.25,min_row_sum=5000)  
+  data_all = count.filter(data_all,col_ignore=attr_names,min_max_frac=0.25,min_row_sum=5000)  
   dm.par = list()
   for (gr in group_sel) {
     data = data_all[data_all$group == gr,]
@@ -1703,7 +1739,7 @@ read.choc <- function(taxa.level=3) {
   #moth.taxa <- read.mothur.taxa.summary("X:/sszpakow/BATCH_03_16S/ab1ec.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary.txt")
   moth.taxa <- read.mothur.taxa.summary("4b92c86afff1e8ed5443fd52f540eb60.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
   taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
-  taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0.001,min_row_sum=50,other_cnt="other")
+  taxa.lev = count.filter(taxa.lev.all,col_ignore=c(),min_max_frac=0.001,min_row_sum=50,other_cnt="other")
   meta = load.meta.choc("CHOC_MiSEQ_June2014.txt")
   return (merge.counts.with.meta(taxa.lev,meta))
 }
@@ -1723,7 +1759,7 @@ proc.choc.nov_2013_grant_proposal <- function() {
     
     #(optionally) subsample just the rows we need and then filter out clades that are all zero
     #taxa.meta.data[taxa.meta.data$Sample.type=="patient",]
-    taxa.meta.data = count_filter(taxa.meta.data,
+    taxa.meta.data = count.filter(taxa.meta.data,
                                   col_ignore=taxa.meta.attr.names,
                                   min_max_frac=0.001,min_row_sum=50,other_cnt="other")
     
@@ -2117,10 +2153,10 @@ proc.choc <- function() {
         
         report$add.p(paste("After aggregating/subsetting samples:",nrow(taxa.meta.aggr$data)))
         
-        taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
+        taxa.meta.aggr$data = count.filter(taxa.meta.aggr$data,
                                            col_ignore=taxa.meta.aggr$attr.names,
                                            min_max=10)
-        #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
+        #taxa.meta.data = count.filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
         #                              min_mean=0.002,
         #                              min_max_frac=0.1,min_max=10,
         #                              min_row_sum=500,other_cnt="other")
@@ -2262,7 +2298,7 @@ read.data.project.yap <- function(taxa.summary.file,
                                   meta.file,
                                   load.meta.method,
                                   load.meta.options=list(),
-                                  count.filter.options=list(min_max_frac=0.001,min_row_sum=50,other_cnt="other"),
+                                  count.filter.options=NULL,
                                   taxa.level=3) {
   if (taxa.level == "otu") {
     taxa.lev.all = read.mothur.otu.with.taxa(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
@@ -2270,21 +2306,29 @@ read.data.project.yap <- function(taxa.summary.file,
   }
   else {
     moth.taxa <- read.mothur.taxa.summary(taxa.summary.file)
-    taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
+    taxa.lev.all = multi.mothur.to.abund.m_a(moth.taxa,taxa.level)
     count.file = taxa.summary.file
   }  
   report$add.p(sprintf("Loaded %i records for %i clades from count file %s for taxonomic level %s",
-                       nrow(taxa.lev.all),ncol(taxa.lev.all),count.file,taxa.level))
-  make.global(taxa.lev.all)
-  report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
-  taxa.lev = do.call(count_filter,c(list(dat=taxa.lev.all,col_ignore=c()),count.filter.options))
-  report$add.p(sprintf("After filtering, left %i records for %i clades for taxonomic level %s",
-                       nrow(taxa.lev),ncol(taxa.lev),taxa.level))
+                       nrow(taxa.lev.all$count),ncol(taxa.lev.all$count),count.file,taxa.level))
+
+  if(!is.null(count.filter.options)) {
+    report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
+    report$add.p("Note that many community richness estimators will not work correctly 
+                 if provided with abundance-filtered counts")
+    taxa.lev = do.call(count.filter.m_a,c(list(taxa.lev.all),count.filter.options))
+    report$add.p(sprintf("After filtering, left %i records for %i clades for taxonomic level %s",
+                         nrow(taxa.lev$count),ncol(taxa.lev$count),taxa.level))
+  }
+  else {
+    ##this should only order features by mean abundance but not drop anything
+    taxa.lev = count.filter.m_a(taxa.lev.all)
+  }
   meta = do.call(load.meta.method,c(file.name=meta.file,load.meta.options))  
-  taxa.meta = merge.counts.with.meta(taxa.lev,meta)
+  m_a = merge.counts.with.meta(taxa.lev$count,meta)
   report$add.p(sprintf("After merging with metadata, %i records left",
-                       nrow(taxa.meta)))
-  return (taxa.meta)
+                       nrow(m_a$count)))
+  return (m_a)
 }
 
 
@@ -2311,15 +2355,14 @@ mgsat.16s.task.template = within(list(), {
     cons.taxonomy.file=NULL,
     meta.file=NULL,
     load.meta.method=load.meta.default,
-    load.meta.options=list(),
-    count.filter.options=list(min_mean_frac=0.0005,min_row_sum=400,max_row_sum=100000,other_cnt="other")
+    load.meta.options=list()
   )
   
   taxa.levels = c("otu",2,3,4,5,6)
   
   get.taxa.meta.aggr<-function(taxa.meta) { return (taxa.meta) }
   
-  count.filter.aggr.options=list(min_mean_frac=0.0005,min_row_sum=400,other_cnt="other")
+  count.filter.sample.options=list(min_row_sum=400,max_row_sum=100000)
   
   summary.meta.method=summary.meta.method.default
   
@@ -2344,6 +2387,8 @@ mgsat.16s.task.template = within(list(), {
     do.select.samples=F
     
     alpha = 0.05
+    
+    count.filter.feature.options=list(min_mean_frac=0.0005)
     
     norm.count.task = within(list(), {
       method = "norm.ihs.prop"
@@ -2448,6 +2493,51 @@ stop.cluster.project <- function(cl) {
   stopCluster(cl)
 }
 
+## create new MGSAT result object
+new_mgsatres <- function(...) {
+  x = list(...)
+  class(x) <- append(class(x),"mgsatres")
+  return(x)
+}
+
+## extract ranking of features created by a specific method
+## Value: named list with at least name `ranked` that is an ordered 
+## vector of feature names.
+get.feature.ranking <- function(x, ...) {
+  UseMethod('get.feature.ranking', x)
+}
+
+get.feature.ranking.default <- function(x.f) {
+  stop("Not defined for arbitrary objects")
+}
+
+get.feature.ranking.mgsatres<-function(x.f,method="stabsel") {
+  meth.res = x.f[[method]]
+  if(method=="stabsel") {
+    res = list(ranked=meth.res$max[order(meth.res$max,decreasing = T)])
+  }
+  else {
+    stop(paste("I do not know what to do for method",method))
+  }
+  return (res)
+}
+
+count.filter.report <- function(m_a,count.filter.options,descr) {
+m_a = do.call(count.filter.m_a,
+                              c(list(m_a),
+                                count.filter.options)
+)
+
+report$add.p(paste("After",descr,"count filtering with arguments",
+                   arg.list.as.str(count.filter.options),
+                   ",",
+                   ncol(m_a$count),
+                   "features and",
+                   nrow(m_a$count),
+                   "samples left."))
+return(m_a)
+}
+
 proc.project <- function(
   task.generator.method
 ) {
@@ -2468,12 +2558,12 @@ proc.project <- function(
   
   cl = start.cluster.project()
   
-  res.tasks = foreach(task=tasks) %do% {
+  res.tasks = lapply(tasks,function(task) {
     
     report$add.header(paste("Subset:",task$descr))
     report$push.section(report.section) #2 {
     
-    res.task = list(task=task)
+    res.task = new_mgsatres(task=task)
     
     res.task$res.taxa.levels = with(task,{
       
@@ -2484,45 +2574,31 @@ proc.project <- function(
       
       for (taxa.level in taxa.levels) {
         
-        res.level = list(taxa.level=taxa.level)
+        res.level = new_mgsatres(taxa.level=taxa.level)
         
         label = paste("16s","l",taxa.level,sep=".",collapse=".")
         report$add.header(paste("Taxonomic level:",taxa.level))
         report$push.section(report.section) #4 {
         
-        taxa.meta = do.call(read.data.method,
+        m_a = do.call(read.data.method,
                             c(
                               list(taxa.level=taxa.level),
                               read.data.task
                             )
         )
         
+        m_a = get.taxa.meta.aggr(m_a)
         
-        report$add.p(paste("Number of samples:",nrow(taxa.meta$data)))
+        report$add.p(paste("After aggregating/subsetting, sample count is:",nrow(m_a$count)))
         
-        taxa.meta.aggr = get.taxa.meta.aggr(taxa.meta=taxa.meta)
-        
-        report$add.p(paste("After aggregating/subsetting samples:",nrow(taxa.meta.aggr$data)))
-        
-        taxa.meta.aggr$data = do.call(count_filter,
-                                      c(list(dat=taxa.meta.aggr$data,
-                                             col_ignore=taxa.meta.aggr$attr.names),
-                                        count.filter.aggr.options)
-        )
-        
-        report$add.p(paste("After post-aggregation count filtering with arguments",
-                           arg.list.as.str(count.filter.aggr.options),
-                           ",",
-                           (ncol(taxa.meta.aggr$data)-length(taxa.meta.aggr$attr.names)),
-                           "clades and",
-                           nrow(taxa.meta.aggr$data),
-                           "samples left."))
-        
+        m_a = count.filter.report(m_a,
+                                  count.filter.options=count.filter.sample.options,
+                                  "sample")
         
         if(do.summary.meta) {
           summary.meta.method(taxa.meta.aggr)
           do.call(report.sample.count.summary,c(
-            list(meta.data=taxa.meta.aggr),
+            list(m_a),
             summary.meta.task
           )
           )
@@ -2530,7 +2606,7 @@ proc.project <- function(
           do.summary.meta = F
         }
         
-        m_a = export.taxa.meta(taxa.meta=taxa.meta.aggr,
+        export.taxa.meta(m_a,
                                label=label,
                                descr=descr,
                                row.proportions=T,
@@ -2569,7 +2645,7 @@ proc.project <- function(
           )
         }
         report$pop.section() #4 }
-        res.taxa.levels[[taxa.level]] = res.level
+        res.taxa.levels[[as.character(taxa.level)]] = res.level
       }
       report$pop.section() #3 }
       res.taxa.levels
@@ -2578,13 +2654,15 @@ proc.project <- function(
     report$pop.section() #2 }
     
     res.task
-  }
+  })
   
   report$pop.section() #1 }
   
   stop.cluster.project(cl)
   
-  return (res.tasks)
+  res = new_mgsatres(res.tasks=res.tasks)
+  
+  return (res)
 }
 
 
@@ -3672,14 +3750,13 @@ test.counts.adonis.report <- function(m_a,
 }
 
 select.samples.report <- function(m_a,
-                                  glmnet.stability.res,
+                                  feature.ranking,
                                   resp.attr,
                                   n.species,
                                   n.samples) {
   
-  #species.sel=res$glmnet.stability.genesel$stab_feat$name
-  species.sel=names(take_first(glmnet.stability.res$mean.order.p,
-                               n.species))
+  species.sel=take_first(feature.ranking$ranked,
+                               n.species)
   select.samples(m_a=m_a,
                  species.sel=species.sel,
                  sample.group.name=resp.attr,
@@ -3734,6 +3811,7 @@ test.counts.project <- function(m_a,
                                 do.adonis=T,
                                 do.select.samples=F,
                                 do.deseq2,
+                                count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
                                 stabsel.task=NULL,
                                 genesel.task=NULL,
@@ -3747,9 +3825,15 @@ test.counts.project <- function(m_a,
   
   report.section = report$add.header("Data analysis",section.action="push")
   
-  res = list()
+  res = new_mgsatres()
   
   #make.global(data.norm)  
+  
+  if(!is.null(count.filter.feature.options)) {
+    m_a = count.filter.report(m_a,
+                              count.filter.options=count.filter.feature.options,
+                              "feature")
+  }
   
   if(do.deseq2) {
     res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
@@ -3820,7 +3904,7 @@ test.counts.project <- function(m_a,
       do.call(select.samples.report,
               c(
                 list(m_a=m_a.norm,
-                     glmnet.stability.res=res$glmnet.stability
+                     feature.ranking=get.feature.ranking(res)
                 ),
                 select.samples.task
               )
@@ -4368,7 +4452,7 @@ read.t1d <- function(taxa.level="3",batch=NULL,aggr_var_meta = NULL) {
     taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
     make.global(taxa.lev.all)
   }
-  #taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
+  #taxa.lev = count.filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
   taxa.lev = taxa.lev.all
   make.global(taxa.lev)
   meta = load.meta.t1d(meta.file,batch=batch,aggr_var = aggr_var_meta)
@@ -4952,11 +5036,11 @@ pair.counts <- function(m_a,pair.attr) {
   
 }
 
-report.sample.count.summary <- function(meta.data,meta.x.vars,group.var) {
+report.sample.count.summary <- function(m_a,meta.x.vars,group.var) {
   report.section = report$get.section()
-  m_a = split_count_df(meta.data$data,col_ignore=meta.data$attr.names)
+
   m_a.summ=make.sample.summaries(m_a)
-  make.global(m_a.summ)
+
   report$add.vector(c(summary(m_a.summ$count[,"count.sum"]),caption="Summary of counts per sample"))
   
   report$add.header("Iterating over meta data variables")
@@ -5053,11 +5137,11 @@ proc.t1d <- function() {
       report$add.table(fact.xtabs,show.row.names=T,caption="Sample cross tabulation")
       report$add.printed(summary(fact.xtabs))
       
-      taxa.meta.aggr$data = count_filter(taxa.meta.aggr$data,
+      taxa.meta.aggr$data = count.filter(taxa.meta.aggr$data,
                                          col_ignore=taxa.meta.aggr$attr.names,
                                          min_max=10,
                                          max_row_sum=100000)
-      #taxa.meta.data = count_filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
+      #taxa.meta.data = count.filter(taxa.meta.data,col_ignore=taxa.meta.attr.names,
       #                              min_mean=0.002,
       #                              min_max_frac=0.1,min_max=10,
       #                              min_row_sum=500,other_cnt="other")
@@ -5185,7 +5269,7 @@ read.t1d.mg <-function(annot.type,level) {
   mgrast.dir = paste(annot.dir,"BATCH_01-02_METAGENOMICS_MGRAST",sep="/")
   if (annot.type == "humann") {
     counts = read.humann.summary(paste(annot.dir,"humann/output/04b-keg-mpt-cop-nul-nve-nve.txt",sep="/"))
-    counts = count_filter(counts,col_ignore=c(),min_max_frac=0,min_max=0,min_row_sum=0,other_cnt="other")      
+    counts = count.filter(counts,col_ignore=c(),min_max_frac=0,min_max=0,min_row_sum=0,other_cnt="other")      
   }
   else if (annot.type %in% c("cog","kegg","subsys")) {
     make.global(level)
@@ -5194,7 +5278,7 @@ read.t1d.mg <-function(annot.type,level) {
     make.global(counts)
     print(level)
     counts = mgrast.to.abund.df(counts,level)
-    counts = count_filter(counts,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=0,other_cnt="other")
+    counts = count.filter(counts,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=0,other_cnt="other")
   }
   #make.global(counts)
   
@@ -5405,7 +5489,7 @@ read.mr_oralc <- function(taxa.level=3) {
   #moth.taxa <- read.mothur.taxa.summary("43aa6.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary.txt")
   moth.taxa <- read.mothur.taxa.summary("5e2c2.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
   taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
-  taxa.lev = count_filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
+  taxa.lev = count.filter(taxa.lev.all,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=500,other_cnt="other")
   #taxa.lev = taxa.lev.all
   meta = load.meta.mr_oralc("UCFTumorTissueSampleInventory.cleaned.txt")
   return (merge.counts.with.meta(taxa.lev,meta))
@@ -5515,7 +5599,7 @@ power.pieper.t1d <- function(
   }
   taxa.meta.attr.names = taxa.meta$attr.names    
   dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
-  taxa.meta.data.raw = count_filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
+  taxa.meta.data.raw = count.filter(taxa.meta$data,col_ignore=taxa.meta.attr.names,
                                     min_max_frac=0,min_max=0,min_mean=min.mean,min_row_sum=0,other_cnt=NULL)
   print(dim(taxa.meta.data.raw))
   

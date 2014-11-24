@@ -142,8 +142,8 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   if(!is.null(aggr.var)) {
     
     meta = aggregate_by_meta_data(meta,
-                                  aggr.var,
-                                  names(meta))  
+                                  group_col=aggr.var,
+                                  col_ignore=names(meta))  
   }
   
   ##Setting Control to base level plays nice with DESeq2 defaults
@@ -155,25 +155,25 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
 ## This function should carry out analysis specific to metadata fields by themselves, without
 ## relation to the abundance profiles. You can write it to do nothing (empty body).
 
-summary.meta.t1d <- function(taxa.meta) {
+summary.meta.t1d <- function(m_a) {
   
   report$add.header("Summary of metadata variables")
   
   
   report$add.header("Summary of metadata variables after filtering samples")
   
-  m_a = split_count_df(taxa.meta$data,col_ignore=taxa.meta$attr.names)
+  meta = m_a$attr
   
-  report$add.printed(summary(m_a$attr),caption="Summary of metadata variables")
+  report$add.printed(summary(meta),caption="Summary of metadata variables")
   
   xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID")
   for(xtabs.formula in xtabs.formulas) {
-    fact.xtabs = xtabs(as.formula(xtabs.formula),data=taxa.meta$data,drop.unused.levels=T)
+    fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
     report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
     report$add.printed(summary(fact.xtabs))
   }
   
-  with(taxa.meta$data,{
+  with(meta,{
     
     report$add.printed(summary(aov(age~T1D)),
                        caption="ANOVA for age and cohort")
@@ -182,14 +182,14 @@ summary.meta.t1d <- function(taxa.meta) {
     
     #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
     #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
-    report$add(ggplot(taxa.meta$data,aes(x=age,y=YearsSinceDiagnosis,color=T1D))+
+    report$add(ggplot(meta,aes(x=age,y=YearsSinceDiagnosis,color=T1D))+
                  geom_point()+
                  stat_smooth(method="loess", se = T,degree=1,size=1),
                caption="Plot for age and time since diagnosis with Loess trend line")
     
   })
   
-  with(taxa.meta$data,{
+  with(meta,{
     report$add.printed(cor.test(YearsSinceDiagnosis,
                                 Timestamp,
                                 method="spearman"),
@@ -212,16 +212,16 @@ summary.meta.t1d <- function(taxa.meta) {
 
 gen.tasks.t1d <- function() {
   
-  get.taxa.meta.aggr.base<-function(taxa.meta) { 
-    taxa.meta$data = taxa.meta$data[taxa.meta$data$Sample.QA=="PASS",]
-    taxa.meta.aggr = taxa.meta
-    report$add.p(paste("After filtering for QAed samples:",nrow(taxa.meta$data)))      
+  get.taxa.meta.aggr.base<-function(m_a) { 
+    m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.QA=="PASS"))
+
+    report$add.p(paste("After filtering for QAed samples:",nrow(m_a$count)))
     
-    taxa.meta$data = taxa.meta$data[!taxa.meta$data$isRepeatOrFailed,] 
-    taxa.meta.aggr = taxa.meta
-    report$add.p(paste("After filtering for repeated samples per subject:",nrow(taxa.meta$data)))
+    m_a = subset.m_a(m_a,subset=(!m_a$attr$isRepeatOrFailed))
+
+    report$add.p(paste("After filtering for repeated samples per subject:",nrow(m_a$count)))
     
-    return (taxa.meta.aggr)
+    return (m_a)
   }
 
   task0 = within( mgsat.16s.task.template, {
