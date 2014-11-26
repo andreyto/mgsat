@@ -1517,6 +1517,47 @@ export.taxa.meta <- function(m_a,
   }
 }
 
+## Generate index into x that selects equal number
+## of elements reps for each level of x. If resp==0,
+## reps will be set to the smallest level count.
+## Adopted from balanced.specaccum {BiodiversityR}
+## If there is a need to also balance within a specific
+## strata (e.g. by phentype but preserving as many
+## family connections as possible), then we will have
+## to use methods from package `sampling`.
+balanced.sample <- function(x, grouped = TRUE, reps = 0) {
+  x = factor(x)
+  n <- length(x)
+  levs <- levels(x)
+  minimum <- min(summary(x))
+  if (reps > 0) {
+    alllevs <- summary(x)
+    goodlevs <- alllevs > (reps - 1)
+    levs <- names(alllevs[goodlevs])
+    minimum <- reps
+  }
+  nl <- length(levs)
+  seq2 <- array(nl * minimum)
+  seq1 <- sample(n)
+  strat <- sample(nl)
+  count <- 0
+  for (i in 1:nl) {
+    for (j in 1:n) {
+      if (x[seq1[j]] == levs[strat[i]]) {
+        count <- count + 1
+        if (count > i * minimum) {
+          count <- count - 1
+        }
+        seq2[count] <- seq1[j]
+      }
+    }
+  }
+  if (grouped == FALSE) {
+    seq3 <- sample(seq2)
+    seq2 <- seq3
+  }
+  return(seq2)
+}
 
 mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
 
@@ -1531,20 +1572,45 @@ mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
     return(list(e=x))
 }
 
-mgsat.richness.samples <- function(m_a,pool=NULL,n.rar.rep=400,is.raw.count.data=T) {
+## This uses incidence data and therefore should be applicable to both raw count data as 
+## well as to proportions
+## or other type of measurement where non-zero value means "present"
+mgsat.richness.samples <- function(m_a,pool.attr=NULL,n.rar.rep=400) {
 
-  
   require(vegan)
   
   n.rar = min(rowSums(m_a$count))
   
-  if(!is.raw.count.data) {
-    flds = c("Species","boot","boot.se","n")
+  if(is.null(pool.attr)) {
+    pool = factor(rep("All",nrow(m_a$count)))
+    do.stratify = F
   }
-  x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+  else {
+    pool = m_a$attr[,pool.attr]
+    do.stratify = T
+  }
+  count = m_a$count
+  ##somehow just supplying .combine="+" generates an error,
+  ##but both the function below or skipping .combine and
+  ##applying Reduce("+",...) on the returned list work fine
+  plus <-function(x,y) (x+y)
+  x = foreach(seq(n.rar.rep),.packages=c("vegan"),
+              .combine=plus,
+              .export=c("balanced.sample"),
               .final=function(x) (x/n.rar.rep)) %dopar% 
-{specpool(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
-return(list(e=x))
+{
+  if(do.stratify) {
+  strat.ind = balanced.sample(pool)
+  count = count[strat.ind,]
+  pool=pool[strat.ind]
+  }
+  specpool(rrarefy(count,n.rar),pool=pool)
+}
+
+se.ind = grep(".*[.]se",names(x))
+e = x[,-se.ind]
+se = x[,se.ind]
+return(list(e=e,se=se))
 }
 
 
@@ -1578,10 +1644,13 @@ mgsat.diversity.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) {
 }
 
 mgsat.divrich.report <- function(m_a,n.rar.rep=400,is.raw.count.data=T,pool.attr=NULL) {
+  res = list()
   if(is.raw.count.data) {
-    rich = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
+    res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
-  div = mgsat.diversity.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
+  res$rich.samples = mgsat.richness.samples(m_a,pool.attr=pool.attr,n.rar.rep=n.rar.rep)
+  res$div = mgsat.diversity.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
+  return(res)
 }
 
 plot.profiles <- function(m_a,
