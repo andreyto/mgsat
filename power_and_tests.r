@@ -1518,6 +1518,72 @@ export.taxa.meta <- function(m_a,
 }
 
 
+mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
+
+    require(vegan)
+
+    n.rar = min(rowSums(m_a$count))
+    
+    #S.ACE & all se.* give NaN often
+    x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+                  .final=function(x) (x/n.rar.rep)) %dopar% 
+        {estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
+    return(list(e=x))
+}
+
+mgsat.richness.samples <- function(m_a,pool=NULL,n.rar.rep=400,is.raw.count.data=T) {
+
+  
+  require(vegan)
+  
+  n.rar = min(rowSums(m_a$count))
+  
+  if(!is.raw.count.data) {
+    flds = c("Species","boot","boot.se","n")
+  }
+  x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+              .final=function(x) (x/n.rar.rep)) %dopar% 
+{specpool(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
+return(list(e=x))
+}
+
+
+mgsat.diversity.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) {
+  
+  require(vegan)
+  n.rar = min(rowSums(m_a$count))
+  
+    f.div = function(m) { cbind(div.shannon=diversity(m,index="shan"),
+                                div.simpson = diversity(m,index="simp")) }
+  
+    if(is.raw.count.data) {
+      x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+                   .final=function(x) (x/n.rar.rep)) %dopar% 
+        {f.div(rrarefy(m_a$count,n.rar))}
+    }
+    else {
+      x = f.div(m_a$count)
+    }
+    
+    if(is.raw.count.data) {
+      #this is already unbiased (determenistic wrt rarefication)
+      div.unb.simpson = rarefy(m_a$count,2)-1
+      #div.fisher.alpha = fisher.alpha(m_a$count)
+    }
+    else {
+      div.unb.simpson = x$div.simpson
+    }
+    x = t(cbind(x,div.unb.simpson=div.unb.simpson))
+  return(list(e=x))
+}
+
+mgsat.divrich.report <- function(m_a,n.rar.rep=400,is.raw.count.data=T,pool.attr=NULL) {
+  if(is.raw.count.data) {
+    rich = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
+  }
+  div = mgsat.diversity.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
+}
+
 plot.profiles <- function(m_a,
                           res.tests=NULL,
                           id.vars.list,
@@ -1539,8 +1605,8 @@ plot.profiles <- function(m_a,
     report$add.header(paste("Grouping variables",paste0(id.vars,collapse=",")))
     
     clades.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
-    if (!is.null(names(res.tests)) && !is.null(res.tests$glmnet.stability)) {
-      clades.order[[2]] = list(ord=res.tests$glmnet.stability$labels[res.tests$glmnet.stability$mean.order],
+    if (!is.null(names(res.tests)) && !is.null(res.tests$stabsel)) {
+      clades.order[[2]] = list(ord=get.feature.ranking(res.tests,"stabsel")$ranked,
                                ord_descr="GLMnet feature stability",
                                sfx="glmnet")
     }
@@ -2384,9 +2450,16 @@ mgsat.16s.task.template = within(list(), {
     do.stabsel=T
     do.glmer=T
     do.adonis=T
+    do.divrich=T
     do.select.samples=F
     
     alpha = 0.05
+    
+    divrich.task = within(list(),{
+      n.rar.rep=400
+      is.raw.count.data=T
+      pool.attr = main.meta.var
+    })
     
     count.filter.feature.options=list(min_mean_frac=0.0005)
     
@@ -3810,7 +3883,8 @@ test.counts.project <- function(m_a,
                                 do.glmer=T,
                                 do.adonis=T,
                                 do.select.samples=F,
-                                do.deseq2,
+                                do.deseq2=T,
+                                do.divrich=T,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
                                 stabsel.task=NULL,
@@ -3819,6 +3893,7 @@ test.counts.project <- function(m_a,
                                 glmer.task=NULL,
                                 select.samples.task=NULL,
                                 deseq2.task=NULL,
+                                divrich.task=NULL,
                                 alpha=0.05,
                                 do.return.data=T
 ) {
@@ -3828,6 +3903,11 @@ test.counts.project <- function(m_a,
   res = new_mgsatres()
   
   #make.global(data.norm)  
+  
+  make.global(m_a)
+  stop("DEBUG:")
+  
+  mgsat.divrich.report(m_a,n.rar.rep=400,is.raw.count.data=T)
   
   if(!is.null(count.filter.feature.options)) {
     m_a = count.filter.report(m_a,
