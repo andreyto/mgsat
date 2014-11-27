@@ -1643,6 +1643,33 @@ mgsat.diversity.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) {
   return(list(e=x))
 }
 
+mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T) {
+  require(vegan)
+  
+  n.rar = min(rowSums(m_a$count))
+  
+  y = poolaccum(rrarefy(m_a$count,n.rar))
+  report$add(plot(y),caption=sprintf("Accumulation curves for extrapolated richness indices 
+        for random ordering of samples (function poolaccum of package vegan;
+             estimation is based on incidence data). Samples were rarefied
+             to the the minimum sample size (%s).",n.rar))
+  
+  if(is.raw.count.data) {
+  y = estaccumR(rrarefy(m_a$count,n.rar))
+  report$add(plot(y),caption=sprintf("Accumulation curves for extrapolated richness indices 
+        for random ordering of samples (function estaccumR of package vegan;
+             estimation is based on abundance data). Samples were rarefied
+             to the the minimum sample size (%s).",n.rar))
+  }
+  
+  y = specaccum(m_a$count,method="exact")
+  report$add(plot(y, ci.type="polygon", ci.col="yellow",xlab="Size",ylab="Species"),
+             caption=sprintf("Accumulation curve for expected number of species (features)
+             for a given number of samples (function specaccum of package vegan,
+             using method 'exact'. Samples were rarefied
+             to the the minimum sample size (%s).",n.rar))
+}
+
 mgsat.divrich.report <- function(m_a,n.rar.rep=400,is.raw.count.data=T,pool.attr=NULL) {
   res = list()
   if(is.raw.count.data) {
@@ -1650,6 +1677,7 @@ mgsat.divrich.report <- function(m_a,n.rar.rep=400,is.raw.count.data=T,pool.attr
   }
   res$rich.samples = mgsat.richness.samples(m_a,pool.attr=pool.attr,n.rar.rep=n.rar.rep)
   res$div = mgsat.diversity.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
+  mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)  
   return(res)
 }
 
