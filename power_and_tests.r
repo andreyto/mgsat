@@ -238,7 +238,11 @@ norm.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
 #' @method clr matrix
 #' @export
 norm.clr.matrix <- function(x.f, mar=1, ...) {
-  aaply(x.f, mar, norm.clr, ...)
+  y = aaply(x.f, mar, norm.clr, ...)
+  if(mar==2) {
+    y = t(y)
+  }
+  return(y)
 }
 
 #' @method clr data.frame
@@ -344,7 +348,11 @@ norm.boxcox.default <- function(x.f) {
 }
 
 norm.boxcox.matrix <- function(x.f, mar=2, ...) {
-  aaply(x.f, mar, norm.boxcox, ...)
+  y = aaply(x.f, mar, norm.boxcox, ...)
+  if(mar==2) {
+    y = t(y)
+  }
+  return(y)
 }
 
 norm.ihs.prop <- function(x,theta=1,mar=1) {
@@ -391,13 +399,13 @@ subset.m_a <- function(m_a,subset,select.count=NULL,select.attr=NULL) {
 ## Count columns will be sorted in decreasing order of the column mean frequencies, so that
 ## you can easily subset the count matrix later to only keep N most abundant columns.
 count.filter.m_a<-function(m_a,
-                       min_max_frac=0.0,
-                       min_max=0,
-                       min_mean=0,
-                       min_mean_frac=0.0,
-                       min_row_sum=0,
-                       max_row_sum=.Machine$integer.max,
-                       other_cnt="other") {
+                           min_max_frac=0.0,
+                           min_max=0,
+                           min_mean=0,
+                           min_mean_frac=0.0,
+                           min_row_sum=0,
+                           max_row_sum=.Machine$integer.max,
+                           other_cnt="other") {
   ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
   ##unbalanced dataset where one group is 60% of samples and has zero presence in some column,
   ##and another group is 40% and has a large presence, then median filter will always throw this
@@ -1143,15 +1151,15 @@ merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
 }
 
 aggregate_by_meta_data.m_a <- function(m_a,
-                                   group_col,
-                                   count_aggr=sum,
-                                   attr_aggr=NULL,
-                                   group_col_result_name="SampleID") {
+                                       group_col,
+                                       count_aggr=sum,
+                                       attr_aggr=NULL,
+                                       group_col_result_name="SampleID") {
   x = m_a
-
+  
   groups = list()
   groups[[group_col_result_name]] = x$attr[,group_col]
-
+  
   #We need to drop resulting grouping name from the input,
   #otherwise we will get duplicated names (e.g. two SampleID columns. 
   #The assumption here is that if such name is supplied for the grouping
@@ -1188,7 +1196,7 @@ aggregate_by_meta_data <- function(meta_data,
   m_a = aggregate_by_meta_data.m_a(m_a,...)
   return (join_count_df(m_a))
 }
-  
+
 
 load.meta.choc <- function(file_name,counts.row.names) {
   meta = read.delim(file_name,header=T,stringsAsFactors=T)
@@ -1289,7 +1297,7 @@ order.levels <- function(lev,keys) {
 }
 
 plot.abund.meta <- function(m_a,
-                            id.vars,
+                            id.vars=c(),
                             value.name="abundance",
                             file_name=NULL,
                             ggp.comp=NULL,
@@ -1560,23 +1568,23 @@ balanced.sample <- function(x, grouped = TRUE, reps = 0) {
 }
 
 mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
-
-    require(vegan)
-
-    n.rar = min(rowSums(m_a$count))
-    
-    #S.ACE & all se.* give NaN often
-    x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
-                  .final=function(x) (x/n.rar.rep)) %dopar% 
-        {estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
-    return(list(e=x))
+  
+  require(vegan)
+  
+  n.rar = min(rowSums(m_a$count))
+  
+  #S.ACE & all se.* give NaN often
+  x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+              .final=function(x) (x/n.rar.rep)) %dopar% 
+{estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
+return(list(e=t(x)))
 }
 
 ## This uses incidence data and therefore should be applicable to both raw count data as 
 ## well as to proportions
 ## or other type of measurement where non-zero value means "present"
 mgsat.richness.samples <- function(m_a,pool.attr=NULL,n.rar.rep=400) {
-
+  
   require(vegan)
   
   n.rar = min(rowSums(m_a$count))
@@ -1600,9 +1608,9 @@ mgsat.richness.samples <- function(m_a,pool.attr=NULL,n.rar.rep=400) {
               .final=function(x) (x/n.rar.rep)) %dopar% 
 {
   if(do.stratify) {
-  strat.ind = balanced.sample(pool)
-  count = count[strat.ind,]
-  pool=pool[strat.ind]
+    strat.ind = balanced.sample(pool)
+    count = count[strat.ind,]
+    pool=pool[strat.ind]
   }
   specpool(rrarefy(count,n.rar),pool=pool)
 }
@@ -1619,28 +1627,28 @@ mgsat.diversity.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) {
   require(vegan)
   n.rar = min(rowSums(m_a$count))
   
-    f.div = function(m) { cbind(div.shannon=diversity(m,index="shan"),
-                                div.simpson = diversity(m,index="simp")) }
+  f.div = function(m) { cbind(div.shannon=diversity(m,index="shan"),
+                              div.simpson = diversity(m,index="simp")) }
   
-    if(is.raw.count.data) {
-      x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
-                   .final=function(x) (x/n.rar.rep)) %dopar% 
-        {f.div(rrarefy(m_a$count,n.rar))}
-    }
-    else {
-      x = f.div(m_a$count)
-    }
-    
-    if(is.raw.count.data) {
-      #this is already unbiased (determenistic wrt rarefication)
-      div.unb.simpson = rarefy(m_a$count,2)-1
-      #div.fisher.alpha = fisher.alpha(m_a$count)
-    }
-    else {
-      div.unb.simpson = x$div.simpson
-    }
-    x = t(cbind(x,div.unb.simpson=div.unb.simpson))
-  return(list(e=x))
+  if(is.raw.count.data) {
+    x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+                .final=function(x) (x/n.rar.rep)) %dopar% 
+{f.div(rrarefy(m_a$count,n.rar))}
+  }
+else {
+  x = f.div(m_a$count)
+}
+
+if(is.raw.count.data) {
+  #this is already unbiased (determenistic wrt rarefication)
+  div.unb.simpson = rarefy(m_a$count,2)-1
+  #div.fisher.alpha = fisher.alpha(m_a$count)
+}
+else {
+  div.unb.simpson = x$div.simpson
+}
+x = t(cbind(x,div.unb.simpson=div.unb.simpson))
+return(list(e=x))
 }
 
 mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T) {
@@ -1655,8 +1663,8 @@ mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T) {
              to the the minimum sample size (%s).",n.rar))
   
   if(is.raw.count.data) {
-  y = estaccumR(rrarefy(m_a$count,n.rar))
-  report$add(plot(y),caption=sprintf("Accumulation curves for extrapolated richness indices 
+    y = estaccumR(rrarefy(m_a$count,n.rar))
+    report$add(plot(y),caption=sprintf("Accumulation curves for extrapolated richness indices 
         for random ordering of samples (function estaccumR of package vegan;
              estimation is based on abundance data). Samples were rarefied
              to the the minimum sample size (%s).",n.rar))
@@ -1670,49 +1678,67 @@ mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T) {
              to the the minimum sample size (%s).",n.rar))
 }
 
-mgsat.divrich.report <- function(m_a,n.rar.rep=400,is.raw.count.data=T,pool.attr=NULL) {
+
+
+mgsat.divrich.report <- function(m_a,
+                                 n.rar.rep=400,
+                                 is.raw.count.data=T,
+                                 pool.attr=NULL,
+                                 plot.profiles.task=list()) {
   res = list()
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
   res$rich.samples = mgsat.richness.samples(m_a,pool.attr=pool.attr,n.rar.rep=n.rar.rep)
   res$div = mgsat.diversity.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
-  mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)  
+  mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
+  
+  m_a.plot=list(count=as.matrix(res$rich.counts$e),attr=m_a$attr)
+
+  do.call(plot.profiles,
+          c(list(m_a=m_a.plot,
+                 feature.descr="Abundance-based richness"),
+            plot.profiles.task
+          )
+  )
+  
   return(res)
 }
 
+
+
 plot.profiles <- function(m_a,
-                          res.tests=NULL,
-                          id.vars.list,
+                          feature.order=NULL,
+                          id.vars.list=list(c()),
                           clade.meta.x.vars=c(),
                           do.profile=T,
                           do.clade.meta=T,
                           show.profile.task=list(),
-                          show.clade.meta.task=list()) {
+                          show.clade.meta.task=list(),
+                          feature.descr="abundance profiles",
+                          sqrt.scale=F) {
   
-  report.section = report$add.header("Plots of abundance profiles in multiple representations",section.action="push")
-  report$add.descr("Abundance plots are shown with relation to various combinations of meta 
+  report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),section.action="push")
+  report$add.descr("Plots are shown with relation to various combinations of meta 
                    data variables and in different graphical representations. Lots of plots here.")
   
   report$add.header("Iterating over all combinations of grouping variables")
   report$push.section(report.section)
   
+  if(is.null(feature.order)) {
+    feature.order = list(list(ord=NULL,ord_descr="original"))
+  }
+  
   for (id.vars in id.vars.list) {
     
     report$add.header(paste("Grouping variables",paste0(id.vars,collapse=",")))
     
-    clades.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
-    if (!is.null(names(res.tests)) && !is.null(res.tests$stabsel)) {
-      clades.order[[2]] = list(ord=get.feature.ranking(res.tests,"stabsel")$ranked,
-                               ord_descr="GLMnet feature stability",
-                               sfx="glmnet")
-    }
     
-    report$add.header("Iterating over clade sorting order")
+    report$add.header(sprintf("Iterating over %s sorting order",feature.descr))
     report$push.section(report.section)
     
-    for(pl.par in clades.order) {
-      report$add.header(paste("Clade sorting order:",pl.par$ord_descr))
+    for(pl.par in feature.order) {
+      report$add.header(sprintf("%s sorting order: %s",feature.descr,pl.par$ord_descr))
       if(do.clade.meta) {
         clade.names.meta=if(is.null(pl.par$ord)) colnames(m_a$count) else pl.par$ord
         clade.names.meta = clade.names.meta[1:min(length(clade.names.meta),20)]
@@ -1747,29 +1773,26 @@ plot.profiles <- function(m_a,
       if(do.profile) {
         
         report$add.header("Iterating over dodged vs faceted bars")
-        report$add.descr("The same abundance profiles are shown in multiple combinations of graphical representations. 
-                         This is the same data, but each plot highlights slightly different aspects of it. For example,
-                         abundance transformed with square root and shown on separate facets makes it easier to compare 
-                         overall profile shapes between groups for very uneven distributions. Profiles in original
-                         linear scale on dodged (non-faceted) plots give more direct idea of a fold change between groups
-                         for each clade. It is not likely that you will need every plot - pick only what you need.")
+        report$add.descr("The same data are shown in multiple combinations of graphical representations. 
+                         This is the same data, but each plot highlights slightly different aspects of it.
+                         It is not likely that you will need every plot - pick only what you need.")
         report$push.section(report.section)
         
         for(id.var.dodge in list(list(dodge=NULL,descr="faceted"),list(dodge=id.vars[1],descr="dodged"))) {
           
-          report$add.header(paste(id.var.dodge$descr,"bars. Iterating over scaling of abundances"))
+          report$add.header(paste(id.var.dodge$descr,"bars. Iterating over orientation and, optionally, scaling"))
           report$push.section(report.section)
           
           for(other.params in list(
             list(flip.coords=T,
                  sqrt.scale=F,
-                 descr="not scaled"),
+                 descr="in flipped orientation, not scaled"),
             list(flip.coords=F,
-                 sqrt.scale=T,
-                 descr="SQRT scaled")
+                 sqrt.scale=sqrt.scale,
+                 descr=paste("in original orientation", if(sqrt.scale) ", SQRT scaled" else "", sep=""))
           )) {
             
-            report$add.header(paste("Abundances are ", other.params$descr, ". Iterating over bar geometry",sep=""))
+            report$add.header(paste(sprintf("%s are ",feature.descr), other.params$descr, ". Iterating over bar geometry",sep=""))
             report$push.section(report.section)
             
             for(geom in c("bar","violin","boxplot")) {
@@ -1787,10 +1810,10 @@ plot.profiles <- function(m_a,
                 #print(names(as.list(env)))
                 #print(evals("pl.hist",env=env))
                 report$add(pl.hist,
-                           caption=paste("Abundance profile grouped by ",
+                           caption=paste(sprintf("%s grouped by ",feature.descr),
                                          paste(id.vars,collapse=","),
                                          if(!is.null(pl.par$ord)) 
-                                         {paste("sorted according to",pl.par$ord_descr)} 
+                                         {sprintf("in %s sorting order",pl.par$ord_descr)} 
                                          else {""})
                 )
               })
@@ -2474,7 +2497,7 @@ read.data.project.yap <- function(taxa.summary.file,
   }  
   report$add.p(sprintf("Loaded %i records for %i clades from count file %s for taxonomic level %s",
                        nrow(taxa.lev.all$count),ncol(taxa.lev.all$count),count.file,taxa.level))
-
+  
   if(!is.null(count.filter.options)) {
     report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
     report$add.p("Note that many community richness estimators will not work correctly 
@@ -2548,6 +2571,8 @@ mgsat.16s.task.template = within(list(), {
     do.glmer=T
     do.adonis=T
     do.divrich=T
+    do.plot.profiles.abund=T
+    do.heatmap.abund=T
     do.select.samples=F
     
     alpha = 0.05
@@ -2579,14 +2604,14 @@ mgsat.16s.task.template = within(list(), {
       resp.attr = main.meta.var,      
       args.fitfun = list(
         family="binomial",
-        standardize=T                                        
+        standardize=T                                     
       ),
       args.stabsel = list(
         PFER=0.05,
         sampling.type="SS",
         assumption="r-concave"
       )
-      )
+    )
     
     
     genesel.task = list(
@@ -2622,14 +2647,10 @@ mgsat.16s.task.template = within(list(), {
       
     })
     
-  })
-  
-  plot.counts.task = within(list(), {
-    
-    do.plot.profiles = T
-    do.heatmap = T
-    
-    norm.method = "prop"
+    divrich.task =  within(list(), {
+      n.rar.rep=400
+      is.raw.count.data=T
+    })      
     
     plot.profiles.task = within(list(), {
       id.vars.list = list(c(main.meta.var))
@@ -2640,14 +2661,24 @@ mgsat.16s.task.template = within(list(), {
       show.clade.meta.task=list()      
     })
     
-    heatmap.task = list(
-      attr.annot.names=NULL,
-      attr.row.labels=NULL,
-      stand.clust=NULL,
-      dist.metr="euclidean",
-      caption="Heatmap of abundance profile",
+    plot.profiles.abund.task = within(list(), {
+      
+      norm.count.task = within(list(), {
+        method = "norm.prop"
+        drop.features=c("other")
+      })
+      
+    })
+    
+    heatmap.abund.task = within(list(), {
+      attr.annot.names=c(main.meta.var)
+      attr.row.labels=NULL
+      stand.clust="standardize"
+      dist.metr="euclidean"
+      caption="Heatmap of abundance profile"
       stand.show="range"
-    )
+    })
+    
   })
   
 })
@@ -2684,7 +2715,7 @@ get.feature.ranking.default <- function(x.f) {
 get.feature.ranking.mgsatres<-function(x.f,method="stabsel") {
   meth.res = x.f[[method]]
   if(method=="stabsel") {
-    res = list(ranked=meth.res$max[order(meth.res$max,decreasing = T)])
+    res = list(ranked=names(meth.res$max)[order(meth.res$max,decreasing = T)])
   }
   else {
     stop(paste("I do not know what to do for method",method))
@@ -2693,19 +2724,19 @@ get.feature.ranking.mgsatres<-function(x.f,method="stabsel") {
 }
 
 count.filter.report <- function(m_a,count.filter.options,descr) {
-m_a = do.call(count.filter.m_a,
-                              c(list(m_a),
-                                count.filter.options)
-)
-
-report$add.p(paste("After",descr,"count filtering with arguments",
-                   arg.list.as.str(count.filter.options),
-                   ",",
-                   ncol(m_a$count),
-                   "features and",
-                   nrow(m_a$count),
-                   "samples left."))
-return(m_a)
+  m_a = do.call(count.filter.m_a,
+                c(list(m_a),
+                  count.filter.options)
+  )
+  
+  report$add.p(paste("After",descr,"count filtering with arguments",
+                     arg.list.as.str(count.filter.options),
+                     ",",
+                     ncol(m_a$count),
+                     "features and",
+                     nrow(m_a$count),
+                     "samples left."))
+  return(m_a)
 }
 
 proc.project <- function(
@@ -2751,10 +2782,10 @@ proc.project <- function(
         report$push.section(report.section) #4 {
         
         m_a = do.call(read.data.method,
-                            c(
-                              list(taxa.level=taxa.level),
-                              read.data.task
-                            )
+                      c(
+                        list(taxa.level=taxa.level),
+                        read.data.task
+                      )
         )
         
         m_a = get.taxa.meta.aggr(m_a)
@@ -2777,10 +2808,10 @@ proc.project <- function(
         }
         
         export.taxa.meta(m_a,
-                               label=label,
-                               descr=descr,
-                               row.proportions=T,
-                               row.names=F)
+                         label=label,
+                         descr=descr,
+                         row.proportions=T,
+                         row.names=F)
         
         res.tests = NULL
         
@@ -2803,17 +2834,6 @@ proc.project <- function(
         
         res.level$res.tests = res.tests
         
-        if( do.plots ) {
-          report$add.header("Plots")
-          do.call(plot.counts.project,
-                  c(
-                    list(m_a=m_a,
-                         label=label,
-                         res.tests=res.tests),
-                    plot.counts.task
-                  )
-          )
-        }
         report$pop.section() #4 }
         res.taxa.levels[[as.character(taxa.level)]] = res.level
       }
@@ -2936,6 +2956,10 @@ show.clade.meta <- function(m_a,
                             vars.descr="individual clade abundances") {
   
   
+  #DEBUG:
+  m_a.clade = m_a
+  make.global(m_a.clade)
+  
   count = m_a$count[,clade.names,drop=F]
   
   count = switch(trans,
@@ -2967,7 +2991,7 @@ show.clade.meta <- function(m_a,
                                      section.action="push")
   
   id.vars = c(x.var,group.var)
-  dat = cbind(m_a$attr[,id.vars],count)
+  dat = cbind(m_a$attr[,id.vars,drop=F],count)
   dat = melt.abund.meta(dat,id.vars=id.vars,attr.names=id.vars,value.name=value.name)
   smooth_method = "loess" #"lm"
   for(clade.name in clade.names) {
@@ -3018,67 +3042,67 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) 
     dfmax = ncol(x) + 1
   }
   lassomodels <- foreach(i = c(1:length(alphas)),.packages=c("glmnet")) %dopar% {
-  #re-import required for windows parallelism with doSNOW
-  library(glmnet)
-  # set.seed(seed)
-  # the function finds the best lambda for a given alpha
-  # within each model there is cross-validation happening for lambda for each alpha.
-  # lambda1 = lambda*alpha 
-  # lambda2 = lambda*(1-alpha)
-  model <- try({cv.glmnet(x=x, y=y, family=family,
-                          nfolds=numfolds, 
-                          type.measure="deviance", 
-                          foldid=foldid,
-                          standardize=standardize, 
-                          alpha=alphas[i],
-                          dfmax=dfmax,
-                          ...)})
-}
-# there are two lambdas per model
-# minimum lamda
-# lambda within 1 standard deviation of the error
-# find the best alpha
-best_alpha_index <- 0
-lowest_error <- 0
-for (i in c(1:length(alphas))) {
-  # if a model fails, "try-error" will return true. "try-error" is an object that traps errors
-  # inherits is a function that will be true if try-error has collected an error from the model
-  # we want to avoid any errors recorded in "try-error" in the list of models we just generated
-  # example too small a dataset
-  if (!inherits(lassomodels[[i]], "try-error")) {
-    # First we will find the index of the lambda corresponding to the lambda.min
-    index <- which(lassomodels[[i]]$lambda.min == lassomodels[[i]]$lambda)
-    # high lambda means more penalty.
-    # lambdas are arranged from highest to lowest
-    # alpha = 1 ==> lasso
-    # alph = 0 ==> ridge
-    
-    #cvm is the cross-validated error, in this case, deviance.
-    error <- lassomodels[[i]]$cvm[index]
-    #print(error)
-    if (best_alpha_index == 0 || error < lowest_error) {
-      best_alpha_index <- i # picks an alpha from the grid of alphas
-      lowest_error <- error # picks the lowest deviance from the grid
+    #re-import required for windows parallelism with doSNOW
+    library(glmnet)
+    # set.seed(seed)
+    # the function finds the best lambda for a given alpha
+    # within each model there is cross-validation happening for lambda for each alpha.
+    # lambda1 = lambda*alpha 
+    # lambda2 = lambda*(1-alpha)
+    model <- try({cv.glmnet(x=x, y=y, family=family,
+                            nfolds=numfolds, 
+                            type.measure="deviance", 
+                            foldid=foldid,
+                            standardize=standardize, 
+                            alpha=alphas[i],
+                            dfmax=dfmax,
+                            ...)})
+  }
+  # there are two lambdas per model
+  # minimum lamda
+  # lambda within 1 standard deviation of the error
+  # find the best alpha
+  best_alpha_index <- 0
+  lowest_error <- 0
+  for (i in c(1:length(alphas))) {
+    # if a model fails, "try-error" will return true. "try-error" is an object that traps errors
+    # inherits is a function that will be true if try-error has collected an error from the model
+    # we want to avoid any errors recorded in "try-error" in the list of models we just generated
+    # example too small a dataset
+    if (!inherits(lassomodels[[i]], "try-error")) {
+      # First we will find the index of the lambda corresponding to the lambda.min
+      index <- which(lassomodels[[i]]$lambda.min == lassomodels[[i]]$lambda)
+      # high lambda means more penalty.
+      # lambdas are arranged from highest to lowest
+      # alpha = 1 ==> lasso
+      # alph = 0 ==> ridge
+      
+      #cvm is the cross-validated error, in this case, deviance.
+      error <- lassomodels[[i]]$cvm[index]
+      #print(error)
+      if (best_alpha_index == 0 || error < lowest_error) {
+        best_alpha_index <- i # picks an alpha from the grid of alphas
+        lowest_error <- error # picks the lowest deviance from the grid
+      }
     }
   }
-}
-#print(best_alpha_index)
-
-if (best_alpha_index != 0) {
-  # print the lassomodel at the best_alpha_index
-  lasso_model <- lassomodels[[best_alpha_index]]
-  alpha <- alphas[best_alpha_index]
-  # Use lambda which gives the lowest cross validated error
-  lambda <- lasso_model$lambda.min
-  out <- list(param=list(alpha=alpha),
-              glmnet.model=lasso_model, 
-              lambda=lambda
-  )
-}
-else {
-  out = list()
-}
-out
+  #print(best_alpha_index)
+  
+  if (best_alpha_index != 0) {
+    # print the lassomodel at the best_alpha_index
+    lasso_model <- lassomodels[[best_alpha_index]]
+    alpha <- alphas[best_alpha_index]
+    # Use lambda which gives the lowest cross validated error
+    lambda <- lasso_model$lambda.min
+    out <- list(param=list(alpha=alpha),
+                glmnet.model=lasso_model, 
+                lambda=lambda
+    )
+  }
+  else {
+    out = list()
+  }
+  out
 }
 
 stability.selection.c060.at <- function (x, fwer, pi_thr = 0.6) 
@@ -3925,8 +3949,8 @@ select.samples.report <- function(m_a,
                                   n.species,
                                   n.samples) {
   
-  species.sel=take_first(feature.ranking$ranked,
-                               n.species)
+  species.sel=take_first(feature.ranking,
+                         n.species)
   select.samples(m_a=m_a,
                  species.sel=species.sel,
                  sample.group.name=resp.attr,
@@ -3935,42 +3959,69 @@ select.samples.report <- function(m_a,
 }
 
 
-plot.counts.project <- function(m_a,
+plot.profiles.abund <- function(m_a,
                                 label,
-                                res.tests,
-                                do.plot.profiles,
-                                do.heatmap,
-                                plot.profiles.task,
-                                heatmap.task,
-                                norm.method="prop") {
+                                plot.profiles.task,                                
+                                res.tests=NULL,
+                                norm.count.task=NULL) {
   
-  report$add.descr(paste("Count normalization method:",norm.method))
-  m_a.norm = norm.count.m_a(m_a,dds=res.tests$deseq2$dds,method=norm.method)
+  m_a.norm <- norm.count.report(m_a,
+                             res.tests=res.tests,
+                             descr="abundance plots",
+                        norm.count.task=norm.count.task)
   
-  if (do.plot.profiles) {
+  tryCatchAndWarn({
     
-    tryCatchAndWarn({
-      do.call(plot.profiles,
-              c(list(m_a=m_a.norm,
-                     res.tests=res.tests),
-                plot.profiles.task
-              )
-      )
-      
-    })
+    feature.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
+    if (!is.null(names(res.tests)) && !is.null(res.tests$stabsel)) {
+      feature.order[[2]] = list(ord=get.feature.ranking(res.tests,"stabsel")$ranked,
+                                ord_descr="Stability selection",
+                                sfx="stabsel")
+    }
+    make.global(feature.order)
+    do.call(plot.profiles,
+            c(list(m_a=m_a.norm,
+                   feature.order=feature.order),
+              plot.profiles.task
+            )
+    )
+    
+  })
+  
+}
+
+norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL) {
+  
+  if(is.null(descr)) {
+    descr = ""
+  }
+  else {
+    descr = paste("for",descr)
   }
   
-  if (do.heatmap) {
+  if(!is.null(norm.count.task)) {
     
-    tryCatchAndWarn({
-      do.call(heatmap.counts,
-              c(list(m_a=m_a.norm),
-                heatmap.task
-              )
-      )
-      
-    })
+    report$add.descr(paste("Count normalization method",descr,":",arg.list.as.str(norm.count.task)))
+    
+    ## if dds is required but not defined (set to NA)
+    if(!is.null(norm.count.task$method.args$dds) && 
+         is.na(norm.count.task$method.args$dds)) {
+      norm.count.task$method.args$dds = res.tests$deseq2$dds
+    }
+    
+    m_a.norm <- do.call(norm.count.m_a,
+                        c(list(m_a),
+                          norm.count.task)
+    )
+    
   }
+  else {
+    
+    report$add.descr(paste("Counts are not normalized",descr))
+    m_a.norm = m_a
+    
+  }
+  return(m_a.norm)
 }
 
 test.counts.project <- function(m_a,
@@ -3982,6 +4033,8 @@ test.counts.project <- function(m_a,
                                 do.select.samples=F,
                                 do.deseq2=T,
                                 do.divrich=T,
+                                do.plot.profiles.abund=T,
+                                do.heatmap.abund=T,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
                                 stabsel.task=NULL,
@@ -3991,6 +4044,9 @@ test.counts.project <- function(m_a,
                                 select.samples.task=NULL,
                                 deseq2.task=NULL,
                                 divrich.task=NULL,
+                                plot.profiles.task=NULL,
+                                plot.profiles.abund.task=NULL,
+                                heatmap.abund.task=NULL,
                                 alpha=0.05,
                                 do.return.data=T
 ) {
@@ -3999,12 +4055,11 @@ test.counts.project <- function(m_a,
   
   res = new_mgsatres()
   
-  #make.global(data.norm)  
-  
-  make.global(m_a)
-  stop("DEBUG:")
-  
-  mgsat.divrich.report(m_a,n.rar.rep=400,is.raw.count.data=T)
+  res$divrich <- do.call(mgsat.divrich.report,
+                         c(list(m_a,
+                                plot.profiles.task=plot.profiles.task),
+                           divrich.task)
+  )                   
   
   if(!is.null(count.filter.feature.options)) {
     m_a = count.filter.report(m_a,
@@ -4019,28 +4074,10 @@ test.counts.project <- function(m_a,
   ## this is done after an optional call to deseq2 in case the norm.method
   ## wants deseq2 normalization
   
-  if(!is.null(norm.count.task)) {
-    
-    report$add.descr(paste("Count normalization method:",arg.list.as.str(norm.count.task)))
-    
-    ## if dds is required but not defined (set to NA)
-    if(!is.null(norm.count.task$method.args$dds) && 
-         is.na(norm.count.task$method.args$dds)) {
-      norm.count.task$method.args$dds = res$deseq2$dds
-    }
-    
-    m_a.norm <- do.call(norm.count.m_a,
-                        c(list(m_a),
-                          norm.count.task)
-    )
-    
-  }
-  else {
-    
-    report$add.descr(paste("Counts are not normalized."))
-    m_a.norm = m_a
-    
-  }
+  m_a.norm <- norm.count.report(m_a,
+                             res.tests=res,
+                             descr="data analysis",
+                              norm.count.task)
   
   make.global(m_a.norm)
   make.global(m_a)
@@ -4051,7 +4088,7 @@ test.counts.project <- function(m_a,
   
   if(do.stabsel) {
     res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
-                                                            stabsel.task
+                                           stabsel.task
     )
     )
   }
@@ -4081,7 +4118,7 @@ test.counts.project <- function(m_a,
       do.call(select.samples.report,
               c(
                 list(m_a=m_a.norm,
-                     feature.ranking=get.feature.ranking(res)
+                     feature.ranking=get.feature.ranking(res)$ranked
                 ),
                 select.samples.task
               )
@@ -4089,6 +4126,33 @@ test.counts.project <- function(m_a,
     })
     
   }
+  
+  if( do.plot.profiles.abund ) {
+    
+    do.call(plot.profiles.abund,
+            c(
+              list(m_a=m_a,
+                   label=label,
+                   res.tests=res,
+                   plot.profiles.task=plot.profiles.task),
+              plot.profiles.abund.task
+            )
+    )
+  }
+  
+  if (do.heatmap.abund) {
+    
+    tryCatchAndWarn({
+      do.call(heatmap.counts,
+              c(list(m_a=m_a.norm),
+                heatmap.abund.task
+              )
+      )
+      
+    })
+  }
+  
+  
   if(do.return.data) {
     res$m_a = m_a
   }
@@ -5215,9 +5279,9 @@ pair.counts <- function(m_a,pair.attr) {
 
 report.sample.count.summary <- function(m_a,meta.x.vars,group.var) {
   report.section = report$get.section()
-
+  
   m_a.summ=make.sample.summaries(m_a)
-
+  
   report$add.vector(c(summary(m_a.summ$count[,"count.sum"]),caption="Summary of counts per sample"))
   
   report$add.header("Iterating over meta data variables")

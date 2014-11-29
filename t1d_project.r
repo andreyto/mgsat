@@ -253,8 +253,6 @@ gen.tasks.t1d <- function() {
     
   do.summary.meta = F
   
-  do.plots = F
-  
   do.tests = T
 
   summary.meta.task = within(summary.meta.task, {
@@ -286,6 +284,15 @@ gen.tasks.t1d <- function() {
     do.genesel = F
     do.stabsel = T
     do.glmer = F
+    do.divrich=T
+    do.plot.profiles.abund=F
+    do.heatmap.abund=T
+    
+    divrich.task = within(divrich.task,{
+      n.rar.rep=4
+      is.raw.count.data=T
+      pool.attr = main.meta.var
+    })
 
     deseq2.task = within(deseq2.task, {
       formula.rhs = main.meta.var
@@ -302,7 +309,7 @@ gen.tasks.t1d <- function() {
     adonis.task = within(adonis.task, {
       
       dist.metr="euclidean"
-      col.trans="normalize"
+      col.trans="standardize"
       data.descr="normalized counts"
       
       tasks = list(
@@ -329,27 +336,19 @@ gen.tasks.t1d <- function() {
       ))
     })
     
-  })
-  
-  plot.counts.task = within(plot.counts.task, {
-    
-    norm.method = "ihs.prop"
-    do.plot.profiles = F
-    do.heatmap = T
-    
     plot.profiles.task = within(plot.profiles.task, {
       id.vars.list = list(c(main.meta.var))
       clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
       do.profile=T
-      do.clade.meta=T
+      do.clade.meta=F
       show.profile.task=list()
       show.clade.meta.task=list()      
     })
     
-    heatmap.task = within(heatmap.task,{
+    heatmap.abund.task = within(heatmap.abund.task,{
       attr.annot.names=c(main.meta.var)
-      stand.clust="normalize"
     })
+    
   })
   
 })
