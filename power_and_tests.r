@@ -1621,14 +1621,14 @@ se = x[,se.ind]
 return(list(e=e,se=se))
 }
 
-
-mgsat.diversity.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) {
+## This returns Hill numbers
+mgsat.diversity.alpha.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) {
   
   require(vegan)
   n.rar = min(rowSums(m_a$count))
   
-  f.div = function(m) { cbind(div.shannon=diversity(m,index="shan"),
-                              div.simpson = diversity(m,index="simp")) }
+  f.div = function(m) { cbind(N1=exp(diversity(m,index="shan")),
+                              N2 = diversity(m,index="invsimpson")) }
   
   if(is.raw.count.data) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
@@ -1643,11 +1643,9 @@ if(is.raw.count.data) {
   #this is already unbiased (determenistic wrt rarefication)
   div.unb.simpson = rarefy(m_a$count,2)-1
   #div.fisher.alpha = fisher.alpha(m_a$count)
+  x = cbind(x,div.unb.simpson=div.unb.simpson)
 }
-else {
-  div.unb.simpson = x$div.simpson
-}
-x = t(cbind(x,div.unb.simpson=div.unb.simpson))
+
 return(list(e=x))
 }
 
@@ -1678,29 +1676,114 @@ mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T) {
              to the the minimum sample size (%s).",n.rar))
 }
 
-
+mgsat.divrich.counts.glm.test <- function(m_a.divrich,
+                                          divrich.names=NULL,                                          
+                                          formula.rhs,
+                                          glm.args=list()) {
+  if(is.null(divrich.names)) {
+    divrich.names = colnames(m_a.divrich$count)
+  }
+  
+  res = new_mgsatres()
+  
+  for(divrich.name in divrich.names) {
+    
+    family = "gaussian"
+    form.str = sprintf("%s~%s",divrich.name,formula.rhs)
+    do.model = F
+    
+    if(divrich.name=="N1") {
+      descr = "Hill number N_1 (equals exp(Shannon index)"
+      do.model = T
+    }
+    else if(divrich.name=="N2") {
+      descr = "Hill number N_2 (equals Inverted Simpson index)"
+      do.model = T
+    }
+    else if(divrich.name %in% c("S.obs","S.chao1","S.ACE")) {
+      descr = paste("Richness estimate",divrich.name)
+      do.model = T
+    }
+    
+    if(do.model) {
+    ##To see how well normal fits:
+    ##library(fitdistrplus)
+    ##descdist(x,boot=1000)
+    ##gof = gofstat(x,"norm"))
+    ##gof$kstest #conservative, will properly reject only at high sample count
+    mod = do.call(glm,
+                  c(
+                    list(
+                      formula(form.str),
+                      family=family,
+                      data=cbind(as.data.frame(m_a.divrich$count),m_a.divrich$attr)
+                    ),
+                    glm.args
+                  )
+    )
+    
+    report$add(summary(mod),
+               caption=sprintf("Association of abundance based %s with sample metadata",
+                               descr)
+    )
+    
+    res[[divrich.name]] = mod
+    
+    }  
+  }
+  
+  return(res)
+  
+}
 
 mgsat.divrich.report <- function(m_a,
                                  n.rar.rep=400,
                                  is.raw.count.data=T,
                                  pool.attr=NULL,
+                                 counts.glm.task=NULL,
                                  plot.profiles.task=list()) {
-  res = list()
+  
+  report.section = report$add.header("Abundance and diversity estimates",section.action="push")
+  
+  res = new_mgsatres()
+  
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
-  res$rich.samples = mgsat.richness.samples(m_a,pool.attr=pool.attr,n.rar.rep=n.rar.rep)
-  res$div = mgsat.diversity.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
-  mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
   
-  m_a.plot=list(count=as.matrix(res$rich.counts$e),attr=m_a$attr)
-
+  res$rich.samples = mgsat.richness.samples(m_a,pool.attr=pool.attr,n.rar.rep=n.rar.rep)
+  
+  res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
+  
+  divrich.counts = res$div.counts$e
+  if(is.raw.count.data) {
+    divrich.counts = cbind(divrich.counts,res$rich.counts$e)
+  }
+  
+  m_a.dr=list(count=as.matrix(divrich.counts),attr=m_a$attr)
+  
+  if(!is.null(counts.glm.task)) {
+    
+    res$glm.res = do.call(mgsat.divrich.counts.glm.test,
+                          c(list(m_a.dr),
+                            counts.glm.task
+                          )
+    )
+      
+  }
+  
   do.call(plot.profiles,
-          c(list(m_a=m_a.plot,
-                 feature.descr="Abundance-based richness"),
+          c(list(m_a=m_a.dr,
+                 feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates"),
             plot.profiles.task
           )
-  )
+  )  
+
+  report$push.section(report.section)
+  mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
+  report$pop.section()
+  
+  report$pop.section()
   
   return(res)
 }
@@ -1827,6 +1910,7 @@ plot.profiles <- function(m_a,
     }
     report$pop.section()
   }
+  report$pop.section()
   report$pop.section()
 }
 
@@ -2581,6 +2665,9 @@ mgsat.16s.task.template = within(list(), {
       n.rar.rep=400
       is.raw.count.data=T
       pool.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var
+      })
     })
     
     count.filter.feature.options=list(min_mean_frac=0.0005)
@@ -2712,10 +2799,18 @@ get.feature.ranking.default <- function(x.f) {
   stop("Not defined for arbitrary objects")
 }
 
-get.feature.ranking.mgsatres<-function(x.f,method="stabsel") {
+get.feature.ranking.stabsel <- function(x.f,only.names=T) {
+  ranked = meth.res$max[order(meth.res$max,decreasing = T)]
+  if(only.names) {
+    ranked = names(ranked)
+  }
+  return(list(ranked=ranked))
+}
+
+get.feature.ranking.mgsatres <- function(x.f,method="stabsel") {
   meth.res = x.f[[method]]
   if(method=="stabsel") {
-    res = list(ranked=names(meth.res$max)[order(meth.res$max,decreasing = T)])
+    res = get.feature.ranking(meth.res)
   }
   else {
     stop(paste("I do not know what to do for method",method))
@@ -3818,11 +3913,21 @@ stabsel.report <- function(m_a,
   
   report$add.printed(stab.res)
   
+  cutoff.descr = sprintf("Probability cutoff=%s corresponds to per family error rate PFER=%s",
+                         stab.res$cutoff,
+                         stab.res$PFER)  
+  
+  report$add.vector(get.feature.ranking(stab.res,only.names=F),
+                    caption=paste("Selection probability for the variables.",
+                                  cutoff.descr)
+  )
+  
   report$add(plot(stab.res, main = NULL, type = "maxsel",
                   ymargin = 16, np = 20),
-             caption=sprintf("Selection probability for the top ranked variables.
-               Vertical line indicates probability
-               cutoff corresponding to per family error rate PFER=%s",args.stabsel$PFER))
+             caption=paste("Selection probability for the top ranked variables.",
+                           cutoff.descr,
+                           "(vertical line).")
+  )
   
   return (stab.res)
 }
@@ -3966,9 +4071,9 @@ plot.profiles.abund <- function(m_a,
                                 norm.count.task=NULL) {
   
   m_a.norm <- norm.count.report(m_a,
-                             res.tests=res.tests,
-                             descr="abundance plots",
-                        norm.count.task=norm.count.task)
+                                res.tests=res.tests,
+                                descr="abundance plots",
+                                norm.count.task=norm.count.task)
   
   tryCatchAndWarn({
     
@@ -3978,7 +4083,7 @@ plot.profiles.abund <- function(m_a,
                                 ord_descr="Stability selection",
                                 sfx="stabsel")
     }
-    make.global(feature.order)
+
     do.call(plot.profiles,
             c(list(m_a=m_a.norm,
                    feature.order=feature.order),
@@ -4075,9 +4180,9 @@ test.counts.project <- function(m_a,
   ## wants deseq2 normalization
   
   m_a.norm <- norm.count.report(m_a,
-                             res.tests=res,
-                             descr="data analysis",
-                              norm.count.task)
+                                res.tests=res,
+                                descr="data analysis",
+                                norm.count.task)
   
   make.global(m_a.norm)
   make.global(m_a)
@@ -4386,7 +4491,7 @@ heatmap.counts <- function(m_a,attr.annot.names,
   
   attr = m_a$attr[perm.ind,]
   data.dist.samp <- vegdist(count, method = dist.metr)
-  row.clus <- hclust(data.dist.samp, "ward")
+  row.clus <- hclust(data.dist.samp, "ward.D2")
   row.dendro = as.dendrogram(row.clus)
   
   if(is.null(attr.order)) {

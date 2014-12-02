@@ -34,7 +34,9 @@ vanilla_packages = c(
   "Hmisc",
   "kernlab",
   "lme4",
-  "pander"
+  "pander",
+  ##fitting to parametric distributions and goodness of fit tests
+  "fitdistrplus"
 )
 
 bio_packages = c(

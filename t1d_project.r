@@ -282,16 +282,19 @@ gen.tasks.t1d <- function() {
     do.deseq2 = F
     do.adonis = F
     do.genesel = F
-    do.stabsel = T
+    do.stabsel = F
     do.glmer = F
     do.divrich=T
     do.plot.profiles.abund=F
-    do.heatmap.abund=T
+    do.heatmap.abund=F
     
     divrich.task = within(divrich.task,{
       n.rar.rep=4
       is.raw.count.data=T
       pool.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var
+      })      
     })
 
     deseq2.task = within(deseq2.task, {
