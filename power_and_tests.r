@@ -432,15 +432,15 @@ count.filter.m_a<-function(m_a,
   cnt = cnt[,apply(cnt,2,max) >= min_max]
   cnt = cnt[,apply(cnt,2,mean) >= min_mean]
   
-  cnt_col_other = as.data.frame(row_cnt - rowSums(cnt))
+  cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
   
   if (!all(cnt_col_other[,1]==0) && !is.null(other_cnt)) {
-    names(cnt_col_other) = c(other_cnt)
+    colnames(cnt_col_other) = c(other_cnt)
     if (other_cnt %in% colnames(cnt)) {
-      cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[[other_cnt]]
+      cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[,other_cnt]
     }
     else {
-      cnt = cbind(cnt,cnt_col_other[,1])
+      cnt = cbind(cnt,cnt_col_other)
     }
   }
   x$attr = attr
@@ -1150,7 +1150,7 @@ merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
   return (split_count_df(mrg,col_ignore=attr.names))
 }
 
-aggregate_by_meta_data.m_a <- function(m_a,
+aggregate.by.meta.data.m_a <- function(m_a,
                                        group_col,
                                        count_aggr=sum,
                                        attr_aggr=NULL,
@@ -1189,95 +1189,15 @@ aggregate_by_meta_data.m_a <- function(m_a,
 }
 
 
-aggregate_by_meta_data <- function(meta_data,
+aggregate.by.meta.data <- function(meta_data,
                                    col_ignore=c(),
                                    ...) {
   m_a = split_count_df(meta_data,col_ignore=col_ignore)
-  m_a = aggregate_by_meta_data.m_a(m_a,...)
+  m_a = aggregate.by.meta.data.m_a(m_a,...)
   return (join_count_df(m_a))
 }
 
 
-load.meta.choc <- function(file_name,counts.row.names) {
-  meta = read.delim(file_name,header=T,stringsAsFactors=T)
-  make.global(meta)
-  
-  allnames = replace.col.names(names(meta),
-                               c("Subject_ID","SampleID_revised","Subject.s.Gender","Subject.s.YEAR.of.birth","Had.subject.fever.at.the.time.of.sample.collection."),
-                               c("SubjectID","SampleID","Gender","YearOfBirth","Fever.descr"))
-  
-  names(meta) = allnames
-  
-  ## Format of SubjectID from Raja:
-  ## The third letter in the letter set describes whether the sample is 
-  ## from the patient (P) or sibling (S). The first set of numbers is 
-  ## the date of consent without year. The second set of two numbers 
-  ## links patient and sibling together. For example, ARP-0328-01 and 
-  ## CRS-0329-01 are family set 01
-  
-  meta$FamilyID = as.factor(substring(meta$SubjectID,8))
-  
-  meta$Sample.type = gsub(" ",".",meta$Sample.type)
-  
-  #Therapy.Status
-  meta$Sample.type.1 = meta$Sample.type
-  
-  meta$Sample.type = as.factor(unlist(apply(meta,
-                                            1,
-                                            function(row) {switch(row["Sample.type.1"],
-                                                                  sibling ="sibling",
-                                                                  patient.after.chemo="patient",
-                                                                  patient.before.chemo="patient")})))
-  meta$TherapyStatus = as.factor(unlist(apply(meta,
-                                              1,
-                                              function(row) {switch(row["Sample.type.1"],
-                                                                    sibling ="before.chemo",
-                                                                    patient.after.chemo="after.chemo",
-                                                                    patient.before.chemo="before.chemo")})))
-  
-  meta$Antibiotic = meta$Antibiotic.treatment.within.the.last.1.months. != "No"
-  meta$Antibiotic[str_blank(meta$Antibiotic.treatment.within.the.last.1.months.)] = NA
-  meta$Antibiotic[tolower(meta$Antibiotic.treatment.within.the.last.1.months.)=="unknown"] = NA
-  meta$Antibiotic = as.factor(meta$Antibiotic)
-  
-  meta$Fever = meta$Fever.descr != "No"
-  meta$Fever[str_blank(meta$Fever.descr)] = NA
-  meta$Fever[tolower(meta$Fever.descr)=="unknown"] = NA
-  meta$Fever = as.factor(meta$Fever)
-  
-  ## ggplot needs Date object
-  Specimen.Collection.Date = 
-    as.Date(as.character(meta$Specimen.Collection.Date),format = "%m/%d/%Y")
-  
-  ## arithmetics work better with date object
-  Specimen.Collection.Date.d = 
-    as.date(as.character(meta$Specimen.Collection.Date),order="mdy")
-  meta$age = as.numeric(
-    Specimen.Collection.Date.d
-    - 
-      as.date(paste(meta$YearOfBirth,"-06-01",sep=""),order="ymd")
-  )/365
-  
-  meta$Specimen.Collection.Date = Specimen.Collection.Date
-  
-  meta$visit = as.numeric(laply(as.character(meta$SampleID),
-                                function(x) unlist(strsplit(x,".v",fixed=T))[2]))
-  meta.visit.max = join(meta,
-                        ddply(meta,"SubjectID",summarise,visit.max=max(visit)),
-                        by="SubjectID",
-                        match="first")
-  stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
-              nrow(meta.visit.max)==nrow(meta))
-  meta = meta.visit.max
-  meta$SampleID.1 = as.factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
-  meta$Sample.type = as.factor(meta$Sample.type)
-  meta$Sample.type.1 = as.factor(meta$Sample.type.1)
-  meta$TherapyStatus = as.factor(meta$TherapyStatus)
-  meta$SampleID = as.factor(meta$SampleID)
-  row.names(meta) = meta$SampleID
-  make.global(meta)  
-  return (meta)
-}
 
 
 melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
@@ -1709,7 +1629,7 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
     ##To see how well normal fits:
     ##library(fitdistrplus)
     ##descdist(x,boot=1000)
-    ##gof = gofstat(x,"norm"))
+    ##gof = gofstat(fitdist(x,"norm"))
     ##gof$kstest #conservative, will properly reject only at high sample count
     mod = do.call(glm,
                   c(
@@ -1761,6 +1681,10 @@ mgsat.divrich.report <- function(m_a,
   }
   
   m_a.dr=list(count=as.matrix(divrich.counts),attr=m_a$attr)
+  
+  #DEBUG:
+  make.global(m_a.dr)
+  
   
   if(!is.null(counts.glm.task)) {
     
@@ -2064,7 +1988,7 @@ proc.choc.nov_2013_grant_proposal <- function() {
 }
 
 
-gen.tasks.choc <- function(taxa.meta) {
+gen.tasks.choc.old <- function(taxa.meta) {
   
   glmer.descr.tpl = "The random effect terms in the model formula describe that: 
   - intercept varies among families 
@@ -2164,7 +2088,7 @@ task2 = within(
   
   do.clade.meta=F
   
-  taxa.meta.aggr = aggregate_by_meta_data(subset(taxa.meta$data,TherapyStatus=="before.chemo"),
+  taxa.meta.aggr = aggregate.by.meta.data(subset(taxa.meta$data,TherapyStatus=="before.chemo"),
                                           "SubjectID",
                                           taxa.meta$attr.names)
   resp.attr = "Sample.type" 
@@ -2497,50 +2421,6 @@ proc.choc <- function() {
   report$pop.section()
 }
 
-summary.meta.choc <- function(taxa.meta) {
-  
-  report$add.header("Summary of metadata variables")
-  
-  
-  xtabs.formulas = list("~Sample.type+TherapyStatus","~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
-  for(xtabs.formula in xtabs.formulas) {
-    fact.xtabs = xtabs(as.formula(xtabs.formula),data=taxa.meta$data,drop.unused.levels=T)
-    report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
-    report$add.printed(summary(fact.xtabs))
-  }
-  
-  with(taxa.meta$data,{
-    report$add.printed(summary(aov(age~Sample.type)),
-                       caption="ANOVA for age and sample type")
-    report$add(qplot(Sample.type,age,geom="violin"),
-               caption="Violin plot for age and sample type")
-  })
-  
-  with(taxa.meta$data,{
-    report$add.printed(cor.test(age,
-                                visit,
-                                method="spearman"),
-                       caption="Spearman RHO for age and visit")
-    
-  })
-  with(taxa.meta$data[taxa.meta$data$Sample.type=="patient",],{
-    report$add.printed(cor.test(age,
-                                visit,
-                                method="spearman"),
-                       caption="Spearman RHO for age and visit, patients only")
-    
-  })
-  
-  #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
-  #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
-  report$add(ggplot(taxa.meta$data,aes(x=visit,y=age,color=Sample.type))+
-               geom_point()+
-               stat_smooth(method="loess", se = T,degree=1,size=1),
-             caption="Plot for age and visit with Loess trend line")
-  
-}
-
-
 ## Default method for loading metadata file
 ## This will work OK if your file follows certain conventions:
 ## 1. Tab delimited with a header row
@@ -2630,7 +2510,7 @@ mgsat.16s.task.template = within(list(), {
   
   taxa.levels = c("otu",2,3,4,5,6)
   
-  get.taxa.meta.aggr<-function(taxa.meta) { return (taxa.meta) }
+  get.taxa.meta.aggr<-function(m_a) { return (m_a) }
   
   count.filter.sample.options=list(min_row_sum=400,max_row_sum=100000)
   
@@ -2654,10 +2534,10 @@ mgsat.16s.task.template = within(list(), {
     do.stabsel=T
     do.glmer=T
     do.adonis=T
-    do.divrich=T
+    do.divrich=c("otu",6)
     do.plot.profiles.abund=T
     do.heatmap.abund=T
-    do.select.samples=F
+    do.select.samples=c()
     
     alpha = 0.05
     
@@ -2675,7 +2555,7 @@ mgsat.16s.task.template = within(list(), {
     norm.count.task = within(list(), {
       method = "norm.ihs.prop"
       method.args = list()
-      drop.features=c("other")
+      drop.features=list("other")
       ##method="norm.rlog"
       ##method.args=list(dds=NA) #signals to pull Deseq2 object
     })
@@ -2707,8 +2587,7 @@ mgsat.16s.task.template = within(list(), {
     
     select.samples.task = list (
       n.species = 20,
-      n.samples = 20,
-      taxa.level = 6
+      n.samples = 20
     )
     
     adonis.task = within(list(), {
@@ -2892,7 +2771,7 @@ proc.project <- function(
                                   "sample")
         
         if(do.summary.meta) {
-          summary.meta.method(taxa.meta.aggr)
+          summary.meta.method(m_a)
           do.call(report.sample.count.summary,c(
             list(m_a),
             summary.meta.task
@@ -2911,9 +2790,10 @@ proc.project <- function(
         res.tests = NULL
         
         if (do.tests) {
-          if(test.counts.task$select.samples.task$taxa.level != taxa.level) {
-            test.counts.task$do.select.samples = F
-          }
+          
+          test.counts.task$do.select.samples = (taxa.level %in% test.counts.task$do.select.samples)
+          test.counts.task$do.divrich = (taxa.level %in% test.counts.task$do.divrich)
+          
           res.tests = tryCatchAndWarn(
             do.call(test.counts.project,
                     c(
@@ -3940,11 +3820,23 @@ genesel.stability.report <- function(m_a,resp.attr) {
   
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
-  report$add.descr("Univariate test (Wilcox) is applied to each clade on random
+  report$add.descr("Univariate test (Wilcoxon rank-sum) is applied to each feature (clade, gene)
+                   on random
                    subsamples of the data. Consensus ranking is found with a
                    Monte Carlo procedure. The top clades of the consensus ranking
-                   are returned, along with the p-values computed on the full
-                   original dataset (with multiple testing correction).")
+                   are returned, along with the p-values, statistic and effect size 
+                  computed on the full
+                   original dataset. P-values are reported with and without the 
+                   multiple testing correction Benjamini & Hochberg. The effect sizes
+                   for Wilcoxon rank-sum test are reported as: common-language effect
+                   size (proportion of pairs where observations from the first group
+                   are larger than observations from the second group; no effect
+                   corresponds to 0.5); rank-biserial
+                   correlation (common language effect size minus its complement; no
+                   effect corresponds to 0; range is [-1;1]) and
+                   absolute value of r (as defined in Cohen, J. (1988). Statistical power 
+                   analysis for the behavioral sciences (2nd ed.). Hillsdale, NJ: Erlbaum.)
+                   ")
   
   
   res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
@@ -4106,7 +3998,7 @@ norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL
   
   if(!is.null(norm.count.task)) {
     
-    report$add.descr(paste("Count normalization method",descr,":",arg.list.as.str(norm.count.task)))
+    descr = paste("Count normalization method",descr,":",arg.list.as.str(norm.count.task))
     
     ## if dds is required but not defined (set to NA)
     if(!is.null(norm.count.task$method.args$dds) && 
@@ -4122,10 +4014,13 @@ norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL
   }
   else {
     
-    report$add.descr(paste("Counts are not normalized",descr))
+    descr = paste("Counts are not normalized",descr)
     m_a.norm = m_a
     
   }
+  
+  report$add.descr(descr)
+  
   return(m_a.norm)
 }
 
@@ -4160,11 +4055,15 @@ test.counts.project <- function(m_a,
   
   res = new_mgsatres()
   
+  if(do.divrich) {
+  
   res$divrich <- do.call(mgsat.divrich.report,
                          c(list(m_a,
                                 plot.profiles.task=plot.profiles.task),
                            divrich.task)
-  )                   
+  )
+  
+  }
   
   if(!is.null(count.filter.feature.options)) {
     m_a = count.filter.report(m_a,
@@ -4509,7 +4408,7 @@ heatmap.counts <- function(m_a,attr.annot.names,
   count.sub = count[,1:min(ncol(count),max.species.show)]
   # you have to transpose the dataset to get the taxa as rows
   data.dist.taxa <- vegdist(t(count.sub), method = dist.metr)
-  col.clus <- hclust(data.dist.taxa, "ward")
+  col.clus <- hclust(data.dist.taxa, "ward.D2")
   
   ## go back to un-normalized
   count.sub = count.src[,1:min(ncol(count),max.species.show)]
@@ -4757,7 +4656,7 @@ load.meta.t1d.sebastian_format <- function(file_name,batch=NULL,aggr_var=NULL) {
   
   if(!is.null(aggr_var)) {
     
-    meta = aggregate_by_meta_data(meta,
+    meta = aggregate.by.meta.data(meta,
                                   aggr_var,
                                   names(meta))  
   }
@@ -5283,6 +5182,29 @@ report.counts.glmer <- function(report,x,...) {
   }
 }
 
+## Wilcoxon rank-sum effect size r taken from Andy Fields
+## two-sided
+wilcox.eff.size.r <-function(pval, n){
+  z<- qnorm(pval/2)
+  r<- z/ sqrt(n)
+  return(r)
+}
+
+wilcox.eff.size <- function(stat,pval,group) {
+  group = factor(group)
+  taby <- table(group)
+  stopifnot(nlevels(group) == 2)
+  npairs = prod(taby)
+  nsamp = sum(taby)
+  common.lang = stat/npairs
+  rbs = 2*common.lang - 1
+  r = wilcox.eff.size.r(pval,nsamp)
+  return (data.frame(common.lang.eff.size=common.lang,
+                     rank.biserial.corr.eff.size=rbs,
+                     r.eff.size=r)
+  )
+}
+
 ## It is assumed that the count matrix x is transformed/normalized already
 ## e.g. with decostand(ihs(count),method="standardize",MARGIN=2),
 ## otherwise set tran_norm to TRUE and the command above will be
@@ -5308,14 +5230,25 @@ stab_sel_genesel <- function(x,
     x = decostand(ihs(x),method="standardize",MARGIN=1)
   }
   
+  y = factor(y)
+  
   ranking_methods = c(RankingWilcoxon,RankingLimma,RankingFC)
   ranking_method = RankingWilcoxon
   n_feat = nrow(x)
   n_samp = ncol(x)
   #contrary to the help page, does not work when y is a factor - need to convert
   fold_matr = GenerateFoldMatrix(y = as.numeric(y), k=trunc(n_samp*(1-fold_ratio)),replicates=replicates)
+  stopifnot(type=="unpaired") #effect size not implemented
   rnk = ranking_method(x,y,type=type,pvalues=T)
-  pvals.adjusted = p.adjust(rnk@pval,method="BH")
+  rnk.vals = toplist(rnk,n_feat)
+  rnk.vals[rnk.vals$index,] = rnk.vals
+  rnk.vals$pval.adjusted = p.adjust(rnk.vals$pval,method="BH")
+  rnk.vals = cbind(data.frame(name=rownames(x)),rnk.vals)
+
+  rnk.vals = cbind(rnk.vals,
+                   wilcox.eff.size(stat=rnk.vals$statistic,
+                                        pval=rnk.vals$pval,
+                                        group=y))
   #make.global(rnk)
   #make.global(pvals.adjusted)
   rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
@@ -5340,12 +5273,9 @@ stab_sel_genesel <- function(x,
   #pvals are always NA somehow, and we do not need the 'index' in
   #the output, so not adding 'selected' to the output
   index = selected$index
-  selected = data.frame(name=rownames(x)[index],
-                        pvals.orig=rnk@pval[index],
-                        pvals.adjusted=pvals.adjusted[index])
-  #print(selected)
-  #make.global(gsel)
-  return (list(stab_feat=selected,gsel=gsel))
+  rnk.vals$index = NULL
+  rnk.vals = rnk.vals[index,]
+  return (list(stab_feat=rnk.vals,gsel=gsel))
 }
 
 feat_sel_samr <- function(m_a.abs) {
@@ -5461,7 +5391,7 @@ proc.t1d <- function() {
         #aggr_var = "AliquotID"
         aggr_var = "SubjectID"
         
-        taxa.meta.aggr = aggregate_by_meta_data(taxa.meta$data,
+        taxa.meta.aggr = aggregate.by.meta.data(taxa.meta$data,
                                                 aggr_var,
                                                 taxa.meta$attr.names)
         ##When we aggregate across SubjectID, Batch is no longer valid
@@ -5937,7 +5867,7 @@ power.pieper.t1d <- function(
   if(F) {
     taxa.meta = read.pieper.t1d(file.name=data.file)
     aggr_var = "SubjectID"
-    taxa.meta = aggregate_by_meta_data(taxa.meta$data,
+    taxa.meta = aggregate.by.meta.data(taxa.meta$data,
                                        aggr_var,
                                        taxa.meta$attr.names)
     

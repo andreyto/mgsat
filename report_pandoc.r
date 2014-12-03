@@ -141,8 +141,8 @@ PandocAT <- setRefClass('PandocAT', contains = "Pandoc",
                           'out.file.md' = 'character',
                           'out.formats' = 'character',
                           'portable.html' = 'logical'
-                          )
                         )
+)
 
 PandocAT$methods(initialize = function(
   author = "Anonymous",
@@ -152,7 +152,7 @@ PandocAT$methods(initialize = function(
   incremental.save = F,
   portable.html=T,
   ...
-  ) {
+) {
   #.self$author=author
   #.self$title=title
   .self$out.file.md=out.file.md
@@ -191,7 +191,7 @@ PandocAT$methods(add = function(x,new.paragraph=T,caption=NULL,...) {
   if(new.paragraph) {
     .self$add.p("")
   }
-
+  
   if(!is.null(caption)) {
     .self$add.p(.self$priv.format.caption(caption))
   }
@@ -242,7 +242,7 @@ PandocAT$methods(add.table = function(x,
   if(!show.row.names) {
     rownames(x) <- NULL
   }
-
+  
   if(wrap.vals) {
     rn = rownames(x)
     if(!is.null(rn)) {
@@ -317,9 +317,9 @@ PandocAT$methods(add.printed = function(x,caption=NULL,echo=T,...) {
 
 PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T,...) {
   report.section = switch(section.action,
-                 incr=incr.report.section(),
-                 push=incr.report.section(),
-                 keep=get.report.section())
+                          incr=incr.report.section(),
+                          push=incr.report.section(),
+                          keep=get.report.section())
   if (is.null(level)) {
     ##headers will shift to the left above level 5 in HTML output
     level = min(5,length(report.section$path))
@@ -359,7 +359,7 @@ PandocAT$methods(write.table.file = function(data,name.base,descr=NULL,row.names
   }
 })
 
-PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.loc) {
+PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.loc,sort.by.sections=F) {
   
   if (missing(out.file.md.loc)) {
     out.file.md.loc = .self$out.file.md
@@ -374,7 +374,7 @@ PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.l
       out.formats.loc = c("html")
     }
   }
-
+  
   if (missing(portable.html.loc)) {
     portable.html.loc = .self$portable.html
     if(missing(portable.html.loc)) {
@@ -388,16 +388,21 @@ PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.l
   ## create pandoc file
   cat(pandoc.title.return(.self$title, .self$author, .self$date), file = fp)
   f_sections = .self$sections
-  ##sort by section lexicographically, using a stable sort
-  sect_ord = sort.list(
-    unlist(lapply(.self$sections,function(x) paste(x,sep="",collapse="."))),
-    method="shell")
-  lapply(.self$body[sect_ord], function(x) cat(paste(pander.return(x$result), collapse = '\n'), file = fp, append = TRUE))
+  f_body = .self$body
+  if(sort.by.sections) {
+    ##sort by section lexicographically, using a stable sort
+    sect_ord = sort.list(
+      unlist(lapply(.self$sections,function(x) paste(x,sep="",collapse="."))),
+      method="shell")
+    f_body = f_body[sect_ord]
+  }
+  lapply(f_body, function(x) cat(paste(pander.return(x$result), collapse = '\n'), 
+                               file = fp, append = TRUE))
   
   for(out.format in out.formats.loc) {
     Pandoc.convert(fp,format=out.format,open=F,footer=F,portable.html=portable.html.loc)
   }
-    
+  
 })
 
 test_report.sections<-function() {
@@ -459,7 +464,7 @@ test_report.tables<-function() {
   y = data.frame(a=c(1))
   
   report$add.table(y,caption="Test table 2",style="grid")
-    
+  
   x = c(x="_a_",y="b",z="c")
   
   report$add.vector(x,name="Clade",caption="Test vector 1",

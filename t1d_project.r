@@ -281,10 +281,11 @@ gen.tasks.t1d <- function() {
     
     do.deseq2 = F
     do.adonis = F
-    do.genesel = F
+    do.genesel = T
     do.stabsel = F
     do.glmer = F
-    do.divrich=T
+    do.divrich = c()
+
     do.plot.profiles.abund=F
     do.heatmap.abund=F
     
