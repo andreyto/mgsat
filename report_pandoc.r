@@ -225,10 +225,10 @@ PandocAT$methods(add.table = function(x,
                                       show.row.names=F,
                                       echo=T,
                                       caption=NULL,
-                                      wrap.vals=F,
+                                      wrap.vals=T,
                                       wrap.caption=T,
                                       split.tables=180,
-                                      style="grid",...) {
+                                      style="rmarkdown",...) {
   if (wrap.caption && !is.null(caption)) {
     caption = pandoc.escape.special(caption)
   }

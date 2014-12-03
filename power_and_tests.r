@@ -1083,6 +1083,11 @@ read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file) {
   return (otu.df)
 }
 
+read.mothur.otu.with.taxa.m_a <- function(...) {
+  count = as.matrix(read.mothur.otu.with.taxa(...))
+  return(list(count=count))
+}
+
 make.mothur.taxa.summary.clade.names <- function(taxa.summary) {
   taxon = taxa.summary$taxon
   names(taxon) = taxa.summary$rankID
@@ -2451,7 +2456,7 @@ read.data.project.yap <- function(taxa.summary.file,
                                   count.filter.options=NULL,
                                   taxa.level=3) {
   if (taxa.level == "otu") {
-    taxa.lev.all = read.mothur.otu.with.taxa(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
+    taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
     count.file = otu.shared.file
   }
   else {
@@ -2679,7 +2684,7 @@ get.feature.ranking.default <- function(x.f) {
 }
 
 get.feature.ranking.stabsel <- function(x.f,only.names=T) {
-  ranked = meth.res$max[order(meth.res$max,decreasing = T)]
+  ranked = x.f$max[order(x.f$max,decreasing = T)]
   if(only.names) {
     ranked = names(ranked)
   }
@@ -3791,13 +3796,13 @@ stabsel.report <- function(m_a,
   report$add.descr(paste("Stability selection method parameters are:",
                          arg.list.as.str(args.stabsel)))
   
-  report$add.printed(stab.res)
+  #report$add.printed(stab.res)
   
   cutoff.descr = sprintf("Probability cutoff=%s corresponds to per family error rate PFER=%s",
                          stab.res$cutoff,
                          stab.res$PFER)  
   
-  report$add.vector(get.feature.ranking(stab.res,only.names=F),
+  report$add.vector(get.feature.ranking(stab.res,only.names=F)$ranked,
                     caption=paste("Selection probability for the variables.",
                                   cutoff.descr)
   )
@@ -4056,13 +4061,13 @@ test.counts.project <- function(m_a,
   res = new_mgsatres()
   
   if(do.divrich) {
-  
+    tryCatchAndWarn({ 
   res$divrich <- do.call(mgsat.divrich.report,
                          c(list(m_a,
                                 plot.profiles.task=plot.profiles.task),
                            divrich.task)
   )
-  
+    })
   }
   
   if(!is.null(count.filter.feature.options)) {
@@ -4072,7 +4077,9 @@ test.counts.project <- function(m_a,
   }
   
   if(do.deseq2) {
+    tryCatchAndWarn({ 
     res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
+    })
   }
   
   ## this is done after an optional call to deseq2 in case the norm.method
@@ -4087,17 +4094,22 @@ test.counts.project <- function(m_a,
   make.global(m_a)
   
   if(do.genesel) {
+    tryCatchAndWarn({ 
     res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
+    })
   }
   
   if(do.stabsel) {
+    tryCatchAndWarn({ 
     res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
                                            stabsel.task
     )
     )
+    })
   }
   
   if(do.glmer) {  
+    tryCatchAndWarn({ 
     res$glmer = do.call(test.counts.glmer.report,
                         c(
                           list(m_a=m_a,
@@ -4105,15 +4117,18 @@ test.counts.project <- function(m_a,
                           glmer.task
                         )
     )
+    })
   }
   
   if(do.adonis) {
+    tryCatchAndWarn({     
     res$adonis = do.call(test.counts.adonis.report,
                          c(
                            list(m_a=m_a.norm),
                            adonis.task
                          )
     )
+    })
   }
   
   if( do.select.samples && do.stabsel ) {
@@ -4133,6 +4148,7 @@ test.counts.project <- function(m_a,
   
   if( do.plot.profiles.abund ) {
     
+    tryCatchAndWarn({ 
     do.call(plot.profiles.abund,
             c(
               list(m_a=m_a,
@@ -4142,6 +4158,7 @@ test.counts.project <- function(m_a,
               plot.profiles.abund.task
             )
     )
+    })
   }
   
   if (do.heatmap.abund) {
@@ -5187,7 +5204,7 @@ report.counts.glmer <- function(report,x,...) {
 wilcox.eff.size.r <-function(pval, n){
   z<- qnorm(pval/2)
   r<- z/ sqrt(n)
-  return(r)
+  return(abs(r))
 }
 
 wilcox.eff.size <- function(stat,pval,group) {

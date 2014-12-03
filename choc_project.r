@@ -170,7 +170,7 @@ gen.tasks.choc <- function() {
   
   descr = "Samples before therapy aggregated by SubjectID"
     
-  taxa.levels = c(2)
+  taxa.levels = c(6)
     
   do.summary.meta = F
   
@@ -194,10 +194,11 @@ gen.tasks.choc <- function() {
       method="norm.ihs.prop"
     })
     
-    do.deseq2 = F
+    do.divrich = c()
+    do.deseq2 = T
     do.adonis = F
-    do.genesel = T
-    do.stabsel = F
+    do.genesel = F
+    do.stabsel = T
     do.glmer = F
     do.plot.profiles.abund=F
     do.heatmap.abund=F
