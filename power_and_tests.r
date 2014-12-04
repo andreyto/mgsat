@@ -1501,8 +1501,8 @@ mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
   #S.ACE & all se.* give NaN often
   x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
               .final=function(x) (x/n.rar.rep)) %dopar% 
-{estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
-return(list(e=t(x)))
+  {estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
+  return(list(e=t(x)))
 }
 
 ## This uses incidence data and therefore should be applicable to both raw count data as 
@@ -1531,20 +1531,20 @@ mgsat.richness.samples <- function(m_a,pool.attr=NULL,n.rar.rep=400) {
               .combine=plus,
               .export=c("balanced.sample"),
               .final=function(x) (x/n.rar.rep)) %dopar% 
-{
-  if(do.stratify) {
-    strat.ind = balanced.sample(pool)
-    count = count[strat.ind,]
-    pool=pool[strat.ind]
+  {
+    if(do.stratify) {
+      strat.ind = balanced.sample(pool)
+      count = count[strat.ind,]
+      pool=pool[strat.ind]
+    }
+    specpool(rrarefy(count,n.rar),pool=pool)
   }
-  specpool(rrarefy(count,n.rar),pool=pool)
-}
 
-se.ind = grep(".*[.]se",names(x))
-e = x[,-se.ind]
-se = x[,se.ind]
-names(se) = sub("[.]se","",names(se))
-return(list(e=e,se=se))
+  se.ind = grep(".*[.]se",names(x))
+  e = x[,-se.ind]
+  se = x[,se.ind]
+  names(se) = sub("[.]se","",names(se))
+  return(list(e=e,se=se))
 }
 
 ## This returns Hill numbers
@@ -1559,21 +1559,91 @@ mgsat.diversity.alpha.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) 
   if(is.raw.count.data) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-{f.div(rrarefy(m_a$count,n.rar))}
+    {f.div(rrarefy(m_a$count,n.rar))}
   }
-else {
+  else {
   x = f.div(m_a$count)
-}
+  }
 
-if(is.raw.count.data) {
-  #this is already unbiased (determenistic wrt rarefication)
-  div.unb.simpson = rarefy(m_a$count,2)-1
-  #div.fisher.alpha = fisher.alpha(m_a$count)
-  x = cbind(x,div.unb.simpson=div.unb.simpson)
-}
+  if(is.raw.count.data) {
+    #this is already unbiased (determenistic wrt rarefication)
+    div.unb.simpson = rarefy(m_a$count,2)-1
+    #div.fisher.alpha = fisher.alpha(m_a$count)
+    x = cbind(x,div.unb.simpson=div.unb.simpson)
+  }
 
 return(list(e=x))
 }
+
+mgsat.diversity.beta.dist <- function(m_a,n.rar.rep=400,method="-1") {
+  
+  require(vegan)
+  
+  n.rar = min(rowSums(m_a$count))
+  
+  x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+              .final=function(x) (x/n.rar.rep)) %dopar% 
+  {
+    betadiver(rrarefy(m_a$count,n.rar),method=method)
+  }
+  return(list(e=x))
+}
+
+mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
+                                       pool.attr=NULL,
+                                       betadisper.task=list(),
+                                       adonis.task=NULL) {
+  
+  require(vegan)
+  
+  res = new_mgsatres()
+  
+  beta.dist = mgsat.diversity.beta.dist(m_a,n.rar.rep=n.rar.rep,method=method)$e
+  
+  method.help = grep(sprintf('\"%s\"',method),capture.output(betadiver(help=T)),value=T)
+  
+  report$add.descr(sprintf("Computed beta-diversity matrix using function betadiver {vegan}
+                   with method %s, where number of shared species in two sites is a, 
+                   and the numbers of species unique to each site are b and c.",
+                   method.help))
+  
+  if(!is.null(pool.attr)) {
+    betadisp = do.call(betadisper,
+                       c(
+                         list(beta.dist,group=m_a$attr[,pool.attr]),
+                         betadisper.task
+                       )
+    )
+    report$add.descr(sprintf("Results of function betadisper {vegan}
+                       for the analysis of multivariate homogeneity of group dispersions.
+                       This is applied to sample beta diversity matrix to analyze it with
+                       respect to a grouping variable %s. Arguments for the call are: %s",
+                      pool.attr,
+                      arg.list.as.str(betadisper.task)))
+    anova.betadisp = anova(betadisp)
+    report$add(anova.betadisp)
+    res$anova.betadisp = anova.betadisp
+    report$add(plot(betadisp),caption=sprintf("Results of betadisper {vegan}. Distances from samples 
+               to the group
+               centroids are shown in the first two principal coordinates.
+               Groups are defined by the variable %s",pool.attr))
+  }
+  
+  if(!is.null(adonis.task)) {
+    tryCatchAndWarn({
+      m_a.bd = m_a
+      m_a.bd$count = beta.dist
+      res$adonis = do.call(test.counts.adonis.report,
+                           c(
+                             list(m_a=m_a.bd),
+                             adonis.task
+                           )
+      )
+    })
+  }
+  return(res)
+}
+
 
 mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T) {
   require(vegan)
@@ -1632,29 +1702,29 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
     }
     
     if(do.model) {
-    ##To see how well normal fits:
-    ##library(fitdistrplus)
-    ##descdist(x,boot=1000)
-    ##gof = gofstat(fitdist(x,"norm"))
-    ##gof$kstest #conservative, will properly reject only at high sample count
-    mod = do.call(glm,
-                  c(
-                    list(
-                      formula(form.str),
-                      family=family,
-                      data=cbind(as.data.frame(m_a.divrich$count),m_a.divrich$attr)
-                    ),
-                    glm.args
-                  )
-    )
-    
-    report$add(summary(mod),
-               caption=sprintf("Association of abundance based %s with sample metadata",
-                               descr)
-    )
-    
-    res[[divrich.name]] = mod
-    
+      ##To see how well normal fits:
+      ##library(fitdistrplus)
+      ##descdist(x,boot=1000)
+      ##gof = gofstat(fitdist(x,"norm"))
+      ##gof$kstest #conservative, will properly reject only at high sample count
+      mod = do.call(glm,
+                    c(
+                      list(
+                        formula(form.str),
+                        family=family,
+                        data=cbind(as.data.frame(m_a.divrich$count),m_a.divrich$attr)
+                      ),
+                      glm.args
+                    )
+      )
+      
+      report$add(summary(mod),
+                 caption=sprintf("Association of abundance based %s with sample metadata",
+                                 descr)
+      )
+      
+      res[[divrich.name]] = mod
+      
     }  
   }
   
@@ -1663,7 +1733,7 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
 }
 
 mgsat.plot.richness.samples <- function(rich) {
-
+  
   var.names = c("chao","jack1","boot")
   var.names.se = var.names
   e = rich$e[,var.names]
@@ -1674,12 +1744,12 @@ mgsat.plot.richness.samples <- function(rich) {
   
   e.m = melt(e,"Group",var.names,variable.name="Index",value.name="e")
   se.m = melt(se,"Group",var.names.se,variable.name="Index",value.name="se")
-
+  
   data = join(e.m,se.m,by=c("Group","Index"))
   dodge <- position_dodge(width=0.9)  
   pl = ggplot(data, aes(x = Index, y = e, fill = Group)) +  
-  geom_bar(position = dodge,stat="identity",width=0.8) + 
-  geom_errorbar(position = dodge,aes(ymin=e-se, ymax=e+se,width=0.5))
+    geom_bar(position = dodge,stat="identity",width=0.8) + 
+    geom_errorbar(position = dodge,aes(ymin=e-se, ymax=e+se,width=0.5))
   
   return(pl)
 }
@@ -1690,18 +1760,31 @@ mgsat.divrich.report <- function(m_a,
                                  is.raw.count.data=T,
                                  pool.attr=NULL,
                                  counts.glm.task=NULL,
+                                 beta.task=NULL,
                                  plot.profiles.task=list(),
                                  do.plot.profiles=T) {
   
   report.section = report$add.header("Abundance and diversity estimates",section.action="push")
   report$add.descr(sprintf("Counts are rarefied to the lowest library size, abundance-based and
                    incidence-based alpha diversity and richness indices are computed.
-                   This is repeated multiple times (n=%s), and the results are averaged.",
+                   This is repeated multiple times (n=%s), and the results are averaged.
+                   Beta diversity matrix is also computed by averaging over multiple 
+                   rarefications.",
                            n.rar.rep))
   report$add.package.citation("vegan")
   
   res = new_mgsatres()
-  
+
+  if(!is.null(beta.task)) {
+    res$beta = do.call(mgsat.diversity.beta,
+                       c(list(m_a,
+                              n.rar.rep=n.rar.rep,
+                              pool.attr=pool.attr),
+                         beta.task
+                       )
+    )
+  }
+
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
@@ -1725,28 +1808,28 @@ mgsat.divrich.report <- function(m_a,
                             counts.glm.task
                           )
     )
-      
+    
   }
   
   report$add(mgsat.plot.richness.samples(res$rich.samples),
              caption="Incidence based rihcness estimates and corresponding stadard errors"
   )
-
+  
   if(do.plot.profiles) {
-  do.call(plot.profiles,
-          c(list(m_a=m_a.dr,
-                 feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates"),
-            plot.profiles.task
-          )
-  )
+    do.call(plot.profiles,
+            c(list(m_a=m_a.dr,
+                   feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates"),
+              plot.profiles.task
+            )
+    )
   }
-
+  
   report$push.section(report.section)
   mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
   report$pop.section()
   
   report$pop.section()
-
+  
   return(res)
 }
 
@@ -2586,6 +2669,11 @@ mgsat.16s.task.template = within(list(), {
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
       })
+      beta.task = within(list(),{
+        method="-1"
+        betadisper.task=list()
+        adonis.task=NULL #will be replaced by global adonis.task
+      })
       do.plot.profiles = T
     })
     
@@ -2651,11 +2739,6 @@ mgsat.16s.task.template = within(list(), {
       ))
       
     })
-    
-    divrich.task =  within(list(), {
-      n.rar.rep=400
-      is.raw.count.data=T
-    })      
     
     plot.profiles.task = within(list(), {
       id.vars.list = list(c(main.meta.var))
@@ -3942,7 +4025,8 @@ test.counts.adonis.report <- function(m_a,
   ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
   ##the influence of very abundant species:
   count = m_a$count
-  if(!is.null(col.trans) && col.trans != "ident") {
+  is.dist = inherits(count,"dist")
+  if(!is.dist && !is.null(col.trans) && col.trans != "ident") {
     count = decostand(count,method=col.trans,MARGIN=2)
     col.trans.descr = sprintf(" Profile columns are normalized with %s method of decostand function.",col.trans)
   }
@@ -3950,14 +4034,21 @@ test.counts.adonis.report <- function(m_a,
     col.trans.descr = ""
   }
   
+  if(!is.dist) {
+    dist.metr.descr = sprintf(" Dissimilarity index is %s.",dist.metr)
+  }
+  else {
+    dist.metr.descr = " Using supplied distance matrix."
+  }
+  
   #print(ad.res)
-  report$add.header(paste("PermANOVA (adonis) analysis of profile of",data.descr))
+  report$add.header(paste("PermANOVA (adonis) analysis of ",data.descr))
   report$add.package.citation("vegan")
   report$add.descr(sprintf("Non-parametric multivariate test for association between
-                           profile of %s and meta-data variables.%s Distance metric is %s.",
+                           %s and meta-data variables.%s%s",
                            data.descr,
                            col.trans.descr,
-                           dist.metr))
+                           dist.metr.descr))
   
   res = lapply(tasks,function(task) {
     with(task,{
@@ -3969,8 +4060,10 @@ test.counts.adonis.report <- function(m_a,
         permutations=n.perm,
         method=dist.metr)
       
-      report$add.printed(paste("Adonis formula:",formula_str))
-      report$add.printed(ad.res,descr)
+      report$add.printed(ad.res,caption=paste(descr,
+                                              "with formula",
+                                              pandoc.escape.special(formula_str)))
+      report$add.table(ad.res$aov.tab,caption=paste(descr,"AOV Table"))
       ad.res
     })
   })
@@ -4014,7 +4107,7 @@ plot.profiles.abund <- function(m_a,
                                 ord_descr="Stability selection",
                                 sfx="stabsel")
     }
-
+    
     do.call(plot.profiles,
             c(list(m_a=m_a.norm,
                    feature.order=feature.order),
@@ -4095,12 +4188,16 @@ test.counts.project <- function(m_a,
   res = new_mgsatres()
   
   if(do.divrich) {
+    if(is.null(divrich.task$beta.task$adonis.task)) {
+      if(!is.null(divrich.task$beta.task)) 
+        { divrich.task$beta.task$adonis.task = adonis.task }
+    }
     tryCatchAndWarn({ 
-  res$divrich <- do.call(mgsat.divrich.report,
-                         c(list(m_a,
-                                plot.profiles.task=plot.profiles.task),
-                           divrich.task)
-  )
+      res$divrich <- do.call(mgsat.divrich.report,
+                             c(list(m_a,
+                                    plot.profiles.task=plot.profiles.task),
+                               divrich.task)
+      )
     })
   }
   
@@ -4112,7 +4209,7 @@ test.counts.project <- function(m_a,
   
   if(do.deseq2) {
     tryCatchAndWarn({ 
-    res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
+      res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
     })
   }
   
@@ -4129,39 +4226,39 @@ test.counts.project <- function(m_a,
   
   if(do.genesel) {
     tryCatchAndWarn({ 
-    res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
+      res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
     })
   }
   
   if(do.stabsel) {
     tryCatchAndWarn({ 
-    res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
-                                           stabsel.task
-    )
-    )
+      res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
+                                             stabsel.task
+      )
+      )
     })
   }
   
   if(do.glmer) {  
     tryCatchAndWarn({ 
-    res$glmer = do.call(test.counts.glmer.report,
-                        c(
-                          list(m_a=m_a,
-                               alpha=alpha),
-                          glmer.task
-                        )
-    )
+      res$glmer = do.call(test.counts.glmer.report,
+                          c(
+                            list(m_a=m_a,
+                                 alpha=alpha),
+                            glmer.task
+                          )
+      )
     })
   }
   
   if(do.adonis) {
     tryCatchAndWarn({     
-    res$adonis = do.call(test.counts.adonis.report,
-                         c(
-                           list(m_a=m_a.norm),
-                           adonis.task
-                         )
-    )
+      res$adonis = do.call(test.counts.adonis.report,
+                           c(
+                             list(m_a=m_a.norm),
+                             adonis.task
+                           )
+      )
     })
   }
   
@@ -4183,15 +4280,15 @@ test.counts.project <- function(m_a,
   if( do.plot.profiles.abund ) {
     
     tryCatchAndWarn({ 
-    do.call(plot.profiles.abund,
-            c(
-              list(m_a=m_a,
-                   label=label,
-                   res.tests=res,
-                   plot.profiles.task=plot.profiles.task),
-              plot.profiles.abund.task
-            )
-    )
+      do.call(plot.profiles.abund,
+              c(
+                list(m_a=m_a,
+                     label=label,
+                     res.tests=res,
+                     plot.profiles.task=plot.profiles.task),
+                plot.profiles.abund.task
+              )
+      )
     })
   }
   
@@ -5295,11 +5392,11 @@ stab_sel_genesel <- function(x,
   rnk.vals[rnk.vals$index,] = rnk.vals
   rnk.vals$pval.adjusted = p.adjust(rnk.vals$pval,method="BH")
   rnk.vals = cbind(data.frame(name=rownames(x)),rnk.vals)
-
+  
   rnk.vals = cbind(rnk.vals,
                    wilcox.eff.size(stat=rnk.vals$statistic,
-                                        pval=rnk.vals$pval,
-                                        group=y))
+                                   pval=rnk.vals$pval,
+                                   group=y))
   #make.global(rnk)
   #make.global(pvals.adjusted)
   rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)

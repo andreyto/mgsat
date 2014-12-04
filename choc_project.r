@@ -194,8 +194,8 @@ gen.tasks.choc <- function() {
       method="norm.ihs.prop"
     })
     
-    #do.divrich = c()
-    do.deseq2 = F
+    do.divrich = c()
+    do.deseq2 = T
     do.adonis = F
     do.genesel = F
     do.stabsel = F
@@ -207,10 +207,10 @@ gen.tasks.choc <- function() {
       n.rar.rep=4
       is.raw.count.data=T
       pool.attr = main.meta.var
-      counts.glm.task = within(list(),{
+      counts.glm.task = within(counts.glm.task,{
         formula.rhs = main.meta.var
       })
-      do.plot.profiles = T
+      do.plot.profiles = F
     })
 
     deseq2.task = within(deseq2.task, {

@@ -2,7 +2,8 @@ library(ggplot2)
 #library(knitr)
 library(pander)
 
-panderOptions("table.style","grid")
+panderOptions("round",4)
+panderOptions("table.style","rmarkdown") #"grid"
 panderOptions("table.split.table",180)
 panderOptions("table.alignment.default","left")
 panderOptions("evals.messages",F)
@@ -134,7 +135,8 @@ pandoc.as.printed.return <- function(x,attrs="") {
 pandoc.special.symb = "`*_{}()#+!~"
 
 pandoc.escape.special <- function(x) {
-  gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",x)
+  gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",
+       format(x,digits=panderOptions("digits")))
 }
 
 PandocAT <- setRefClass('PandocAT', contains = "Pandoc", 
