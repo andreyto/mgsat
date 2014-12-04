@@ -1356,7 +1356,7 @@ plot.abund.meta <- function(m_a,
       legend.position = "none"
     }
     gp = gp +
-      geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=1), colour="black", inherit.aes=FALSE, parse=FALSE)+
+      geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=2), colour="black", inherit.aes=FALSE, parse=FALSE)+
       theme(legend.position = legend.position,
             axis.title=element_blank(),
             axis.text.y=element_text(color=c("black","black")))
@@ -1543,6 +1543,7 @@ mgsat.richness.samples <- function(m_a,pool.attr=NULL,n.rar.rep=400) {
 se.ind = grep(".*[.]se",names(x))
 e = x[,-se.ind]
 se = x[,se.ind]
+names(se) = sub("[.]se","",names(se))
 return(list(e=e,se=se))
 }
 
@@ -1618,11 +1619,11 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
     do.model = F
     
     if(divrich.name=="N1") {
-      descr = "Hill number N_1 (equals exp(Shannon index)"
+      descr = "Hill number N~1~ (equals exp(Shannon index)"
       do.model = T
     }
     else if(divrich.name=="N2") {
-      descr = "Hill number N_2 (equals Inverted Simpson index)"
+      descr = "Hill number N~2~ (equals Inverted Simpson index)"
       do.model = T
     }
     else if(divrich.name %in% c("S.obs","S.chao1","S.ACE")) {
@@ -1661,14 +1662,43 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
   
 }
 
+mgsat.plot.richness.samples <- function(rich) {
+
+  var.names = c("chao","jack1","boot")
+  var.names.se = var.names
+  e = rich$e[,var.names]
+  e$Group = rownames(e)
+  
+  se = rich$se[,var.names.se]
+  se$Group = rownames(se)
+  
+  e.m = melt(e,"Group",var.names,variable.name="Index",value.name="e")
+  se.m = melt(se,"Group",var.names.se,variable.name="Index",value.name="se")
+
+  data = join(e.m,se.m,by=c("Group","Index"))
+  dodge <- position_dodge(width=0.9)  
+  pl = ggplot(data, aes(x = Index, y = e, fill = Group)) +  
+  geom_bar(position = dodge,stat="identity",width=0.8) + 
+  geom_errorbar(position = dodge,aes(ymin=e-se, ymax=e+se,width=0.5))
+  
+  return(pl)
+}
+
+
 mgsat.divrich.report <- function(m_a,
                                  n.rar.rep=400,
                                  is.raw.count.data=T,
                                  pool.attr=NULL,
                                  counts.glm.task=NULL,
-                                 plot.profiles.task=list()) {
+                                 plot.profiles.task=list(),
+                                 do.plot.profiles=T) {
   
   report.section = report$add.header("Abundance and diversity estimates",section.action="push")
+  report$add.descr(sprintf("Counts are rarefied to the lowest library size, abundance-based and
+                   incidence-based alpha diversity and richness indices are computed.
+                   This is repeated multiple times (n=%s), and the results are averaged.",
+                           n.rar.rep))
+  report$add.package.citation("vegan")
   
   res = new_mgsatres()
   
@@ -1687,9 +1717,6 @@ mgsat.divrich.report <- function(m_a,
   
   m_a.dr=list(count=as.matrix(divrich.counts),attr=m_a$attr)
   
-  #DEBUG:
-  make.global(m_a.dr)
-  
   
   if(!is.null(counts.glm.task)) {
     
@@ -1701,19 +1728,25 @@ mgsat.divrich.report <- function(m_a,
       
   }
   
+  report$add(mgsat.plot.richness.samples(res$rich.samples),
+             caption="Incidence based rihcness estimates and corresponding stadard errors"
+  )
+
+  if(do.plot.profiles) {
   do.call(plot.profiles,
           c(list(m_a=m_a.dr,
                  feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates"),
             plot.profiles.task
           )
-  )  
+  )
+  }
 
   report$push.section(report.section)
   mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
   report$pop.section()
   
   report$pop.section()
-  
+
   return(res)
 }
 
@@ -2553,6 +2586,7 @@ mgsat.16s.task.template = within(list(), {
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
       })
+      do.plot.profiles = T
     })
     
     count.filter.feature.options=list(min_mean_frac=0.0005)

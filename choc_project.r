@@ -194,11 +194,11 @@ gen.tasks.choc <- function() {
       method="norm.ihs.prop"
     })
     
-    do.divrich = c()
-    do.deseq2 = T
+    #do.divrich = c()
+    do.deseq2 = F
     do.adonis = F
     do.genesel = F
-    do.stabsel = T
+    do.stabsel = F
     do.glmer = F
     do.plot.profiles.abund=F
     do.heatmap.abund=F
@@ -209,7 +209,8 @@ gen.tasks.choc <- function() {
       pool.attr = main.meta.var
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
-      })      
+      })
+      do.plot.profiles = T
     })
 
     deseq2.task = within(deseq2.task, {

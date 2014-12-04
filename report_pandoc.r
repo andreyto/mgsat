@@ -18,6 +18,9 @@ evalsOptions("height",480)
 evalsOptions("res",75)
 evalsOptions("hi.res",T)
 evalsOptions("hi.res.width",800)
+## This is ggplot2 function that changes
+## text base size within a current theme for entire session
+theme_set(theme_gray(base_size = 20))
 
 make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
@@ -400,7 +403,12 @@ PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.l
                                file = fp, append = TRUE))
   
   for(out.format in out.formats.loc) {
-    Pandoc.convert(fp,format=out.format,open=F,footer=F,portable.html=portable.html.loc)
+    ## It would be nice to add `options="-s -S"` to support
+    ## Pandoc's subscript and suprscript extensions, but
+    ## this will entirely replace internal default options and
+    ## break TOC etc
+    Pandoc.convert(fp,format=out.format,open=F,footer=F,
+                   portable.html=portable.html.loc)
   }
   
 })
