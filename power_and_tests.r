@@ -1247,9 +1247,8 @@ plot.abund.meta <- function(m_a,
   #TODO: change code in this method to use m_a directly
   data = join_count_df(m_a)
   attr.names = names(m_a$attr)
-  
+
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
-  
   if (is.null(clades.order)) {
     dat$clade = order.factor.by.total(dat$clade,dat[[value.name]])
   }
@@ -1339,12 +1338,12 @@ plot.abund.meta <- function(m_a,
   }
   gp = gp + wr
   if(length(id.vars.facet) > 0) {
-    clade.names = get.clade.names(data,attr.names)
+    clade.names = as.character(clades)
     #this will be used to label each facet with number of cases in it
     facet.cnt <- ddply(.data=data, id.vars.facet, function(x,clade.names) 
     { c(.n=nrow(x),
-        .y=mean(colMeans(as.matrix(x[,clade.names])),
-                names=F)) },
+        .y=mean(colMeans(as.matrix(x[,clade.names]),na.rm=T),
+                names=F,na.rm=T)) },
     clade.names)
     facet.cnt$.n = paste("n =", facet.cnt$.n)
     #facet.cnt$y = facet.cnt$V2
@@ -1355,6 +1354,7 @@ plot.abund.meta <- function(m_a,
     else {
       legend.position = "none"
     }
+    make.global(facet.cnt)
     gp = gp +
       geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=2), colour="black", inherit.aes=FALSE, parse=FALSE)+
       theme(legend.position = legend.position,
@@ -1383,6 +1383,7 @@ plot.abund.meta <- function(m_a,
   if (!is.null(file_name)) {
     ggsave(file_name)
   }
+  
   return (gp)
 }
 
@@ -1508,18 +1509,18 @@ mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
 ## This uses incidence data and therefore should be applicable to both raw count data as 
 ## well as to proportions
 ## or other type of measurement where non-zero value means "present"
-mgsat.richness.samples <- function(m_a,pool.attr=NULL,n.rar.rep=400) {
+mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400) {
   
   require(vegan)
   
   n.rar = min(rowSums(m_a$count))
   
-  if(is.null(pool.attr)) {
+  if(is.null(group.attr)) {
     pool = factor(rep("All",nrow(m_a$count)))
     do.stratify = F
   }
   else {
-    pool = m_a$attr[,pool.attr]
+    pool = m_a$attr[,group.attr]
     do.stratify = T
   }
   count = m_a$count
@@ -1590,7 +1591,7 @@ mgsat.diversity.beta.dist <- function(m_a,n.rar.rep=400,method="-1") {
 }
 
 mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
-                                       pool.attr=NULL,
+                                       group.attr=NULL,
                                        betadisper.task=list(),
                                        adonis.task=NULL) {
   
@@ -1607,10 +1608,10 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
                    and the numbers of species unique to each site are b and c.",
                    method.help))
   
-  if(!is.null(pool.attr)) {
+  if(!is.null(group.attr)) {
     betadisp = do.call(betadisper,
                        c(
-                         list(beta.dist,group=m_a$attr[,pool.attr]),
+                         list(beta.dist,group=m_a$attr[,group.attr]),
                          betadisper.task
                        )
     )
@@ -1618,7 +1619,7 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
                        for the analysis of multivariate homogeneity of group dispersions.
                        This is applied to sample beta diversity matrix to analyze it with
                        respect to a grouping variable %s. Arguments for the call are: %s",
-                      pool.attr,
+                      group.attr,
                       arg.list.as.str(betadisper.task)))
     anova.betadisp = anova(betadisp)
     report$add(anova.betadisp)
@@ -1626,10 +1627,11 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
     report$add(plot(betadisp),caption=sprintf("Results of betadisper {vegan}. Distances from samples 
                to the group
                centroids are shown in the first two principal coordinates.
-               Groups are defined by the variable %s",pool.attr))
+               Groups are defined by the variable %s",group.attr))
   }
   
   if(!is.null(adonis.task)) {
+    adonis.task$data.descr = "Beta-diversity dissimilarity matrix"
     tryCatchAndWarn({
       m_a.bd = m_a
       m_a.bd$count = beta.dist
@@ -1749,7 +1751,9 @@ mgsat.plot.richness.samples <- function(rich) {
   dodge <- position_dodge(width=0.9)  
   pl = ggplot(data, aes(x = Index, y = e, fill = Group)) +  
     geom_bar(position = dodge,stat="identity",width=0.8) + 
-    geom_errorbar(position = dodge,aes(ymin=e-se, ymax=e+se,width=0.5))
+    geom_errorbar(position = dodge,aes(ymin=e-se, ymax=e+se,width=0.5)) +
+    xlab("Index name") +
+    ylab("Index value")
   
   return(pl)
 }
@@ -1758,7 +1762,7 @@ mgsat.plot.richness.samples <- function(rich) {
 mgsat.divrich.report <- function(m_a,
                                  n.rar.rep=400,
                                  is.raw.count.data=T,
-                                 pool.attr=NULL,
+                                 group.attr=NULL,
                                  counts.glm.task=NULL,
                                  beta.task=NULL,
                                  plot.profiles.task=list(),
@@ -1779,7 +1783,7 @@ mgsat.divrich.report <- function(m_a,
     res$beta = do.call(mgsat.diversity.beta,
                        c(list(m_a,
                               n.rar.rep=n.rar.rep,
-                              pool.attr=pool.attr),
+                              group.attr=group.attr),
                          beta.task
                        )
     )
@@ -1789,7 +1793,7 @@ mgsat.divrich.report <- function(m_a,
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
   
-  res$rich.samples = mgsat.richness.samples(m_a,pool.attr=pool.attr,n.rar.rep=n.rar.rep)
+  res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep)
   
   res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
   
@@ -1818,7 +1822,8 @@ mgsat.divrich.report <- function(m_a,
   if(do.plot.profiles) {
     do.call(plot.profiles,
             c(list(m_a=m_a.dr,
-                   feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates"),
+                   feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates",
+                   value.name="index"),
               plot.profiles.task
             )
     )
@@ -1841,9 +1846,14 @@ plot.profiles <- function(m_a,
                           clade.meta.x.vars=c(),
                           do.profile=T,
                           do.clade.meta=T,
-                          show.profile.task=list(),
+                          value.name="abundance",
+                          show.profile.task=list(
+                            geoms=c("bar","violin","boxplot"),
+                            dodged=T,
+                            faceted=T
+                            ),
                           show.clade.meta.task=list(),
-                          feature.descr="abundance profiles",
+                          feature.descr="abundance",
                           sqrt.scale=F) {
   
   report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),section.action="push")
@@ -1862,14 +1872,14 @@ plot.profiles <- function(m_a,
     report$add.header(paste("Grouping variables",paste0(id.vars,collapse=",")))
     
     
-    report$add.header(sprintf("Iterating over %s sorting order",feature.descr))
+    report$add.header(sprintf("Iterating over %s profile sorting order",feature.descr))
     report$push.section(report.section)
     
     for(pl.par in feature.order) {
-      report$add.header(sprintf("%s sorting order: %s",feature.descr,pl.par$ord_descr))
+      report$add.header(sprintf("%s profile sorting order: %s",feature.descr,pl.par$ord_descr))
       if(do.clade.meta) {
         clade.names.meta=if(is.null(pl.par$ord)) colnames(m_a$count) else pl.par$ord
-        clade.names.meta = clade.names.meta[1:min(length(clade.names.meta),20)]
+        clade.names.meta = clade.names.meta[1:min(length(clade.names.meta),10)]
         
         report$add.header("Iterating over meta data variables")
         report$push.section(report.section)
@@ -1883,15 +1893,19 @@ plot.profiles <- function(m_a,
           else {
             group.var = NULL
           }
+          tryCatchAndWarn({
           do.call(show.clade.meta,
                   c(
                     list(m_a=m_a,
                          clade.names=clade.names.meta,
                          x.var=x.var,
-                         group.var=group.var),
+                         group.var=group.var,
+                         value.name=value.name,
+                         vars.descr=feature.descr),
                     show.clade.meta.task
                   )
           )
+          })
           
         }
         
@@ -1906,7 +1920,20 @@ plot.profiles <- function(m_a,
                          It is not likely that you will need every plot - pick only what you need.")
         report$push.section(report.section)
         
-        for(id.var.dodge in list(list(dodge=NULL,descr="faceted"),list(dodge=id.vars[1],descr="dodged"))) {
+        within(show.profile.task, {
+          if(!(dodged || faceted)) {
+            faceted = T
+          }
+        })
+        id.vars.dodge = list()
+        if(show.profile.task$faceted) {
+          id.vars.dodge[["faceted"]] = list(dodge=NULL,descr="faceted")
+        }
+        if(show.profile.task$dodged) {
+          id.vars.dodge[["dodged"]] = list(dodge=id.vars[1],descr="dodged")
+        }
+        
+        for(id.var.dodge in id.vars.dodge) {
           
           report$add.header(paste(id.var.dodge$descr,"bars. Iterating over orientation and, optionally, scaling"))
           report$push.section(report.section)
@@ -1923,7 +1950,7 @@ plot.profiles <- function(m_a,
             report$add.header(paste(sprintf("%s are ",feature.descr), other.params$descr, ". Iterating over bar geometry",sep=""))
             report$push.section(report.section)
             
-            for(geom in c("bar","violin","boxplot")) {
+            for(geom in show.profile.task$geoms) {
               tryCatchAndWarn({
                 pl.hist = plot.abund.meta(m_a=m_a,
                                           id.vars=id.vars,
@@ -1932,7 +1959,8 @@ plot.profiles <- function(m_a,
                                           file_name=NULL,
                                           id.var.dodge=id.var.dodge$dodge,
                                           flip.coords=other.params$flip.coords,
-                                          sqrt.scale=other.params$sqrt.scale
+                                          sqrt.scale=other.params$sqrt.scale,
+                                          value.name=value.name
                 )
                 #env=as.environment(as.list(environment(), all.names=TRUE))
                 #print(names(as.list(env)))
@@ -2665,7 +2693,7 @@ mgsat.16s.task.template = within(list(), {
     divrich.task = within(list(),{
       n.rar.rep=400
       is.raw.count.data=T
-      pool.attr = main.meta.var
+      group.attr = main.meta.var
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
       })
@@ -2745,7 +2773,11 @@ mgsat.16s.task.template = within(list(), {
       clade.meta.x.vars=c()
       do.profile=T
       do.clade.meta=F
-      show.profile.task=list()
+      show.profile.task=list(
+        geoms=c("bar","violin","boxplot"),
+        dodged=T,
+        faceted=T
+      )
       show.clade.meta.task=list()      
     })
     
@@ -2913,8 +2945,10 @@ proc.project <- function(
         
         if (do.tests) {
           
-          test.counts.task$do.select.samples = (taxa.level %in% test.counts.task$do.select.samples)
-          test.counts.task$do.divrich = (taxa.level %in% test.counts.task$do.divrich)
+          ## modify a copy
+          test.counts.task.call = test.counts.task
+          test.counts.task.call$do.select.samples = (taxa.level %in% test.counts.task.call$do.select.samples)
+          test.counts.task.call$do.divrich = (taxa.level %in% test.counts.task.call$do.divrich)
           
           res.tests = tryCatchAndWarn(
             do.call(test.counts.project,
@@ -2923,7 +2957,7 @@ proc.project <- function(
                         m_a=m_a,
                         label=label
                       ),
-                      test.counts.task
+                      test.counts.task.call
                     )
             )
           )          
@@ -3050,12 +3084,8 @@ show.clade.meta <- function(m_a,
                             group.var,
                             value.name="abundance",
                             trans="boxcox",
-                            vars.descr="individual clade abundances") {
+                            vars.descr="abundances") {
   
-  
-  #DEBUG:
-  m_a.clade = m_a
-  make.global(m_a.clade)
   
   count = m_a$count[,clade.names,drop=F]
   
@@ -4063,7 +4093,9 @@ test.counts.adonis.report <- function(m_a,
       report$add.printed(ad.res,caption=paste(descr,
                                               "with formula",
                                               pandoc.escape.special(formula_str)))
-      report$add.table(ad.res$aov.tab,caption=paste(descr,"AOV Table"))
+      report$add.table(ad.res$aov.tab,
+                       show.row.names=T,
+                       caption=paste(descr,"AOV Table"))
       ad.res
     })
   })
@@ -4191,6 +4223,9 @@ test.counts.project <- function(m_a,
     if(is.null(divrich.task$beta.task$adonis.task)) {
       if(!is.null(divrich.task$beta.task)) 
         { divrich.task$beta.task$adonis.task = adonis.task }
+      if(!do.adonis) {
+        divrich.task$beta.task$adonis.task = NULL
+      }
     }
     tryCatchAndWarn({ 
       res$divrich <- do.call(mgsat.divrich.report,

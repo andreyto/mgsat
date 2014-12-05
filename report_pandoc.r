@@ -21,7 +21,7 @@ evalsOptions("hi.res",T)
 evalsOptions("hi.res.width",800)
 ## This is ggplot2 function that changes
 ## text base size within a current theme for entire session
-theme_set(theme_gray(base_size = 20))
+#theme_set(theme_gray(base_size = 20))
 
 make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
