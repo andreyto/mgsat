@@ -1502,7 +1502,7 @@ mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
   #S.ACE & all se.* give NaN often
   x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
               .final=function(x) (x/n.rar.rep)) %dopar% 
-  {estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1","S.ACE"),]}
+  {estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1"),]}
   return(list(e=t(x)))
 }
 

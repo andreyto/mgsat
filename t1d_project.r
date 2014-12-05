@@ -251,7 +251,7 @@ gen.tasks.t1d <- function() {
   
   taxa.levels = c(6)
     
-  do.summary.meta = F
+  do.summary.meta = T
   
   do.tests = T
 
@@ -284,13 +284,13 @@ gen.tasks.t1d <- function() {
     do.genesel = T
     do.stabsel = F
     do.glmer = F
-    do.divrich = c()
+    #do.divrich = c()
 
-    do.plot.profiles.abund=F
-    do.heatmap.abund=F
+    do.plot.profiles.abund=T
+    do.heatmap.abund=T
     
     divrich.task = within(divrich.task,{
-      n.rar.rep=4
+      #n.rar.rep=4
       is.raw.count.data=T
       pool.attr = main.meta.var
       counts.glm.task = within(list(),{
@@ -312,8 +312,8 @@ gen.tasks.t1d <- function() {
     
     adonis.task = within(adonis.task, {
       
-      dist.metr="euclidean"
-      col.trans="standardize"
+      #dist.metr="euclidean"
+      #col.trans="standardize"
       data.descr="normalized counts"
       
       tasks = list(
@@ -345,8 +345,6 @@ gen.tasks.t1d <- function() {
       clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
       do.profile=T
       do.clade.meta=F
-      show.profile.task=list()
-      show.clade.meta.task=list()      
     })
     
     heatmap.abund.task = within(heatmap.abund.task,{

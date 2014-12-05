@@ -184,7 +184,7 @@ gen.tasks.choc <- function() {
   
   task1 = within( task0, {
     
-    do.summary.meta = F
+    do.summary.meta = T
     
     do.tests = T
     
@@ -308,8 +308,158 @@ gen.tasks.choc <- function() {
     })
     
   })
+
+  task3 = within( task0, {
+    
+    main.meta.var = "TherapyStatus"
+    
+    descr = "Patients samples at visits 1 (before therapy) and 2 (after therapy)"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient" & m_a$attr$visit <= 2))
+      return(m_a)
+    }
+    
+    test.counts.task = within(test.counts.task, {
+      
+      #do.divrich = c()
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = T
+      do.glmer = F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+      
+      divrich.task = within(divrich.task,{
+        group.attr = main.meta.var
+        counts.glm.task = within(counts.glm.task,{
+          formula.rhs = main.meta.var
+        })
+        do.plot.profiles = T
+      })
+      
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = main.meta.var
+      })
+      
+      genesel.task = within(genesel.task, {
+        resp.attr = main.meta.var
+      })
+      
+      stabsel.task = within(stabsel.task, {
+        resp.attr=main.meta.var
+      })
+      
+      adonis.task = within(adonis.task, {
+        
+        tasks = list(
+          list(formula.rhs=main.meta.var,
+               strata="SubjectID",
+               descr="Association with therapy status paired by subject"),
+          list(formula.rhs=c("Antibiotic * ", main.meta.var),
+               strata="SubjectID",
+               descr="Association with Antibiotic use and therapy status paired by subject")
+        )
+        
+      })
+      
+      plot.profiles.task = within(plot.profiles.task, {
+        id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic"))
+        do.profile=T
+        do.clade.meta=F
+      })
+      
+      heatmap.abund.task = within(heatmap.abund.task,{
+        attr.annot.names=c(main.meta.var,"Antibiotic")
+      })
+      
+    })
+    
+  })
   
-  return (list(task1,task2))
+  task4 = within( task0, {
+    
+    main.meta.var = "visit"
+    
+    descr = "Patients samples"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient"))
+      return(m_a)
+    }
+    
+    test.counts.task = within(test.counts.task, {
+      
+      #do.divrich = c()
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = F
+      do.stabsel = T
+      do.glmer = F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+      
+      divrich.task = within(divrich.task,{
+        group.attr = main.meta.var
+        counts.glm.task = within(counts.glm.task,{
+          formula.rhs = main.meta.var
+        })
+        do.plot.profiles = T
+      })
+      
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = main.meta.var
+      })
+      
+      genesel.task = within(genesel.task, {
+        resp.attr = main.meta.var
+      })
+      
+      stabsel.task = within(stabsel.task, {
+        resp.attr=main.meta.var
+        args.fitfun = within(args.fitfun, {
+          family="gaussian"
+          standardize=T                                     
+        })
+      })
+      
+      adonis.task = within(adonis.task, {
+        
+        tasks = list(
+          list(formula.rhs=main.meta.var,
+               strata="SubjectID",
+               descr="Association with visit paired by subject")
+        )
+        
+      })
+      
+      plot.profiles.task = within(plot.profiles.task, {
+        id.vars.list = list(c(main.meta.var))
+        do.profile=T
+        do.clade.meta=T
+      })
+      
+      heatmap.abund.task = within(heatmap.abund.task,{
+        attr.annot.names=c(main.meta.var,"Antibiotic")
+      })
+      
+    })
+    
+  })
+  
+  
+  return (list(task3))
 }
 
 
