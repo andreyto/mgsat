@@ -141,7 +141,7 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   
   if(!is.null(aggr.var)) {
     
-    meta = aggregate_by_meta_data(meta,
+    meta = aggregate.by.meta.data(meta,
                                   group_col=aggr.var,
                                   col_ignore=names(meta))  
   }
@@ -169,13 +169,13 @@ summary.meta.t1d <- function(m_a) {
   xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID")
   for(xtabs.formula in xtabs.formulas) {
     fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
-    report$add.table(fact.xtabs,show.row.names=T,caption=paste("Sample cross tabulation",xtabs.formula))
+    report$add(fact.xtabs,caption=paste("Sample cross tabulation",xtabs.formula))
     report$add.printed(summary(fact.xtabs))
   }
   
   with(meta,{
     
-    report$add.printed(summary(aov(age~T1D)),
+    report$add(aov(age~T1D),
                        caption="ANOVA for age and cohort")
     report$add(qplot(T1D,age,geom="violin"),
                caption="Violin plot for age and cohort")
@@ -190,15 +190,15 @@ summary.meta.t1d <- function(m_a) {
   })
   
   with(meta,{
-    report$add.printed(cor.test(YearsSinceDiagnosis,
+    report$add(cor.test(YearsSinceDiagnosis,
                                 Timestamp,
                                 method="spearman"),
                        caption="Spearman RHO for metadata variables")
-    report$add.printed(cor.test(YearsSinceDiagnosis,
+    report$add(cor.test(YearsSinceDiagnosis,
                                 age,
                                 method="spearman"),
                        caption="Spearman RHO for metadata variables")
-    report$add.printed(cor.test(YearsSinceDiagnosis,
+    report$add(cor.test(YearsSinceDiagnosis,
                                 A1C,
                                 method="spearman"),
                        caption="Spearman RHO for metadata variables")
@@ -225,6 +225,8 @@ gen.tasks.t1d <- function() {
   }
 
   task0 = within( mgsat.16s.task.template, {
+    
+  taxa.levels = c(6,"otu")
   
   descr = "All samples, aggregated by AliquotID"
   
@@ -248,8 +250,6 @@ gen.tasks.t1d <- function() {
   })
   
   task1 = within( task0, {
-  
-  taxa.levels = c(6)
     
   do.summary.meta = T
   
@@ -279,10 +279,10 @@ gen.tasks.t1d <- function() {
       method="norm.ihs.prop"
     })
     
-    do.deseq2 = F
-    do.adonis = F
+    do.deseq2 = T
+    do.adonis = T
     do.genesel = T
-    do.stabsel = F
+    do.stabsel = T
     do.glmer = F
     #do.divrich = c()
 
@@ -292,7 +292,7 @@ gen.tasks.t1d <- function() {
     divrich.task = within(divrich.task,{
       #n.rar.rep=4
       is.raw.count.data=T
-      pool.attr = main.meta.var
+      group.attr = main.meta.var
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
       })      
@@ -355,69 +355,206 @@ gen.tasks.t1d <- function() {
   
 })
 
-return (list(task1))
-}
 
-hide_debug <- function() {
-
-
-task2 = within(
-  task1,
-{
-  
-  descr = "Patient samples only"
+task2 = within( task0, {
   
   do.summary.meta = F
-  do.genesel=F
   
-  get.taxa.meta.aggr<-function(taxa.meta) { 
-    taxa.meta.aggr = get.taxa.meta.aggr.base(taxa.meta)
-    taxa.meta.aggr$data = subset(taxa.meta.aggr$data,T1D=="T1D")  
-    return (taxa.meta.aggr)
+  do.tests = T
+
+  descr = "Patient samples only, association with years since diagnosis"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$T1D=="T1D"))
+    return (m_a)
   }
   
-  stability.resp.attr = "YearsSinceDiagnosis" 
-  stability.model.family = "gaussian"
+  main.meta.var = "YearsSinceDiagnosis.quant"
+  main.meta.var.cont = "YearsSinceDiagnosis" 
   
-  genesel.resp.attr = stability.resp.attr
   
-  adonis.tasks = list(
-    list(formula_rhs="YearsSinceDiagnosis",
-         strata=NULL,
-         descr="Association with the years since diagnosis"),
-    list(formula_rhs="age*YearsSinceDiagnosis",
-         strata=NULL,
-         descr="Association with the age and years since diagnosis"),
-    list(formula_rhs="A1C",
-         strata=NULL,
-         descr="Association with A1C")    
-  )
+  summary.meta.task = within(summary.meta.task, {
+    meta.x.vars = c("Timestamp")
+    group.var = c(main.meta.var)
+  })
   
-  glmer.task = list(
-    formula.rhs = "YearsSinceDiagnosis + (1|FamilyID/SubjectID)",
-    linfct=c("YearsSinceDiagnosis = 0"),
-    descr=sprintf(glmer.descr.tpl,"YearsSinceDiagnosis")
-  )  
   
-  plot.group = list(
-    c("YearsSinceDiagnosis.quant")
-  )            
+  test.counts.task = within(test.counts.task, {
+    
+    norm.count.task = within(norm.count.task, {
+      method="norm.ihs.prop"
+    })
+    
+    do.deseq2 = T
+    do.adonis = T
+    do.genesel = F
+    do.stabsel = T
+    do.glmer = F
+    #do.divrich = c()
+    
+    do.plot.profiles.abund=T
+    do.heatmap.abund=T
+    
+    divrich.task = within(divrich.task,{
+      #n.rar.rep=4
+      is.raw.count.data=T
+      group.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var.cont
+      })      
+    })
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var.cont
+    })
+    
+    genesel.task = within(genesel.task, {
+      resp.attr = main.meta.var
+    })
+    
+    stabsel.task = within(stabsel.task, {
+      resp.attr=main.meta.var.cont
+      args.fitfun = within(args.fitfun, {
+        family="gaussian"
+      })
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=main.meta.var.cont,
+             strata=NULL,
+             descr=sprintf("Association with %s",main.meta.var.cont))        
+      )
+    })
+        
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+      clade.meta.x.vars=c("age")
+      do.profile=T
+      do.clade.meta=F
+    })
+    
+    heatmap.abund.task = within(heatmap.abund.task,{
+      attr.annot.names=c(main.meta.var.cont)
+    })
+    
+  })
   
-  clade.meta.x.vars=c("YearsSinceDiagnosis")
+})
+
+task3 = within( task2, {
   
-  heatmap.task = list(
-    attr.annot.names=c("YearsSinceDiagnosis"),
-    attr.row.labels=NULL
-  )
+  do.summary.meta = F
   
-}
-)
+  do.tests = T
+  
+  descr = "Patient samples only, association with A1C"
+  
+  main.meta.var = "A1C.quant"
+  main.meta.var.cont = "A1C" 
+  
+  test.counts.task = within(test.counts.task, {
+    
+    norm.count.task = within(norm.count.task, {
+      method="norm.ihs.prop"
+    })
+    
+    divrich.task = within(divrich.task,{
+      group.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var.cont
+      })      
+    })
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var.cont
+    })
+    
+    genesel.task = within(genesel.task, {
+      resp.attr = main.meta.var
+    })
+    
+    stabsel.task = within(stabsel.task, {
+      resp.attr=main.meta.var.cont
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=main.meta.var.cont,
+             strata=NULL,
+             descr=sprintf("Association with %s",main.meta.var.cont))        
+      )
+    })
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+    })
+    
+    heatmap.abund.task = within(heatmap.abund.task,{
+      attr.annot.names=c(main.meta.var.cont)
+    })
+    
+  })
+  
+})
+
+task3.1 = within( task3, {
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "Patient samples only, association with age and A1C"
+  
+  main.meta.var = "A1C.quant"
+  main.meta.var.cont = "A1C"
+  control.meta.var = "age.quant"
+  control.meta.var.cont = "age"
+  
+  test.counts.task = within(test.counts.task, {
+
+    do.deseq2 = T
+    do.adonis = F
+    do.genesel = F
+    do.stabsel = F
+    do.divrich = c()
+    
+    do.plot.profiles.abund=F
+    do.heatmap.abund=F
+    
+    divrich.task = within(divrich.task,{
+      group.attr = NULL
+      counts.glm.task = within(list(),{
+        formula.rhs = paste(control.meta.var.cont,main.meta.var.cont,sep="+")
+      })      
+    })
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = paste(control.meta.var.cont,main.meta.var.cont,sep="+")
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=paste(control.meta.var.cont,main.meta.var.cont,sep="+"),
+             strata=NULL,
+             descr=sprintf("Association with %s and %s",control.meta.var.cont,main.meta.var.cont))
+      )
+    })
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(control.meta.var,main.meta.var))
+    })
+    
+  })
+  
+})
 
 
-
-return (list(task1,task2))
-#return (list(task5))
-#return (list(task2))
+return (list(task1,task2,task3,task3.1))
 }
 
 
@@ -452,14 +589,14 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
 ## a long run. But then incremental.save=T, you can open HTML report file in
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
-                       title="16S Analysis of T1D cohort",
+                       title="Analysis of T1D 16S data",
                        out.file.md="report.md",
                        incremental.save=T)
 

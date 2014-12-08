@@ -1247,7 +1247,7 @@ plot.abund.meta <- function(m_a,
   #TODO: change code in this method to use m_a directly
   data = join_count_df(m_a)
   attr.names = names(m_a$attr)
-
+  
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
   if (is.null(clades.order)) {
     dat$clade = order.factor.by.total(dat$clade,dat[[value.name]])
@@ -1502,8 +1502,8 @@ mgsat.richness.counts <- function(m_a,n.rar.rep=400) {
   #S.ACE & all se.* give NaN often
   x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
               .final=function(x) (x/n.rar.rep)) %dopar% 
-  {estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1"),]}
-  return(list(e=t(x)))
+{estimateR(rrarefy(m_a$count,n.rar))[c("S.obs","S.chao1"),]}
+return(list(e=t(x)))
 }
 
 ## This uses incidence data and therefore should be applicable to both raw count data as 
@@ -1532,20 +1532,20 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400) {
               .combine=plus,
               .export=c("balanced.sample"),
               .final=function(x) (x/n.rar.rep)) %dopar% 
-  {
-    if(do.stratify) {
-      strat.ind = balanced.sample(pool)
-      count = count[strat.ind,]
-      pool=pool[strat.ind]
-    }
-    specpool(rrarefy(count,n.rar),pool=pool)
+{
+  if(do.stratify) {
+    strat.ind = balanced.sample(pool)
+    count = count[strat.ind,]
+    pool=pool[strat.ind]
   }
+  specpool(rrarefy(count,n.rar),pool=pool)
+}
 
-  se.ind = grep(".*[.]se",names(x))
-  e = x[,-se.ind]
-  se = x[,se.ind]
-  names(se) = sub("[.]se","",names(se))
-  return(list(e=e,se=se))
+se.ind = grep(".*[.]se",names(x))
+e = x[,-se.ind]
+se = x[,se.ind]
+names(se) = sub("[.]se","",names(se))
+return(list(e=e,se=se))
 }
 
 ## This returns Hill numbers
@@ -1560,18 +1560,18 @@ mgsat.diversity.alpha.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T) 
   if(is.raw.count.data) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-    {f.div(rrarefy(m_a$count,n.rar))}
+{f.div(rrarefy(m_a$count,n.rar))}
   }
-  else {
+else {
   x = f.div(m_a$count)
-  }
+}
 
-  if(is.raw.count.data) {
-    #this is already unbiased (determenistic wrt rarefication)
-    div.unb.simpson = rarefy(m_a$count,2)-1
-    #div.fisher.alpha = fisher.alpha(m_a$count)
-    x = cbind(x,div.unb.simpson=div.unb.simpson)
-  }
+if(is.raw.count.data) {
+  #this is already unbiased (determenistic wrt rarefication)
+  div.unb.simpson = rarefy(m_a$count,2)-1
+  #div.fisher.alpha = fisher.alpha(m_a$count)
+  x = cbind(x,div.unb.simpson=div.unb.simpson)
+}
 
 return(list(e=x))
 }
@@ -1584,16 +1584,16 @@ mgsat.diversity.beta.dist <- function(m_a,n.rar.rep=400,method="-1") {
   
   x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
               .final=function(x) (x/n.rar.rep)) %dopar% 
-  {
-    betadiver(rrarefy(m_a$count,n.rar),method=method)
-  }
-  return(list(e=x))
+{
+  betadiver(rrarefy(m_a$count,n.rar),method=method)
+}
+return(list(e=x))
 }
 
 mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
-                                       group.attr=NULL,
-                                       betadisper.task=list(),
-                                       adonis.task=NULL) {
+                                 group.attr=NULL,
+                                 betadisper.task=list(),
+                                 adonis.task=NULL) {
   
   require(vegan)
   
@@ -1606,7 +1606,7 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
   report$add.descr(sprintf("Computed beta-diversity matrix using function betadiver {vegan}
                    with method %s, where number of shared species in two sites is a, 
                    and the numbers of species unique to each site are b and c.",
-                   method.help))
+                           method.help))
   
   if(!is.null(group.attr)) {
     betadisp = do.call(betadisper,
@@ -1619,8 +1619,8 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
                        for the analysis of multivariate homogeneity of group dispersions.
                        This is applied to sample beta diversity matrix to analyze it with
                        respect to a grouping variable %s. Arguments for the call are: %s",
-                      group.attr,
-                      arg.list.as.str(betadisper.task)))
+                             group.attr,
+                             arg.list.as.str(betadisper.task)))
     anova.betadisp = anova(betadisp)
     report$add(anova.betadisp)
     res$anova.betadisp = anova.betadisp
@@ -1778,7 +1778,7 @@ mgsat.divrich.report <- function(m_a,
   report$add.package.citation("vegan")
   
   res = new_mgsatres()
-
+  
   if(!is.null(beta.task)) {
     res$beta = do.call(mgsat.diversity.beta,
                        c(list(m_a,
@@ -1788,7 +1788,7 @@ mgsat.divrich.report <- function(m_a,
                        )
     )
   }
-
+  
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
@@ -1851,7 +1851,7 @@ plot.profiles <- function(m_a,
                             geoms=c("bar","violin","boxplot"),
                             dodged=T,
                             faceted=T
-                            ),
+                          ),
                           show.clade.meta.task=list(),
                           feature.descr="abundance",
                           sqrt.scale=F) {
@@ -1894,17 +1894,17 @@ plot.profiles <- function(m_a,
             group.var = NULL
           }
           tryCatchAndWarn({
-          do.call(show.clade.meta,
-                  c(
-                    list(m_a=m_a,
-                         clade.names=clade.names.meta,
-                         x.var=x.var,
-                         group.var=group.var,
-                         value.name=value.name,
-                         vars.descr=feature.descr),
-                    show.clade.meta.task
-                  )
-          )
+            do.call(show.clade.meta,
+                    c(
+                      list(m_a=m_a,
+                           clade.names=clade.names.meta,
+                           x.var=x.var,
+                           group.var=group.var,
+                           value.name=value.name,
+                           vars.descr=feature.descr),
+                      show.clade.meta.task
+                    )
+            )
           })
           
         }
@@ -3771,10 +3771,14 @@ deseq2.report <- function(m_a,
                     result.task)
     )
     res = res[order(res$padj),]  
+    res.descr = paste(capture.output(head(res,0))[1:2],collapse=";")
     res.df = cbind(feature = rownames(res),as.data.frame(res))
     report$add.table(as.data.frame(res.df),
                      caption=paste("DESeq2 results for task:",
-                                   arg.list.as.str(result.task)),
+                                   formula.rhs,
+                                   arg.list.as.str(result.task),
+                                   res.descr,
+                                   sep=";"),
                      show.row.names=F)
     res
   }
@@ -4222,7 +4226,7 @@ test.counts.project <- function(m_a,
   if(do.divrich) {
     if(is.null(divrich.task$beta.task$adonis.task)) {
       if(!is.null(divrich.task$beta.task)) 
-        { divrich.task$beta.task$adonis.task = adonis.task }
+      { divrich.task$beta.task$adonis.task = adonis.task }
       if(!do.adonis) {
         divrich.task$beta.task$adonis.task = NULL
       }
@@ -5495,25 +5499,29 @@ pair.counts <- function(m_a,pair.attr) {
   
 }
 
-report.sample.count.summary <- function(m_a,meta.x.vars,group.var) {
+report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
   report.section = report$get.section()
   
   m_a.summ=make.sample.summaries(m_a)
   
-  report$add.vector(c(summary(m_a.summ$count[,"count.sum"]),caption="Summary of counts per sample"))
+  report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of counts per sample")
   
-  report$add.header("Iterating over meta data variables")
-  report$push.section(report.section)
-  
-  for(x.var in meta.x.vars) {
+  if(!(is.null(meta.x.vars) & is.null(group.var))) {
     
-    show.sample.summaries.meta(m_a=m_a.summ,
-                               x.var=x.var,
-                               group.var=group.var)
+    report$add.header("Iterating over meta data variables")
+    report$push.section(report.section)
+    
+    for(x.var in meta.x.vars) {
+      
+      show.sample.summaries.meta(m_a=m_a.summ,
+                                 x.var=x.var,
+                                 group.var=group.var)
+      
+    }
+    
+    report$pop.section()
     
   }
-  
-  report$pop.section()
   
 }
 

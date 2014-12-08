@@ -362,7 +362,7 @@ gen.tasks.choc <- function() {
           list(formula.rhs=main.meta.var,
                strata="SubjectID",
                descr="Association with therapy status paired by subject"),
-          list(formula.rhs=c("Antibiotic * ", main.meta.var),
+          list(formula.rhs=paste("Antibiotic * ", main.meta.var),
                strata="SubjectID",
                descr="Association with Antibiotic use and therapy status paired by subject")
         )

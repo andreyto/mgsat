@@ -36,6 +36,19 @@ arg.list.as.str<-function(x,collapse=",") {
   )
 }
 
+#' Adopted from phyloseq code
+#' Computes text size of axis label based on the number of
+#' labels.
+calc.text.size <- function(n, mins=0.5, maxs=4, B=6, D=100){
+  # empirically selected size-value calculator.
+  s <- B * exp(-n/D)
+  # enforce a floor.
+  s <- ifelse(s > mins, s, mins)
+  # enforce a max
+  s <- ifelse(s < maxs, s, maxs)
+  return(s)
+}
+
 mget.stack<-function(x,ifnotfound) {
   pars = lapply(rev(sys.parents()),sys.frame)
   #print(pars)
