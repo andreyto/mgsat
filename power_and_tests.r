@@ -114,6 +114,23 @@ drop_columns <- function(df,drop_names=c()) {
   return ( df[,!mask_col_ignore] )
 }
 
+## Return row names as orderd factor (in the original order of rows)
+rownames.ordered <- function(x) {
+  rn = rownames(x)
+  ordered(rn,levels=rn)
+}
+
+## Return column names as orderd factor (in the original order of columns)
+colnames.ordered <- function(x) {
+  rn = colnames(x)
+  ordered(rn,levels=rn)
+}
+
+## Call quantcut and return its result as ordered factor
+quantcut.ordered <- function(...) {
+  ordered(quantcut(...))
+}
+
 count_matr_from_df<-function(dat,col_ignore=c()) {
   mask_col_ignore = names(dat) %in% col_ignore
   as.matrix(dat[!mask_col_ignore])
@@ -1601,11 +1618,12 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
   
   beta.dist = mgsat.diversity.beta.dist(m_a,n.rar.rep=n.rar.rep,method=method)$e
   
-  method.help = grep(sprintf('\"%s\"',method),capture.output(betadiver(help=T)),value=T)
+  method.help = paste(grep(sprintf('\"%s\"',method),capture.output(betadiver(help=T)),value=T),
+                      ", where number of shared species in two sites is a, 
+                      and the numbers of species unique to each site are b and c.",sep="")
   
   report$add.descr(sprintf("Computed beta-diversity matrix using function betadiver {vegan}
-                   with method %s, where number of shared species in two sites is a, 
-                   and the numbers of species unique to each site are b and c.",
+                   with method %s",
                            method.help))
   
   if(!is.null(group.attr)) {
@@ -1627,11 +1645,14 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
     report$add(plot(betadisp),caption=sprintf("Results of betadisper {vegan}. Distances from samples 
                to the group
                centroids are shown in the first two principal coordinates.
-               Groups are defined by the variable %s",group.attr))
+               Groups are defined by the variable %s.
+               Sample beta-diversity matrix was generated with method %s",
+               group.attr,method.help))
   }
   
   if(!is.null(adonis.task)) {
-    adonis.task$data.descr = "Beta-diversity dissimilarity matrix"
+    adonis.task$data.descr = sprintf("Beta-diversity dissimilarity matrix created with method %s",
+                                     method.help)
     tryCatchAndWarn({
       m_a.bd = m_a
       m_a.bd$count = beta.dist
@@ -1721,8 +1742,9 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
       )
       
       report$add(summary(mod),
-                 caption=sprintf("Association of abundance based %s with sample metadata",
-                                 descr)
+                 caption=sprintf("Association of abundance based %s with sample metadata.
+                                 GLM with family %s and formula %s",
+                                 descr,family,form.str)
       )
       
       res[[divrich.name]] = mod
@@ -1739,10 +1761,10 @@ mgsat.plot.richness.samples <- function(rich) {
   var.names = c("chao","jack1","boot")
   var.names.se = var.names
   e = rich$e[,var.names]
-  e$Group = rownames(e)
+  e$Group = rownames.ordered(e)
   
   se = rich$se[,var.names.se]
-  se$Group = rownames(se)
+  se$Group = rownames.ordered(se)
   
   e.m = melt(e,"Group",var.names,variable.name="Index",value.name="e")
   se.m = melt(se,"Group",var.names.se,variable.name="Index",value.name="se")
@@ -1753,7 +1775,7 @@ mgsat.plot.richness.samples <- function(rich) {
     geom_bar(position = dodge,stat="identity",width=0.8) + 
     geom_errorbar(position = dodge,aes(ymin=e-se, ymax=e+se,width=0.5)) +
     xlab("Index name") +
-    ylab("Index value")
+    ylab("Index estimate and standard error")
   
   return(pl)
 }
@@ -1769,31 +1791,34 @@ mgsat.divrich.report <- function(m_a,
                                  do.plot.profiles=T) {
   
   report.section = report$add.header("Abundance and diversity estimates",section.action="push")
+  group.descr = ""
+  group.descr.short = ""
+  if(!is.null(group.descr)) {
+    group.descr = sprintf(" Incidence-based estimates are computed on sample pools split by
+                          metadata attribute %s, and in each repetition, samples are also
+                          stratified to balance the number of samples at each level
+                          of the grouping variable.", group.attr)
+    group.descr.short = sprintf(" for samples grouped by %s",group.attr)
+  }
   report$add.descr(sprintf("Counts are rarefied to the lowest library size, abundance-based and
-                   incidence-based alpha diversity and richness indices are computed.
+                   incidence-based alpha diversity indices and richness estimates are computed.
                    This is repeated multiple times (n=%s), and the results are averaged.
                    Beta diversity matrix is also computed by averaging over multiple 
-                   rarefications.",
-                           n.rar.rep))
+                   rarefications.%s",
+                           n.rar.rep,group.descr))
   report$add.package.citation("vegan")
   
   res = new_mgsatres()
-  
-  if(!is.null(beta.task)) {
-    res$beta = do.call(mgsat.diversity.beta,
-                       c(list(m_a,
-                              n.rar.rep=n.rar.rep,
-                              group.attr=group.attr),
-                         beta.task
-                       )
-    )
-  }
-  
+
+  res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep)
+  report$add(mgsat.plot.richness.samples(res$rich.samples),
+             caption=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
+                             group.descr.short)
+  )
+
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
-  
-  res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep)
   
   res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
   
@@ -1815,14 +1840,11 @@ mgsat.divrich.report <- function(m_a,
     
   }
   
-  report$add(mgsat.plot.richness.samples(res$rich.samples),
-             caption="Incidence based rihcness estimates and corresponding stadard errors"
-  )
-  
   if(do.plot.profiles) {
     do.call(plot.profiles,
             c(list(m_a=m_a.dr,
-                   feature.descr="Abundance-based diversity indices (Hill numbers) and richness estimates",
+                   feature.descr=sprintf("Abundance-based diversity indices (Hill numbers) and richness estimates",
+                                         group.descr.short),
                    value.name="index"),
               plot.profiles.task
             )
@@ -1832,6 +1854,16 @@ mgsat.divrich.report <- function(m_a,
   report$push.section(report.section)
   mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
   report$pop.section()
+    
+  if(!is.null(beta.task)) {
+    res$beta = do.call(mgsat.diversity.beta,
+                       c(list(m_a,
+                              n.rar.rep=n.rar.rep,
+                              group.attr=group.attr),
+                         beta.task
+                       )
+    )
+  }
   
   report$pop.section()
   

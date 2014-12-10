@@ -19,19 +19,19 @@ load.meta.rsv <- function(file.name,batch=NULL,aggr.var=NULL) {
       meta$Birth.Date
   )
     
-  meta$Age.quant = quantcut(meta$Age)
+  meta$Age.quant = quantcut.ordered(meta$Age)
   
-  meta$Has.Pets = meta$no_pets == 0
+  meta$Has.Pets = factor(ifelse(meta$no_pets == 0,"Yes","No"))
   
-  meta$Antibiotics.Pregnancy = meta$antibiotics_pregnancy != 0
+  meta$Antibiotics.Pregnancy = factor(ifelse(meta$antibiotics_pregnancy != 0,"Yes","No"))
   
-  meta$Antibiotics.Baby = meta$antibiotics_baby != 0
+  meta$Antibiotics.Baby = factor(ifelse(meta$antibiotics_baby != 0,"Yes","No"))
   
-  meta$Breastfed = meta$breastfed != 3
+  meta$Breastfed = factor(ifelse(meta$breastfed != 3,"Yes","No"))
   
   meta$Delivery.Type = factor(c("Cesarean","Vaginal")[meta$delivery_type])
   
-  meta$Gender = meta$sex
+  meta$Gender = factor(ifelse(toupper(meta$sex) == "M","Male","Female"))
   
   row.names(meta) = meta$SampleID
   
@@ -66,7 +66,7 @@ gen.tasks.rsv <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     
-  taxa.levels = c(2,3,6)
+  taxa.levels = c("otu",2,6)
   
   descr = "All Samples"
   
@@ -75,8 +75,8 @@ gen.tasks.rsv <- function() {
   
   read.data.task = within(read.data.task, {
     taxa.summary.file = "ac29e96892a4ca7dd9eef7b7c4ae2280.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-    otu.shared.file=NULL
-    cons.taxonomy.file=NULL
+    otu.shared.file="6b9bc106eaa592c6c1a155975a687caf.files_x1.sorted.0.03.shared"
+    cons.taxonomy.file="211fbadafd08617445b71fd1ed94e720.files_x1.sorted.0.03.cons.taxonomy"
     meta.file="TH_controls_metadata.txt"
     load.meta.method=load.meta.rsv
     load.meta.options=list()    
@@ -107,7 +107,7 @@ task1 = within( task0, {
     
     do.deseq2 = T
     do.adonis = T
-    do.genesel = F
+    do.genesel = T
     do.stabsel = T
     do.glmer = F
     #do.divrich = c()
@@ -165,7 +165,7 @@ task1 = within( task0, {
 
 
 
-tasks = foreach(main.meta.var.loop = c("Delivery.Type","Has.Pets","Antibiotics.Pregnancy")) %do%
+tasks = foreach(main.meta.var.loop = c("Breastfed","Delivery.Type","Has.Pets","Antibiotics.Pregnancy")) %do%
 {
                   within( task0, {
   
@@ -242,7 +242,8 @@ tasks = foreach(main.meta.var.loop = c("Delivery.Type","Has.Pets","Antibiotics.P
 })
 
 }
-return (c(list(task1),tasks))
+return (list(tasks[[1]]))
+#return (c(list(task1),tasks))
 }
 
 
@@ -277,7 +278,7 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=F)
+set_trace_options(try.debug=T)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down

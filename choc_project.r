@@ -212,7 +212,7 @@ gen.tasks.choc <- function() {
       divrich.task = within(divrich.task,{
         group.attr = NULL
         counts.glm.task = NULL
-        do.plot.profiles = T
+        do.plot.profiles = F
       })
       
       plot.profiles.task = within(plot.profiles.task, {

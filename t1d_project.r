@@ -226,16 +226,23 @@ gen.tasks.t1d <- function() {
 
   task0 = within( mgsat.16s.task.template, {
     
-  taxa.levels = c(6,"otu")
+  taxa.levels = c(6)
   
   descr = "All samples, aggregated by AliquotID"
   
   main.meta.var = "T1D"
   
-  read.data.task = within(read.data.task, {
+  read.data.task.yap = within(read.data.task, {
     taxa.summary.file = "a93eeedeef2878be17d30f27b1b0de1c.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
     otu.shared.file="d9f44114ac6369cc66978002228bc5d3.files_x1.sorted.0.03.shared"
     cons.taxonomy.file="4272870500ad07a7270f9772581fe7fe.files_x1.sorted.0.03.cons.taxonomy"
+  })
+
+  read.data.task.mothur.cdhit = within(read.data.task, {
+    taxa.summary.file = "stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
+  })
+  
+  read.data.task = within(read.data.task.mothur.cdhit, {
     meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922.tsv"
     load.meta.method=load.meta.t1d
     load.meta.options=list(aggr.var="AliquotID")    
@@ -553,7 +560,7 @@ task3.1 = within( task3, {
   
 })
 
-
+return (list(task1))
 return (list(task1,task2,task3,task3.1))
 }
 
