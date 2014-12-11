@@ -166,7 +166,7 @@ summary.meta.t1d <- function(m_a) {
   
   report$add.printed(summary(meta),caption="Summary of metadata variables")
   
-  xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID")
+  xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID","~AA+T1D")
   for(xtabs.formula in xtabs.formulas) {
     fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
     report$add(fact.xtabs,caption=paste("Sample cross tabulation",xtabs.formula))
@@ -226,7 +226,7 @@ gen.tasks.t1d <- function() {
 
   task0 = within( mgsat.16s.task.template, {
     
-  taxa.levels = c(6)
+  taxa.levels = c(2,6,"otu")
   
   descr = "All samples, aggregated by AliquotID"
   
@@ -242,8 +242,8 @@ gen.tasks.t1d <- function() {
     taxa.summary.file = "stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
   })
   
-  read.data.task = within(read.data.task.mothur.cdhit, {
-    meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922.tsv"
+  read.data.task = within(read.data.task.yap, {
+    meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922_batches.tsv"
     load.meta.method=load.meta.t1d
     load.meta.options=list(aggr.var="AliquotID")    
   })
@@ -266,20 +266,7 @@ gen.tasks.t1d <- function() {
     meta.x.vars = c("Timestamp")
     group.var = c(main.meta.var)
   })
-  
-  #DEBUG:
-  #get.taxa.meta.aggr<-function(taxa.meta) { 
-  #  d = get.taxa.meta.aggr.base(taxa.meta)
-  #  d$data = d$data[sample.int(nrow(d$data),40),]
-  #  d
-  #}
 
-  #get.taxa.meta.aggr<-function(taxa.meta) { 
-  #  taxa.meta.aggr = get.taxa.meta.aggr.base(taxa.meta)
-  #  taxa.meta.aggr$data = subset(taxa.meta.aggr$data,T1D=="T1D")  
-  #  return (taxa.meta.aggr)
-  #}
-    
   test.counts.task = within(test.counts.task, {
     
     norm.count.task = within(norm.count.task, {
@@ -560,8 +547,159 @@ task3.1 = within( task3, {
   
 })
 
-return (list(task1))
-return (list(task1,task2,task3,task3.1))
+task4 = within( task1, {
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "Control samples only, association with Auto Antibody status (AA)"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$T1D!="T1D" & m_a$attr$AA %in% c("AA+","AA-")))
+    return (m_a)
+  }
+    
+  main.meta.var = "AA"
+  main.meta.var.cont = "age" 
+  
+  test.counts.task = within(test.counts.task, {
+    
+    norm.count.task = within(norm.count.task, {
+      method="norm.ihs.prop"
+    })
+    
+    divrich.task = within(divrich.task,{
+      group.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var
+      })      
+    })
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var
+    })
+    
+    genesel.task = within(genesel.task, {
+      resp.attr = main.meta.var
+    })
+    
+    stabsel.task = within(stabsel.task, {
+      resp.attr=main.meta.var
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=main.meta.var,
+             strata=NULL,
+             descr=sprintf("Association with %s",main.meta.var.cont))        
+      )
+    })
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+    })
+    
+    heatmap.abund.task = within(heatmap.abund.task,{
+      attr.annot.names=c(main.meta.var)
+    })
+    
+  })
+  
+})
+
+task5.1 = within( task1, {
+  descr = "Control samples with Auto Antibody status (AA) AA- vs T1D samples with A1C <= 7.3"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=((m_a$attr$T1D!="T1D" & m_a$attr$AA == "AA-") | 
+                                   (m_a$attr$T1D=="T1D" & m_a$attr$A1C <= 7.3)))
+    return (m_a)
+  }  
+})
+
+task5.2 = within( task1, {
+  descr = "Control samples with Auto Antibody status (AA) AA- vs T1D samples with AA+"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=((m_a$attr$T1D!="T1D" & m_a$attr$AA == "AA-") | 
+                                   (m_a$attr$T1D=="T1D" & m_a$attr$AA == "AA+")))
+    return (m_a)
+  }  
+})
+
+extra.tasks = foreach(task=list(task5.1,task5.2)) %do% {
+  within( task, {
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  taxa.levels = c(2,6)
+  
+  main.meta.var = "T1D"
+  main.meta.var.cont = "A1C" 
+  
+  test.counts.task = within(test.counts.task, {
+    
+    do.deseq2 = T
+    do.adonis = F
+    do.genesel = F
+    do.stabsel = T
+    do.divrich = c()
+    do.plot.profiles.abund=F
+    do.heatmap.abund=F    
+    
+    norm.count.task = within(norm.count.task, {
+      method="norm.ihs.prop"
+    })
+    
+    divrich.task = within(divrich.task,{
+      group.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var
+      })      
+    })
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var
+    })
+    
+    genesel.task = within(genesel.task, {
+      resp.attr = main.meta.var
+    })
+    
+    stabsel.task = within(stabsel.task, {
+      resp.attr=main.meta.var
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=main.meta.var,
+             strata=NULL,
+             descr=sprintf("Association with %s",main.meta.var))        
+      )
+    })
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+    })
+    
+    heatmap.abund.task = within(heatmap.abund.task,{
+      attr.annot.names=c(main.meta.var)
+    })
+    
+  })
+  
+})
+}
+
+return (list(task1,task2,task3,task3.1,task4))
 }
 
 

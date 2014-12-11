@@ -66,7 +66,7 @@ gen.tasks.rsv <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     
-  taxa.levels = c("otu",2,6)
+  taxa.levels = c(2,6,"otu")
   
   descr = "All Samples"
   
@@ -242,8 +242,7 @@ tasks = foreach(main.meta.var.loop = c("Breastfed","Delivery.Type","Has.Pets","A
 })
 
 }
-return (list(tasks[[1]]))
-#return (c(list(task1),tasks))
+return (c(list(task1),tasks))
 }
 
 
@@ -278,7 +277,7 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
@@ -287,7 +286,7 @@ set_trace_options(try.debug=T)
 report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of RSV Healthy Controls 16S data",
                        out.file.md="report.md",
-                       incremental.save=T)
+                       incremental.save=F)
 
 
 res = proc.project(

@@ -4294,6 +4294,7 @@ test.counts.project <- function(m_a,
   
   make.global(m_a.norm)
   make.global(m_a)
+  stop("DEBUG")
   
   if(do.genesel) {
     tryCatchAndWarn({ 
@@ -5497,7 +5498,7 @@ stab_sel_genesel <- function(x,
   return (list(stab_feat=rnk.vals,gsel=gsel))
 }
 
-feat_sel_samr <- function(m_a.abs) {
+feat.sel.samr <- function(m_a.abs) {
   library(samr) #Tibshirani's package for feature selection in microarrays and RNASeq
   ##TODO: study assumptions of this method on sequence counts. The help page mentions only RNASeq.
   ##Something is probably not right because it only reports "genes down" and empty for "genes up" for
