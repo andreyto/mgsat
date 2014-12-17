@@ -160,11 +160,15 @@ join_count_df<-function(m_a) {
   
 }
 
-as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T) {
+as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
+  
+  if(round.to.int) {
+    m_a$count = round(m_a$count)
+  }
+  
   dds <- DESeqDataSetFromMatrix(countData = t(m_a$count),
                                 colData = m_a$attr,
                                 design = as.formula(paste("~",formula.rhs)))  
-  
   if(force.lib.size) {
     ## from phyloseq vignette at 
     ## http://www.bioconductor.org/packages/release/bioc/vignettes/phyloseq/inst/doc/phyloseq-mixture-models.html
@@ -384,11 +388,13 @@ norm.count <- function(x, ...) {
 }
 
 norm.count.matrix <- function(count,method,drop.features=c("other"),method.args=list()) {
+  if( ! (method %in% c("norm.ident","ident")) ) {
   count = do.call(method,c(
     list(count),
     method.args
   )
   )
+  }
   if(!is.null(drop.features)) {
     count = count[,!colnames(count) %in% drop.features]
   }
@@ -451,7 +457,7 @@ count.filter.m_a<-function(m_a,
   
   cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
   
-  if (!all(cnt_col_other[,1]==0) && !is.null(other_cnt)) {
+  if (!all(abs(cnt_col_other[,1])<=sqrt(.Machine$double.eps)) && !is.null(other_cnt)) {
     colnames(cnt_col_other) = c(other_cnt)
     if (other_cnt %in% colnames(cnt)) {
       cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[,other_cnt]
@@ -2676,6 +2682,8 @@ summary.meta.method.default <- function(taxa.meta) {
 
 mgsat.16s.task.template = within(list(), {
   
+  label.base = "16s"
+  
   main.meta.var = "Group"
   
   read.data.method=read.data.project.yap  
@@ -2693,7 +2701,7 @@ mgsat.16s.task.template = within(list(), {
   
   get.taxa.meta.aggr<-function(m_a) { return (m_a) }
   
-  count.filter.sample.options=list(min_row_sum=400,max_row_sum=100000)
+  count.filter.sample.options=list(min_row_sum=400,max_row_sum=400000)
   
   summary.meta.method=summary.meta.method.default
   
@@ -2768,9 +2776,17 @@ mgsat.16s.task.template = within(list(), {
     )
     
     
-    genesel.task = list(
-      resp.attr = main.meta.var
-    )
+    genesel.task = within(list(), {
+      group.attr = main.meta.var
+      genesel.param = within(list(), {
+        block.attr = NULL
+        type="unpaired"
+        replicates=400
+        samp.fold.ratio=0.5
+        maxrank=20
+        comp.log.fold.change=T
+      })
+    })
     
     select.samples.task = list (
       n.species = 20,
@@ -2937,7 +2953,7 @@ proc.project <- function(
         
         res.level = new_mgsatres(taxa.level=taxa.level)
         
-        label = paste("16s","l",taxa.level,sep=".",collapse=".")
+        label = paste(label.base,"l",taxa.level,sep=".",collapse=".")
         report$add.header(paste("Taxonomic level:",taxa.level))
         report$push.section(report.section) #4 {
         
@@ -3433,8 +3449,8 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
     if(do.genesel) {
       ## We need to use row-normalized counts here, because we perform Wilcox test
       ## inside, and could false significance due to different depth of sequencing
-      res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
-      res$stability.genesel = res.stab_sel_genesel
+      res.stab.sel.genesel = stab.sel.genesel(m_a$count,m_a$attr[,resp.attr])
+      res$stability.genesel = res.stab.sel.genesel
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcoxon) is applied to each clade on random
@@ -3442,14 +3458,14 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
                        Monte Carlo procedure. The top clades of the consensus ranking
                        are returned, along with the p-values computed on the full
                        original dataset (with multiple testing correction).")
-      report$add.table(res.stab_sel_genesel$stab_feat,
+      report$add.table(res.stab.sel.genesel$stab_feat,
                        caption=
                          paste("GeneSelector stability ranking for response ",resp.attr)
       )
       report$add.package.citation("vegan")
       report$add(
         plot.features.mds(m_a,species.sel=(colnames(m_a$count) %in% 
-                                             res.stab_sel_genesel$stab_feat$name),
+                                             res.stab.sel.genesel$stab_feat$name),
                           sample.group=m_a$attr[,resp.attr]),
         caption="metaMDS plot of abundance profile. 'x' marks top selected clades, 'o' marks samples"
       )
@@ -3786,13 +3802,15 @@ test.counts.choc.Nov_2013_gran_proposal <- function(data,attr.names,label,alpha=
 deseq2.report <- function(m_a,
                           formula.rhs,
                           test.task=list(),
-                          result.tasks=list(list())
+                          result.tasks=list(list()),
+                          round.to.int=T
 ) {
   report.section = report$add.header("DESeq2 tests and data normalization",section.action="push")
   report$add.package.citation("DESeq2")
   dds = as.dds.m_a(m_a=m_a,
                    formula.rhs=formula.rhs,
-                   force.lib.size=T)
+                   force.lib.size=T,
+                   round.to.int=round.to.int)
   dds = do.call(DESeq,
                 c(list(object=dds),
                   test.task)
@@ -4001,49 +4019,66 @@ stabsel.report <- function(m_a,
 }
 
 
-genesel.stability.report <- function(m_a,resp.attr) {
+genesel.stability.report <- function(m_a,group.attr,genesel.param=list()) {
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
   
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
-  report$add.descr("Univariate test (Wilcoxon rank-sum) is applied to each feature (clade, gene)
-                   on random
+  report$add.descr(sprintf("Wilcoxon test (rank-sum for independent samples and signed-rank for paired samples) 
+                   is applied to each feature (clade, gene) on random
                    subsamples of the data. Consensus ranking is found with a
-                   Monte Carlo procedure. The top clades of the consensus ranking
+                   Monte Carlo procedure. Clades ordered according to the consensus ranking
                    are returned, along with the p-values, statistic and effect size 
                   computed on the full
-                   original dataset. P-values are reported with and without the 
+                   original dataset. In a special case when no replications are requested,
+                   features are ordered by the adjuested p-value. 
+                   P-values are reported with and without the 
                    multiple testing correction Benjamini & Hochberg. The effect sizes
-                   for Wilcoxon rank-sum test are reported as: common-language effect
-                   size (proportion of pairs where observations from the first group
-                   are larger than observations from the second group; no effect
+                   for Wilcoxon tests are reported as: common-language effect
+                   size (proportion of pairs where observations from the second group
+                   are larger than observations from the first group; no effect
                    corresponds to 0.5); rank-biserial
                    correlation (common language effect size minus its complement; no
                    effect corresponds to 0; range is [-1;1]) and
                    absolute value of r (as defined in Cohen, J. (1988). Statistical power 
-                   analysis for the behavioral sciences (2nd ed.). Hillsdale, NJ: Erlbaum.)
-                   ")
+                   analysis for the behavioral sciences (2nd ed.). Hillsdale, NJ: Erlbaum.).
+                   For paired samples, when calculating the common language effect size,
+                   only paired observations are used, and one half of the number of ties is 
+                   added to the numerator (Grissom, R. J., and J. J. Kim. \"Effect Sizes for Research: Univariate 
+                   and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)).
+                   Logarithm of the fold change in base 2 is also reported if requested.
+                   Groups are ordered as %s.
+                   ",paste(levels(m_a$attr[,group.attr]),collapse=",")))
   
+  report$add.descr(sprintf("Stability selection parameters are: %s",arg.list.as.str(genesel.param)))
+  if(!is.null(genesel.param$block.attr)) {
+    report$add.descr(sprintf("Samples are paired according to attribute %s",genesel.param$block.attr))
+  }
   
-  res.stab_sel_genesel = stab_sel_genesel(m_a$count,m_a$attr[,resp.attr])
-  report$add.printed(summary(m_a$attr[,resp.attr]),
-                     caption=paste("Summary of response variable",resp.attr))
+  res.stab.sel.genesel = do.call(
+    stab.sel.genesel,
+    c(list(m_a,group.attr=group.attr),
+      genesel.param)
+  )
   
-  report$add.table(res.stab_sel_genesel$stab_feat,
+  report$add.printed(summary(m_a$attr[,group.attr]),
+                     caption=paste("Summary of response variable",group.attr))
+  
+  report$add.table(res.stab.sel.genesel$stab_feat,
                    caption=
-                     paste("GeneSelector stability ranking for response ",resp.attr))
+                     paste("GeneSelector stability ranking for response ",group.attr))
   
   report$add.package.citation("vegan")
   m_a.mds = m_a
-  m_a.mds$count = m_a.mds$count[,res.stab_sel_genesel$stab_feat$name]
+  m_a.mds$count = m_a.mds$count[,res.stab.sel.genesel$stab_feat$name]
   report$add(
-    plot.features.mds(m_a.mds,sample.group=m_a$attr[,resp.attr]),
+    plot.features.mds(m_a.mds,sample.group=m_a$attr[,group.attr]),
     caption="metaMDS plot of clades selected by GeneSelector. 'x' marks clades, 'o' marks samples"
   )
   
-  return (res.stab_sel_genesel)
+  return (res.stab.sel.genesel)
   
 }
 
@@ -4214,7 +4249,7 @@ norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL
   }
   else {
     
-    descr = paste("Counts are not normalized",descr)
+    descr = paste("Counts are not normalized and no features are dropped",descr)
     m_a.norm = m_a
     
   }
@@ -4253,6 +4288,8 @@ test.counts.project <- function(m_a,
   
   report.section = report$add.header("Data analysis",section.action="push")
   
+  make.global(m_a)
+  
   res = new_mgsatres()
   
   if(do.divrich) {
@@ -4278,6 +4315,8 @@ test.counts.project <- function(m_a,
                               "feature")
   }
   
+  make.global(m_a)
+  
   if(do.deseq2) {
     tryCatchAndWarn({ 
       res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
@@ -4293,8 +4332,6 @@ test.counts.project <- function(m_a,
                                 norm.count.task)
   
   make.global(m_a.norm)
-  make.global(m_a)
-  stop("DEBUG")
   
   if(do.genesel) {
     tryCatchAndWarn({ 
@@ -5410,13 +5447,23 @@ wilcox.eff.size.r <-function(pval, n){
   return(abs(r))
 }
 
-wilcox.eff.size <- function(stat,pval,group) {
-  group = factor(group)
-  taby <- table(group)
-  stopifnot(nlevels(group) == 2)
-  npairs = prod(taby)
-  nsamp = sum(taby)
-  common.lang = stat/npairs
+## x is the sample matrix, with samples in COLUMNS
+wilcox.eff.size <- function(x,stat,pval,group=NULL,type="unpaired") {
+  nsamp = ncol(x)  
+  if(type == "unpaired") {
+    group = factor(group)
+    taby <- table(group)
+    stopifnot(nlevels(group) == 2)
+    npairs = prod(taby)
+    common.lang = stat/npairs
+  }
+  else if(type == "onesample") {
+    common.lang = (rowSums(x > 0) + 0.5*rowSums(x==0))/
+      ncol(x)
+  }
+  else {
+    stop("type parameter must be one of c('unpaired','onesample')")
+  }
   rbs = 2*common.lang - 1
   r = wilcox.eff.size.r(pval,nsamp)
   return (data.frame(common.lang.eff.size=common.lang,
@@ -5425,52 +5472,155 @@ wilcox.eff.size <- function(stat,pval,group) {
   )
 }
 
+
+RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample"), 
+          pvalues = FALSE, gene.names = NULL, ...) 
+{
+  mode(x) <- "numeric"
+  if (length(y) != ncol(x)) 
+    stop("Length of y is not equal to the number of columns of the expression matrix \n.")
+  type <- match.arg(type)
+  if (!is.element(type, eval(formals(RankingWilcoxonAT)$type))) 
+    stop("Argument 'type' must be one of 'unpaired', 'paired' or 'onesample'. \n")
+  y <- as.factor(y)
+  if (type == "unpaired") {
+    if (nlevels(y) != 2) 
+      stop("Type has been chosen 'unpaired', but y has not exactly two levels ! \n")
+    taby <- table(y)
+    levy <- names(taby)[which.max(taby)]
+    ind <- (y == levy)
+    Rx <- apply(x, 1, rank)
+    r1 <- colSums(Rx[ind, , drop = FALSE]) - sum(1:max(taby))
+    e1 <- taby[1] * taby[2]/2
+    if (pvalues) {
+      maxr <- sum((min(taby) + 1):length(y)) - sum(1:sum(ind))
+      pvals <- 2 * pwilcox(ifelse(r1 < e1, maxr - r1, r1), 
+                           taby[1], taby[2], lower.tail = FALSE)
+    }
+    else pvals <- rep(NA, nrow(x))
+  }
+  if (type == "paired") {
+    tab <- table(y)
+    if (length(tab) != 2) 
+      stop("Type has been chosen 'paired', but y has not exactly two levels. \n")
+    xx1 <- x[, 1:tab[1]]
+    xx2 <- x[, -c(1:tab[1])]
+    if (tab[1] != tab[2] || length(unique(y[1:tab[1]])) != 
+          1 | length(unique(y[-c(1:tab[1])])) != 1) 
+      stop("Incorrect coding for type='paired'. \n")
+    diffxx <- xx2 - xx1
+    r1 <- apply(diffxx, 1, function(z) {
+      zz <- rank(abs(z))
+      sum(zz[z > 0])
+    })
+    ly <- length(y)
+    e1 <- (ly/2) * (ly/2 + 1)/4
+    if (pvalues) {
+      maxr <- sum(1:(ly/2))
+      pvals <- 2 * psignrank(ifelse(r1 < e1, maxr - r1, 
+                                    r1), n = ly/2, lower.tail = FALSE)
+    }
+    else pvals <- rep(NA, nrow(x))
+  }
+  if (type == "onesample") {
+    if (length(unique(y)) != 1) 
+      warning("Type has been chosen 'onesample', but y has more than one level. \n")
+
+    r1 <- apply(x, 1, function(z) {
+      z = z[z!=0]
+      zz <- rank(abs(z))
+      sum(zz[z > 0])
+    })
+    ly <- rowSums(x!=0)
+    e1 <- (ly) * (ly + 1)/4
+    #maxr <- sum(1:ly)
+    maxr = (1+ly)*ly/2
+    if (pvalues) {
+      pvals <- 2 * psignrank(ifelse(r1 < e1, maxr - r1, 
+                                    r1), n = ly, lower.tail = FALSE)
+    }
+    else pvals <- rep(NA, nrow(x))
+  }
+  statistic <- r1
+  ranking <- rank(-abs(r1 - e1), ties.method = "first")
+  if (!is.null(gene.names)) 
+    names(pvals) <- names(statistic) <- gene.names
+  else {
+    if (!is.null(rownames(x))) 
+      names(pvals) <- names(statistic) <- rownames(x)
+  }
+  new("GeneRanking", x = x, y = as.factor(y), statistic = statistic, 
+      ranking = ranking, pval = pvals, type = type, method = "Wilcoxon")
+}
+
+
 ## It is assumed that the count matrix x is transformed/normalized already
 ## e.g. with decostand(ihs(count),method="standardize",MARGIN=2),
 ## otherwise set tran_norm to TRUE and the command above will be
 ## applied
-stab_sel_genesel <- function(x,
-                             y,
-                             samp_in_col=F,
-                             tran_norm=F,
+stab.sel.genesel <- function(m_a,
+                             group.attr,
+                             block.attr=NULL,
                              type="unpaired",
                              replicates=400,
-                             fold_ratio=0.5,
+                             samp.fold.ratio=0.5,
                              maxrank=20,
-                             samp_filter=NULL) {
+                             comp.log.fold.change=F
+                             ) {
   library(GeneSelector)
-  if(!samp_in_col) {
-    x = t(x)
+  
+  if(type=="paired") {
+    type="onesample"
+    m_a.c = sample.contrasts(m_a, group.attr = group.attr, block.attr = block.attr)
+    x = m_a.c$count  
+    x = x + matrix(rnorm(prod(dim(x)),0,.Machine$double.eps*100),nrow=nrow(x),ncol=ncol(x))
+    y.relev = rep(1,nrow(x))
   }
-  if(!is.null(samp_filter)) {
-    x = x[,samp_filter]
-    y = y[samp_filter]
-  }
-  if(tran_norm) {
-    x = decostand(ihs(x),method="standardize",MARGIN=1)
+  else {
+    x = m_a$count
+    y = m_a$attr[,group.attr]
+    stopifnot(length(levels(y))==2)
+    ##make last level to be first, so that effect sizes and statistics
+    ##are computed for last over first
+    y.relev = relevel(y,levels(y)[length(levels(y))])
   }
   
-  y = factor(y)
+  x = t(x)
   
-  ranking_methods = c(RankingWilcoxon,RankingLimma,RankingFC)
-  ranking_method = RankingWilcoxon
   n_feat = nrow(x)
   n_samp = ncol(x)
-  #contrary to the help page, does not work when y is a factor - need to convert
-  fold_matr = GenerateFoldMatrix(y = as.numeric(y), k=trunc(n_samp*(1-fold_ratio)),replicates=replicates)
-  stopifnot(type=="unpaired") #effect size not implemented
-  rnk = ranking_method(x,y,type=type,pvalues=T)
+
+  ranking_methods = c(RankingWilcoxon,RankingLimma,RankingFC)
+  ranking_method = RankingWilcoxon
+  
+  rnk = ranking_method(x,y.relev,type=type,pvalues=T)
+  
   rnk.vals = toplist(rnk,n_feat)
   rnk.vals[rnk.vals$index,] = rnk.vals
   rnk.vals$pval.adjusted = p.adjust(rnk.vals$pval,method="BH")
   rnk.vals = cbind(data.frame(name=rownames(x)),rnk.vals)
   
   rnk.vals = cbind(rnk.vals,
-                   wilcox.eff.size(stat=rnk.vals$statistic,
+                   wilcox.eff.size(x=x,
+                                   stat=rnk.vals$statistic,
                                    pval=rnk.vals$pval,
-                                   group=y))
-  #make.global(rnk)
-  #make.global(pvals.adjusted)
+                                   group=y.relev,
+                                   type=type))
+  if(comp.log.fold.change) {
+    rnk.vals = cbind(rnk.vals,
+                   log.fold.change=t(group.log.fold.change(m_a$count,m_a$attr[,group.attr],base=2))
+    )
+  }
+  #make.global(rnk.vals)
+  #make.global(y.relev)
+  #make.global(type)
+  
+  #contrary to the help page, does not work when y is a factor - need to convert
+  fold_matr = GenerateFoldMatrix(y = as.numeric(y.relev), 
+                                 k=trunc(n_samp*(1-samp.fold.ratio)),
+                                 replicates=replicates,
+                                 type=type)
+  
   rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
   #make.global(rep_rnk)
   #toplist(rep_rnk,show=F)
@@ -5481,7 +5631,8 @@ stab_sel_genesel <- function(x,
   ### for a graphical display
   #plot(stab_ovr)
   #aggr_rnk = AggregateSimple(rep_rnk, measure="mode")
-  aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
+  #aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
+  aggr_rnk = AggregateSVD(rep_rnk)
   #make.global(aggr_rnk)
   #toplist(aggr_rnk)
   #gsel = GeneSelector(list(aggr_rnk), threshold = "BH", maxpval=0.05)
@@ -5524,12 +5675,72 @@ lmerCI <- function(obj, rnd = 2) {
   out
 }
 
-
-pair.counts <- function(m_a,pair.attr) {
-  m_m = melt(m_a$count,varnames=c("SampleID","clade"),value.name="cnt")
-  attr_sub = m_a$attr[,c("SampleID",pair.attr)]
-  m_m = join(m_m,attr_sub,by="SampleID",type="inner",match="first")
+## Combine samples within blocks as sum of values within each block
+## weighed by contrasts coefficients corresponding to levels of
+## group variable. Contrasts must be a named vector with elements 
+## matching levels of the group variable. Levels that are absent from
+## the contrasts argument are weighed as zero.
+## Samples within each block are first averaged for each level of the
+## group variable. If any of the non-zero contrast levels is not matched
+## (missing from data), the entire block is dropped.
+## Default value of contrasts will be set to result in (last-first) levels.
+## Value: m_a object; its attr is currently set to NULL.
+sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL) {
+  #m_m = melt(m_a$count,varnames=c("SampleID","clade"),value.name="cnt")
+  #attr_sub = m_a$attr[,c("SampleID",pair.attr)]
+  #m_m = join(m_m,attr_sub,by="SampleID",type="inner",match="first")
+  attr.names = c(block.attr,group.attr)
+  attr = m_a$attr[,attr.names]
+  if(is.null(contrasts)) {
+    lev = levels(factor(attr[,group.attr]))
+    #default contrast is like in DESeq2 - (last - first) levels
+    lev = c(lev[length(lev)],lev[1])
+    contrasts = c(1,-1)
+    names(contrasts) = lev
+  }
+  #ord = order(attr[,block.attr],attr[,group.attr])
+  #dat = cbind(attr[ord,],m_a$count[ord,])
+  dat = cbind(attr,m_a$count)
+  attr.mask = names(dat) %in% attr.names 
+  mean.counts = function(x) {
+    colMeans(x[,!attr.mask,drop=F])
+    #cbind(x[1,attr.mask,drop=F],colMeans(x[,!attr.mask,drop=F]))
+  }
+  dat = ddply(dat,c(block.attr,group.attr),mean.counts)
   
+  ## convert contrasts to data.frame for joining
+  contrasts = data.frame(names(contrasts),contrasts)
+  contr.attr = ".contrast"
+  names(contrasts) = c(group.attr,contr.attr)
+  
+  ## this will drop all group levels not in contrasts
+  dat = join(dat,contrasts,by=group.attr,type="inner")
+
+
+  attr.mask = names(dat) %in% c(attr.names,contr.attr)
+  dat = cbind(dat[,block.attr,drop=F],
+                    dat[,!attr.mask,drop=F]*dat[,contr.attr,drop=T])
+
+  attr.mask = names(dat) %in% c(attr.names,contr.attr)
+  
+  n.contr = nrow(contrasts)
+
+  ## if() will drop all blocks where not all contrasts matched
+  dat = ddply(dat,c(block.attr),
+                    function(x) {
+                    if(nrow(x) == n.contr) {
+                    colSums(x[,!attr.mask,drop=F])
+                    }
+                    else {
+                      NULL
+                    }
+                    }
+  )
+  
+  rownames(dat) = dat[,block.attr]
+  
+  attr.mask = names(dat) %in% c(attr.names,contr.attr)
+  list(count=as.matrix(dat[,!attr.mask]),attr=NULL)
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
@@ -5537,7 +5748,21 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
   
   m_a.summ=make.sample.summaries(m_a)
   
-  report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of counts per sample")
+  report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of total counts per sample")
+  
+  if(!is.null(group.var)) {
+    report$add(kruskal.test(m_a.summ$count[,"count.sum"],m_a.summ$attr[,group.var]),
+               caption=paste("Test for difference of total counts per sample across groups defined by",
+                             group.var)
+    )
+    group.mean = count.summary(m_a$count,mean,m_a$attr[,group.var],format="matrix")
+    report$add(friedman.test(t(group.mean)),
+               caption=paste("Test for difference in group means across all features, where groups
+               are defined by",group.var))
+    report$add.vector(rowMeans(group.mean),
+                      caption=paste("Mean values of group means across all features, where groups
+               are defined by",group.var))
+  }
   
   if(!(is.null(meta.x.vars) & is.null(group.var))) {
     
@@ -6040,41 +6265,30 @@ proc.mr_oralc <- function() {
 }
 
 
-count.summary <- function(count,fun,group) {
+count.summary <- function(count,fun,group,format="data.frame") {
   group = as.data.frame(group)
   group.summ = ddply(cbind(as.data.frame(count),group),names(group),colwise(fun))
-  return (group.summ)
+  if(format == "data.frame") {
+    return (group.summ)
+  }
+  else if(format == "matrix") {
+    x = as.matrix(group.summ[,-1])
+    rownames(x) = group.summ[,1]
+    return (x)
+  }
+  else stop(paste("Unknown format argument value",format))
 }
 
 group.mean.ratio <- function(count,group) {
   group.mean = count.summary(count,mean,group)
   stopifnot(dim(group.mean)[1] == 2)
-  x = (group.mean[1,-1] / group.mean[2,-1])
-  row.names(x) = paste(group.mean[,1],collapse=".")
-  return (x)
+  x = (group.mean[2,-1] / (group.mean[1,-1]+.Machine$double.eps))
+  row.names(x) = paste(group.mean[2,1],group.mean[1,1],sep=".by.")
+  return (as.matrix(x))
 }
 
-read.pieper.t1d <- function(file.name="aim3/September 28 analysis_T1D.txt") {
-  
-  file_name = file.name
-  #data =read.csv(file_name, as.is=TRUE, header=TRUE,stringsAsFactors=T)
-  data =read.delim(file_name, header=T,sep="\t",stringsAsFactors=FALSE)
-  #row.names(meta) = meta$ID
-  id.ind = 13
-  feat.attr.ind.last = 15
-  feat.attr = data[,c(1:feat.attr.ind.last)]
-  row.names(feat.attr) = data[,id.ind]
-  row.names(data) = data[,id.ind]
-  data = data[,-c(1:feat.attr.ind.last)]
-  data = t(data)
-  meta = as.data.frame(t(as.data.frame(strsplit(row.names(data),"[._]"))))
-  row.names(meta) = row.names(data)
-  names(meta) = c("group","FamilyID","TechReplRelID")
-  meta$SubjectID = paste(meta$group,meta$FamilyID,sep=".")
-  meta$SampleID = row.names(meta)
-  attr.names = names(meta)
-  meta.data = join_count_df(list(count=data,attr=meta))
-  return(list(data=meta.data,attr.names=attr.names,feat.attr=feat.attr))
+group.log.fold.change <- function(count,group,base=2) {
+  return (log(group.mean.ratio(count=count,group=group)+.Machine$double.eps,base=base))
 }
 
 power.pieper.t1d <- function(

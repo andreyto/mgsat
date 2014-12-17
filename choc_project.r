@@ -272,7 +272,7 @@ gen.tasks.choc <- function() {
       })
       
       genesel.task = within(genesel.task, {
-        resp.attr = main.meta.var
+        group.attr = main.meta.var
       })
       
       stabsel.task = within(stabsel.task, {
@@ -349,7 +349,7 @@ gen.tasks.choc <- function() {
       })
       
       genesel.task = within(genesel.task, {
-        resp.attr = main.meta.var
+        group.attr = main.meta.var
       })
       
       stabsel.task = within(stabsel.task, {
@@ -423,7 +423,7 @@ gen.tasks.choc <- function() {
       })
       
       genesel.task = within(genesel.task, {
-        resp.attr = main.meta.var
+        group.attr = main.meta.var
       })
       
       stabsel.task = within(stabsel.task, {

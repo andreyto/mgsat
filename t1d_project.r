@@ -297,7 +297,7 @@ gen.tasks.t1d <- function() {
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {
@@ -404,7 +404,7 @@ task2 = within( task0, {
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {
@@ -467,7 +467,7 @@ task3 = within( task2, {
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {
@@ -582,7 +582,7 @@ task4 = within( task1, {
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {
@@ -670,7 +670,7 @@ extra.tasks = foreach(task=list(task5.1,task5.2)) %do% {
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {

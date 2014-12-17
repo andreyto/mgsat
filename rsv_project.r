@@ -129,7 +129,7 @@ task1 = within( task0, {
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {
@@ -207,7 +207,7 @@ tasks = foreach(main.meta.var.loop = c("Breastfed","Delivery.Type","Has.Pets","A
     })
     
     genesel.task = within(genesel.task, {
-      resp.attr = main.meta.var
+      group.attr = main.meta.var
     })
     
     stabsel.task = within(stabsel.task, {
