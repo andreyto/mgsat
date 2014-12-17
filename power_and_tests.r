@@ -389,11 +389,11 @@ norm.count <- function(x, ...) {
 
 norm.count.matrix <- function(count,method,drop.features=c("other"),method.args=list()) {
   if( ! (method %in% c("norm.ident","ident")) ) {
-  count = do.call(method,c(
-    list(count),
-    method.args
-  )
-  )
+    count = do.call(method,c(
+      list(count),
+      method.args
+    )
+    )
   }
   if(!is.null(drop.features)) {
     count = count[,!colnames(count) %in% drop.features]
@@ -426,6 +426,7 @@ count.filter.m_a<-function(m_a,
                            min_max=0,
                            min_mean=0,
                            min_mean_frac=0.0,
+                           min_incidence_frac=0.0,
                            min_row_sum=0,
                            max_row_sum=.Machine$integer.max,
                            other_cnt="other") {
@@ -454,6 +455,7 @@ count.filter.m_a<-function(m_a,
   cnt_norm = cnt_norm[,ind_col_sel]  
   cnt = cnt[,apply(cnt,2,max) >= min_max]
   cnt = cnt[,apply(cnt,2,mean) >= min_mean]
+  cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac]
   
   cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
   
@@ -1653,7 +1655,7 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
                centroids are shown in the first two principal coordinates.
                Groups are defined by the variable %s.
                Sample beta-diversity matrix was generated with method %s",
-               group.attr,method.help))
+                                              group.attr,method.help))
   }
   
   if(!is.null(adonis.task)) {
@@ -1815,13 +1817,13 @@ mgsat.divrich.report <- function(m_a,
   report$add.package.citation("vegan")
   
   res = new_mgsatres()
-
+  
   res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep)
   report$add(mgsat.plot.richness.samples(res$rich.samples),
              caption=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
                              group.descr.short)
   )
-
+  
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
   }
@@ -1860,7 +1862,7 @@ mgsat.divrich.report <- function(m_a,
   report$push.section(report.section)
   mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
   report$pop.section()
-    
+  
   if(!is.null(beta.task)) {
     res$beta = do.call(mgsat.diversity.beta,
                        c(list(m_a,
@@ -2778,6 +2780,7 @@ mgsat.16s.task.template = within(list(), {
     
     genesel.task = within(list(), {
       group.attr = main.meta.var
+      do.nmds = F
       genesel.param = within(list(), {
         block.attr = NULL
         type="unpaired"
@@ -4019,7 +4022,7 @@ stabsel.report <- function(m_a,
 }
 
 
-genesel.stability.report <- function(m_a,group.attr,genesel.param=list()) {
+genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds=F) {
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
@@ -4069,14 +4072,15 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list()) {
   report$add.table(res.stab.sel.genesel$stab_feat,
                    caption=
                      paste("GeneSelector stability ranking for response ",group.attr))
-  
-  report$add.package.citation("vegan")
-  m_a.mds = m_a
-  m_a.mds$count = m_a.mds$count[,res.stab.sel.genesel$stab_feat$name]
-  report$add(
-    plot.features.mds(m_a.mds,sample.group=m_a$attr[,group.attr]),
-    caption="metaMDS plot of clades selected by GeneSelector. 'x' marks clades, 'o' marks samples"
-  )
+  if(do.nmds) {
+    report$add.package.citation("vegan")
+    m_a.mds = m_a
+    m_a.mds$count = m_a.mds$count[,res.stab.sel.genesel$stab_feat$name]
+    report$add(
+      plot.features.mds(m_a.mds,sample.group=m_a$attr[,group.attr]),
+      caption="metaMDS plot of clades selected by GeneSelector. 'x' marks clades, 'o' marks samples"
+    )
+  }
   
   return (res.stab.sel.genesel)
   
@@ -5474,7 +5478,7 @@ wilcox.eff.size <- function(x,stat,pval,group=NULL,type="unpaired") {
 
 
 RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample"), 
-          pvalues = FALSE, gene.names = NULL, ...) 
+                               pvalues = FALSE, gene.names = NULL, ...) 
 {
   mode(x) <- "numeric"
   if (length(y) != ncol(x)) 
@@ -5525,7 +5529,7 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
   if (type == "onesample") {
     if (length(unique(y)) != 1) 
       warning("Type has been chosen 'onesample', but y has more than one level. \n")
-
+    
     r1 <- apply(x, 1, function(z) {
       z = z[z!=0]
       zz <- rank(abs(z))
@@ -5566,12 +5570,14 @@ stab.sel.genesel <- function(m_a,
                              samp.fold.ratio=0.5,
                              maxrank=20,
                              comp.log.fold.change=F
-                             ) {
+) {
   library(GeneSelector)
   
+  type.orig = type
   if(type=="paired") {
     type="onesample"
-    m_a.c = sample.contrasts(m_a, group.attr = group.attr, block.attr = block.attr)
+    s.c = sample.contrasts(m_a, group.attr = group.attr, block.attr = block.attr)
+    m_a.c = s.c$m_a.contr
     x = m_a.c$count  
     x = x + matrix(rnorm(prod(dim(x)),0,.Machine$double.eps*100),nrow=nrow(x),ncol=ncol(x))
     y.relev = rep(1,nrow(x))
@@ -5589,7 +5595,7 @@ stab.sel.genesel <- function(m_a,
   
   n_feat = nrow(x)
   n_samp = ncol(x)
-
+  
   ranking_methods = c(RankingWilcoxon,RankingLimma,RankingFC)
   ranking_method = RankingWilcoxon
   
@@ -5608,42 +5614,59 @@ stab.sel.genesel <- function(m_a,
                                    type=type))
   if(comp.log.fold.change) {
     rnk.vals = cbind(rnk.vals,
-                   log.fold.change=t(group.log.fold.change(m_a$count,m_a$attr[,group.attr],base=2))
+                     log.fold.change.group.mean=t(group.log.fold.change(m_a$count,m_a$attr[,group.attr],base=2))
     )
+    if(type.orig=="paired") {
+      m_a.g = s.c$m_a.groups
+      rnk.vals = cbind(rnk.vals,
+                       log.fold.change.paired.median = aaply(
+                       log(m_a.g$count[m_a.g$attr$.contrast==1,]+1,base=2) - 
+                       log(m_a.g$count[m_a.g$attr$.contrast==-1,]+1,base=2),
+                       2,
+                       median
+                       )
+      )
+    }
   }
   #make.global(rnk.vals)
   #make.global(y.relev)
   #make.global(type)
   
-  #contrary to the help page, does not work when y is a factor - need to convert
-  fold_matr = GenerateFoldMatrix(y = as.numeric(y.relev), 
-                                 k=trunc(n_samp*(1-samp.fold.ratio)),
-                                 replicates=replicates,
-                                 type=type)
-  
-  rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
-  #make.global(rep_rnk)
-  #toplist(rep_rnk,show=F)
-  stab_ovr = GetStabilityOverlap(rep_rnk, scheme = "original", decay = "linear")
-  ### for a short summary
-  #summary(stab_ovr, measure = "intersection", display = "all", position = 10)
-  #summary(stab_ovr, measure = "overlapscore", display = "all", position = 10)
-  ### for a graphical display
-  #plot(stab_ovr)
-  #aggr_rnk = AggregateSimple(rep_rnk, measure="mode")
-  #aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
-  aggr_rnk = AggregateSVD(rep_rnk)
-  #make.global(aggr_rnk)
-  #toplist(aggr_rnk)
-  #gsel = GeneSelector(list(aggr_rnk), threshold = "BH", maxpval=0.05)
-  gsel = GeneSelector(list(aggr_rnk), threshold = "user", maxrank=maxrank)
-  #show(gsel)
-  #str(gsel)
-  #toplist(gsel)
-  selected = SelectedGenes(gsel)
-  #pvals are always NA somehow, and we do not need the 'index' in
-  #the output, so not adding 'selected' to the output
-  index = selected$index
+  if(replicates > 0) {
+    #contrary to the help page, does not work when y is a factor - need to convert
+    fold_matr = GenerateFoldMatrix(y = as.numeric(y.relev), 
+                                   k=trunc(n_samp*(1-samp.fold.ratio)),
+                                   replicates=replicates,
+                                   type=type)
+    
+    rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
+    #make.global(rep_rnk)
+    #toplist(rep_rnk,show=F)
+    stab_ovr = GetStabilityOverlap(rep_rnk, scheme = "original", decay = "linear")
+    ### for a short summary
+    #summary(stab_ovr, measure = "intersection", display = "all", position = 10)
+    #summary(stab_ovr, measure = "overlapscore", display = "all", position = 10)
+    ### for a graphical display
+    #plot(stab_ovr)
+    #aggr_rnk = AggregateSimple(rep_rnk, measure="mode")
+    #aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
+    aggr_rnk = AggregateSVD(rep_rnk)
+    #make.global(aggr_rnk)
+    #toplist(aggr_rnk)
+    #gsel = GeneSelector(list(aggr_rnk), threshold = "BH", maxpval=0.05)
+    gsel = GeneSelector(list(aggr_rnk), threshold = "user", maxrank=n_feat)
+    #show(gsel)
+    #str(gsel)
+    #toplist(gsel)
+    selected = SelectedGenes(gsel)
+    #pvals are always NA somehow, and we do not need the 'index' in
+    #the output, so not adding 'selected' to the output
+    index = selected$index
+  }
+  else {
+    gsel = NULL
+    index = order(rnk.vals$pval.adjusted,rnk.vals$pval)
+  }
   rnk.vals$index = NULL
   rnk.vals = rnk.vals[index,]
   return (list(stab_feat=rnk.vals,gsel=gsel))
@@ -5685,7 +5708,7 @@ lmerCI <- function(obj, rnd = 2) {
 ## (missing from data), the entire block is dropped.
 ## Default value of contrasts will be set to result in (last-first) levels.
 ## Value: m_a object; its attr is currently set to NULL.
-sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL) {
+sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.groups=T) {
   #m_m = melt(m_a$count,varnames=c("SampleID","clade"),value.name="cnt")
   #attr_sub = m_a$attr[,c("SampleID",pair.attr)]
   #m_m = join(m_m,attr_sub,by="SampleID",type="inner",match="first")
@@ -5715,32 +5738,48 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL) {
   
   ## this will drop all group levels not in contrasts
   dat = join(dat,contrasts,by=group.attr,type="inner")
-
-
+  
+  if(return.groups) {
+    dat.groups = dat
+  }
+  
   attr.mask = names(dat) %in% c(attr.names,contr.attr)
   dat = cbind(dat[,block.attr,drop=F],
-                    dat[,!attr.mask,drop=F]*dat[,contr.attr,drop=T])
-
+              dat[,!attr.mask,drop=F]*dat[,contr.attr,drop=T])
+  
   attr.mask = names(dat) %in% c(attr.names,contr.attr)
   
   n.contr = nrow(contrasts)
-
+  
   ## if() will drop all blocks where not all contrasts matched
   dat = ddply(dat,c(block.attr),
-                    function(x) {
-                    if(nrow(x) == n.contr) {
-                    colSums(x[,!attr.mask,drop=F])
-                    }
-                    else {
-                      NULL
-                    }
-                    }
+              function(x) {
+                if(nrow(x) == n.contr) {
+                  colSums(x[,!attr.mask,drop=F])
+                }
+                else {
+                  NULL
+                }
+              }
   )
   
   rownames(dat) = dat[,block.attr]
   
   attr.mask = names(dat) %in% c(attr.names,contr.attr)
-  list(count=as.matrix(dat[,!attr.mask]),attr=NULL)
+  m_a.contr = list(count=as.matrix(dat[,!attr.mask]),attr=NULL)
+  
+  if(return.groups) {
+    ##only groups with all requested contrast levels
+    dat.groups = dat.groups[dat.groups[,block.attr] %in% rownames(m_a.contr$count),]
+    rownames(dat.groups) = maply(dat.groups[,attr.names],paste,sep=".",.expand=F)
+    attr.mask = names(dat.groups) %in% c(attr.names,contr.attr)
+    m_a.groups = list(count=as.matrix(dat.groups[,!attr.mask]),
+                      attr=dat.groups[,attr.mask])
+  }
+  else {
+    m_a.groups = NULL
+  }
+  return (list(m_a.contr=m_a.contr,m_a.groups=m_a.groups))
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {

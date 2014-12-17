@@ -1,9 +1,11 @@
 read.pieper.t1d <- function(count.file="Original Collapesed APEX (All information).AT.tsv",taxa.level=NULL) {
+  require(data.table)
   
   file_name = count.file
-  #data =read.csv(file_name, as.is=TRUE, header=TRUE,stringsAsFactors=T)
-  data =read.delim(file_name, header=T,sep="\t",stringsAsFactors=FALSE)
-  make.global(data)
+  #data = read.csv(file_name, as.is=TRUE, header=TRUE,stringsAsFactors=T)
+  #data = read.delim(file_name, header=T,sep="\t",stringsAsFactors=FALSE)
+  data = fread(file_name, header=T, sep="\t", stringsAsFactors=FALSE, data.table=F)
+  
   #row.names(meta) = meta$ID
   id.ind = 13
   feat.attr.ind.last = 15
@@ -13,7 +15,8 @@ read.pieper.t1d <- function(count.file="Original Collapesed APEX (All informatio
   data = data[,-c(1:feat.attr.ind.last)]
   data = t(data)
   make.global(data)
-  meta = as.data.frame(t(as.data.frame(strsplit(row.names(data),"[._]"))))
+  meta = as.data.frame(t(as.data.frame(strsplit(row.names(data),"[-_]"))))
+  make.global(meta)
   row.names(meta) = row.names(data)
   names(meta) = c("Group","FamilyID","TechReplRelID")
   meta = within(meta,{
@@ -54,15 +57,15 @@ gen.tasks.t1d.prot <- function() {
       
       do.deseq2 = F
       do.genesel=T
-      do.stabsel=F
+      do.stabsel=T
       do.glmer=F
-      do.adonis=F
+      do.adonis=T
       do.divrich=c()
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
       do.select.samples=c()
       
-      count.filter.feature.options=list(min_mean=10)
+      count.filter.feature.options=list(min_incidence_frac=0.25)
       #count.filter.feature.options=list()
       
       norm.count.task = norm.count.task.drop.other
@@ -78,83 +81,110 @@ gen.tasks.t1d.prot <- function() {
   
   get.taxa.meta.aggr.base<-function(m_a) { 
     m_a = aggregate.by.meta.data.m_a(m_a,
-                                           group_col="SubjectID",
-                                           count_aggr=mean)    
+                                     group_col="SubjectID",
+                                     count_aggr=mean)    
     report$add.p(paste("After aggregating by averaging technical replicates per subject:",nrow(m_a$count)))
-    
-    #gmr = group.mean.ratio(m_a$count,m_a$attr$Group)
-    
-    #m_a$count = m_a$count[,gmr <= 1/1.5 | gmr >= 1.5]
-    
-    #report$add.p(paste("After filtering for group mean fold change between cases and controls 
-    #                   to be at least 1.5 in either direction,",
-    #                   ncol(m_a$count),"features left"))
     
     return (m_a)
   }
-
+  
   task0 = within( mgsat.proteomics.task.template, {
-      
-  descr = "All samples, aggregated by SubjectID"
-  
-  read.data.task = within(read.data.task, {
-    count.file="Original Collapesed APEX (All information).AT.tsv"
-  })
-  
-  get.taxa.meta.aggr<-function(m_a) { 
-    return (get.taxa.meta.aggr.base(m_a))
-  }
-  
+    
+    descr = "All samples, aggregated by SubjectID"
+    
+    read.data.task = within(read.data.task, {
+      count.file="Original Collapesed APEX (All information).AT.tsv"
+    })
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      return (get.taxa.meta.aggr.base(m_a))
+    }
+    
   })
   
   task1 = within( task0, {
     
-  do.summary.meta = F
-  
-  do.tests = T
-
-  summary.meta.task = within(summary.meta.task, {
-    meta.x.vars = NULL
-    group.var = main.meta.var
-  })
-
-  test.counts.task = within(test.counts.task, {
+    descr = "All samples, aggregated by SubjectID, paired Wilcoxon test"
     
-    genesel.task = within(genesel.task, {
-      
-      genesel.param = within(genesel.param, {
-        block.attr = "FamilyID"
-        type="paired"
-        replicates=10
-        maxrank=100
-        samp.fold.ratio=0.5
-        comp.log.fold.change=T
-      })
-      
+    do.summary.meta = T
+    
+    do.tests = T
+    
+    summary.meta.task = within(summary.meta.task, {
+      meta.x.vars = NULL
+      group.var = main.meta.var
     })    
     
-    adonis.task = within(adonis.task, {
+    test.counts.task = within(test.counts.task, {
       
-      dist.metr="euclidean"
-      col.trans="standardize"
-      data.descr="normalized counts"
+      do.stabsel=F
+      do.adonis=F
       
-      tasks = list(
-        list(formula.rhs=main.meta.var,
-             strata=NULL,
-             descr="Association with the patient/control status unpaired"),
-        list(formula.rhs=main.meta.var,
-             strata="FamilyID",
-             descr="Association with the patient/control status paired by family")
-      )
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      genesel.task = within(genesel.task, {
+        
+        genesel.param = within(genesel.param, {
+          block.attr = "FamilyID"
+          type="paired"
+          replicates=0
+          maxrank=20
+          samp.fold.ratio=0.5
+          comp.log.fold.change=T
+        })
+        
+      })    
+      
+      adonis.task = within(adonis.task, {
+        
+        dist.metr="euclidean"
+        col.trans="standardize"
+        data.descr="normalized counts"
+        
+        tasks = list(
+          list(formula.rhs=main.meta.var,
+               strata=NULL,
+               descr="Association with the patient/control status unpaired"),
+          list(formula.rhs=main.meta.var,
+               strata="FamilyID",
+               descr="Association with the patient/control status paired by family")
+        )
+        
+      })
+      
+    })
+  })
+  
+  task2 = within( task1, {
+    
+    descr = "All samples, aggregated by SubjectID, unpaired Wilcoxon test"
+    
+    do.summary.meta = T
+    
+    do.tests = T
+    
+    test.counts.task = within(test.counts.task, {  
+      
+      do.stabsel=T
+      do.adonis=T
+      
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+      
+      genesel.task = within(genesel.task, {
+        
+        genesel.param = within(genesel.param, {
+          type="unpaired"
+        })
+        
+      })
       
     })
     
   })
-    
-})
-
-return (list(task1))
+  
+  return (list(task1,task2))
 }
 
 
