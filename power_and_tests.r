@@ -5577,6 +5577,8 @@ stab.sel.genesel <- function(m_a,
   if(type=="paired") {
     type="onesample"
     s.c = sample.contrasts(m_a, group.attr = group.attr, block.attr = block.attr)
+    #DEBUG:
+    make.global(s.c)
     m_a.c = s.c$m_a.contr
     x = m_a.c$count  
     x = x + matrix(rnorm(prod(dim(x)),0,.Machine$double.eps*100),nrow=nrow(x),ncol=ncol(x))

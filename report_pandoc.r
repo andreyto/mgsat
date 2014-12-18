@@ -152,6 +152,22 @@ pandoc.escape.special <- function(x) {
        format(x,digits=panderOptions("digits")))
 }
 
+pandoc.link.verbatim.return <- function(url,text=NULL) {
+  if(is.null(text)) {
+    text = url
+  }
+  pandoc.link.return(url,pandoc.verbatim.return(text))
+}
+
+## make string x a (more or less) valid file name
+str.to.file.name <- function(x,max.length=0) {
+  x = gsub('[^-[:alnum:]._]+','.',x)
+  if(max.length>0) {
+    x = substring(x,1,max.length)
+  }
+  x
+}
+
 PandocAT <- setRefClass('PandocAT', contains = "Pandoc", 
                         fields = list(
                           'sections' = 'list',
@@ -186,16 +202,22 @@ PandocAT$methods(priv.append.section = function() {
   .self$sections[[length(.self$sections)+1]] = get.report.section()$path
 })
 
-PandocAT$methods(priv.format.caption = function(caption,section=NULL) {
+PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) {
+  if(is.null(type)) {
+    type=""
+  }
   if(!is.null(caption)) {
-    return (paste(format.report.section(section),caption))
+    return (paste(type,format.report.section(section),caption))
   }
   else {
     return (caption)
   }
 })
 
-PandocAT$methods(add = function(x,new.paragraph=T,caption=NULL,...) {
+PandocAT$methods(add = function(x,new.paragraph=T,
+                                caption=NULL,
+                                show.image.links=T,
+                                ...) {
   
   timer           <- proc.time()
   par_fr <- parent.frame()
@@ -211,12 +233,33 @@ PandocAT$methods(add = function(x,new.paragraph=T,caption=NULL,...) {
   }
   
   if(!is.null(caption)) {
-    .self$add.p(.self$priv.format.caption(caption))
+    caption = .self$priv.format.caption(caption)
+  }
+  for (r in res) {
+    if(r$type=="image") {
+      if(show.image.links) {
+        rr = r$result
+        caption = paste(caption,
+                        sprintf("Link to image file: %s.",
+                        pandoc.link.verbatim.return(as.character(rr)))
+        )
+        hres.ref = attr(rr,"href")
+        if(!is.null(hres.ref)) {
+          caption = paste(caption,
+                          sprintf("Link to high resolution image file: %s.",
+                                  pandoc.link.verbatim.return(hres.ref))
+          )
+        }
+      }
+    }
+  }
+  if(!is.null(caption)) {
+    .self$add.p(caption)
   }
   .self$body      <- c(.self$body,res)
   .self$priv.append.section()
   .self$proc.time <- .self$proc.time + as.numeric(proc.time() - timer)[3]
-  
+  return(res)
 })
 
 PandocAT$methods(add.list = function(x,...) {
@@ -246,17 +289,59 @@ PandocAT$methods(add.table = function(x,
                                       wrap.vals=T,
                                       wrap.caption=T,
                                       split.tables=180,
-                                      style="rmarkdown",...) {
+                                      style="rmarkdown",
+                                      export.to.file=T,
+                                      show.first.rows=200,
+                                      show.first.cols=200,
+                                      ...) {
   if (wrap.caption && !is.null(caption)) {
     caption = pandoc.escape.special(caption)
   }
-  caption = .self$priv.format.caption(caption)
+  
+  caption = .self$priv.format.caption(caption,type="Table")
+
   if(is.null(x) || nrow(x)==0) {
     if(!is.null(caption)) {
       .self$add.p(caption)
     }
     return(.self$add.p("Empty dataset"))
   }
+  if(show.first.rows > 0) {
+    if(show.first.rows >= nrow(x)) {
+      show.first.rows = 0
+    }
+  }
+  if(show.first.rows > 0) {
+    caption = paste(caption,sprintf("Showing only %s first rows.",show.first.rows))
+  }
+  if(show.first.cols > 0) {
+    if(show.first.cols >= ncol(x)) {
+      show.first.cols = 0
+    }
+  }
+  if(show.first.cols > 0) {
+    caption = paste(caption,sprintf("Showing only %s first columns.",show.first.cols))
+  }
+  
+  if(export.to.file) {
+    file.name = .self$write.table.file(x,
+                                name.base=paste(str.to.file.name(caption,20),".tsv",sep=""),
+                                descr=NULL,
+                                row.names=show.row.names,
+                                row.names.header=T)    
+    caption = paste(caption,
+                    "Full dataset is also saved in a delimited text file",
+                    pandoc.link.return(file.name,pandoc.verbatim.return(file.name))
+                    )
+  }
+  
+  if(show.first.rows > 0) {
+    x = x[1:show.first.rows,]
+  }
+  if(show.first.cols > 0) {
+    x = x[,1:show.first.cols]
+  }
+  
   if(!show.row.names) {
     rownames(x) <- NULL
   }
@@ -276,7 +361,8 @@ PandocAT$methods(add.table = function(x,
     rownames(x) = rn
   }
   
-  tbl_p <- pandoc.table.return(x,split.tables=split.tables,style=style,caption=caption,...)
+  .self$add.p(caption)
+  tbl_p <- pandoc.table.return(x,split.tables=split.tables,style=style,caption=NULL,...)
   if(echo) {
     print(tbl_p)
   }
@@ -358,23 +444,46 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
   
 })
 
-PandocAT$methods(make.file.name = function(name.base) {
-  stopifnot(!missing(name.base))
+PandocAT$methods(make.file.name = function(name.base="",make.unique=T) {
+  if(length(name.base)==0) {
+    name.base = ""
+  }
+  if(name.base=="" && !make.unique) {
+    stop("Need either non-empty name.base or make.unique=T")
+  }
   out_dir="output"
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-  return (file.path(out_dir,paste(format.report.section.as.file(),name.base,sep="-")))
+  fn.start = format.report.section.as.file()
+  if(make.unique) {
+    fn = tempfile(paste(fn.start,"-",sep=""),tmpdir=out_dir,fileext=name.base)
+  }
+  else {
+    fn = file.path(out_dir,paste(fn.start,name.base,sep="-"))
+  }
+  return(fn)
 })
 
-PandocAT$methods(write.table.file = function(data,name.base,descr=NULL,row.names=F) {
+PandocAT$methods(write.table.file = function(data,
+                                             name.base,
+                                             make.unique=T,
+                                             descr=NULL,
+                                             row.names=F,
+                                             row.names.header=T) {
   ## if we write row.names, Excel shifts header row to the left when loading
-  fn = .self$make.file.name(name.base)
+  if(row.names && row.names.header) {
+    data = cbind(rownames=rownames(data),data)
+    row.names=F
+  }
+  fn = .self$make.file.name(name.base,make.unique=make.unique)
   write.table(data,
               fn,
               sep="\t",
               row.names = row.names)
   if (!is.null(descr)) {
-    .self$add.descr(paste("Wrote",descr,"to file",fn))
+    .self$add.descr(paste("Wrote",descr,"to file",
+                          pandoc.link.return(fn,fn)))
   }
+  return(fn)
 })
 
 PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.loc,sort.by.sections=F) {

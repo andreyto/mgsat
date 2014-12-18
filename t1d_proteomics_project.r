@@ -184,6 +184,7 @@ gen.tasks.t1d.prot <- function() {
     
   })
   
+  return (list(task2))
   return (list(task1,task2))
 }
 
