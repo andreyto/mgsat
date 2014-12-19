@@ -162,7 +162,7 @@ gen.tasks.t1d.prot <- function() {
     
     do.summary.meta = T
     
-    do.tests = T
+    do.tests = F
     
     test.counts.task = within(test.counts.task, {  
       

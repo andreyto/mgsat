@@ -3458,7 +3458,8 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcoxon) is applied to each clade on random
                        subsamples of the data. Consensus ranking is found with a
-                       Monte Carlo procedure. The top clades of the consensus ranking
+                       Monte Carlo procedure (method AggregateMC in GeneSelector package). 
+                       The top clades of the consensus ranking
                        are returned, along with the p-values computed on the full
                        original dataset (with multiple testing correction).")
       report$add.table(res.stab.sel.genesel$stab_feat,
@@ -4032,13 +4033,14 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
   report$add.descr(sprintf("Wilcoxon test (rank-sum for independent samples and signed-rank for paired samples) 
                    is applied to each feature (clade, gene) on random
                    subsamples of the data. Consensus ranking is found with a
-                   Monte Carlo procedure. Clades ordered according to the consensus ranking
+                   Monte Carlo procedure ((method AggregateMC in GeneSelector package). 
+                   Clades ordered according to the consensus ranking
                    are returned, along with the p-values, statistic and effect size 
-                  computed on the full
+                   computed on the full
                    original dataset. In a special case when no replications are requested,
                    features are ordered by the adjuested p-value. 
                    P-values are reported with and without the 
-                   multiple testing correction Benjamini & Hochberg. The effect sizes
+                   multiple testing correction of Benjamini & Hochberg. The effect sizes
                    for Wilcoxon tests are reported as: common-language effect
                    size (proportion of pairs where observations from the second group
                    are larger than observations from the first group; no effect
@@ -4051,7 +4053,10 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
                    only paired observations are used, and one half of the number of ties is 
                    added to the numerator (Grissom, R. J., and J. J. Kim. \"Effect Sizes for Research: Univariate 
                    and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)).
-                   Logarithm of the fold change in base 2 is also reported if requested.
+                   Logarithm in base 2 of the fold change is also reported if requested.
+                   For independent samples, the fold change is computed between the sample means of
+                   the groups (last to first). For paired samples - as the sample median of the logfold change
+                   in each matched pair of observations.
                    Groups are ordered as %s.
                    ",paste(levels(m_a$attr[,group.attr]),collapse=",")))
   
@@ -5651,8 +5656,8 @@ stab.sel.genesel <- function(m_a,
     ### for a graphical display
     #plot(stab_ovr)
     #aggr_rnk = AggregateSimple(rep_rnk, measure="mode")
-    #aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
-    aggr_rnk = AggregateSVD(rep_rnk)
+    aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
+    #aggr_rnk = AggregateSVD(rep_rnk)
     #make.global(aggr_rnk)
     #toplist(aggr_rnk)
     #gsel = GeneSelector(list(aggr_rnk), threshold = "BH", maxpval=0.05)

@@ -39,6 +39,7 @@ arg.list.as.str<-function(x,collapse=",") {
 #' Adopted from phyloseq code
 #' Computes text size of axis label based on the number of
 #' labels.
+#' Maybe R strwidth can be used even with ggplot2?
 calc.text.size <- function(n, mins=0.5, maxs=4, B=6, D=100){
   # empirically selected size-value calculator.
   s <- B * exp(-n/D)
@@ -174,7 +175,9 @@ PandocAT <- setRefClass('PandocAT', contains = "Pandoc",
                           'incremental.save' = 'logical',
                           'out.file.md' = 'character',
                           'out.formats' = 'character',
-                          'portable.html' = 'logical'
+                          'portable.html' = 'logical',
+                          'object.index' = 'list',
+                          'data.dir' = 'character'
                         )
 )
 
@@ -193,6 +196,15 @@ PandocAT$methods(initialize = function(
   .self$out.formats=out.formats
   .self$incremental.save=incremental.save
   .self$portable.html=portable.html
+  .self$object.index=list(table=1,figure=1)
+  .self$data.dir = "output"
+  unlink(.self$data.dir,recursive=T,force=T)
+  dir.create(.self$data.dir, showWarnings = FALSE, recursive = TRUE)
+  
+  graph.dir = evalsOptions("graph.dir")
+  unlink(graph.dir,recursive=T,force=T)
+  dir.create(graph.dir, showWarnings = FALSE, recursive = TRUE)
+  
   callSuper(author=author,title=title,...)
 })
 
@@ -202,12 +214,42 @@ PandocAT$methods(priv.append.section = function() {
   .self$sections[[length(.self$sections)+1]] = get.report.section()$path
 })
 
-PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) {
-  if(is.null(type)) {
-    type=""
+## private service method - should be called whenever an element 
+## that needs its own index in the report is
+## appended to the .self$body
+PandocAT$methods(priv.append.index = function(type) {
+  val = .self$object.index[[type]]
+  if(is.null(val)) {
+    val = .self$object.index[[type]] = 1
   }
-  if(!is.null(caption)) {
-    return (paste(type,format.report.section(section),caption))
+  .self$object.index[[type]] = val + 1
+  return(val)
+})
+
+PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) {
+  if(!is.null(caption)) {  
+    if(is.null(type)) {
+      type = ""
+      ind = ""
+    }
+    else {
+      ind = .self$priv.append.index(type)
+    }
+    if(nzchar(ind)) {
+      anchor.name = sprintf('%s.%s',type,ind)
+      anchor = sprintf('<a name="%s"></a>',anchor.name)
+      name = sprintf("%s%s",
+                     anchor,
+                     pandoc.link.return(sprintf("#%s",anchor.name),
+                                        sprintf("%s %s.",capitalize(type),ind)))
+    }
+    else {
+      name = ""
+    }
+    caption = paste(format.report.section(section),name,caption)
+    if(substr(caption,nchar(caption),nchar(caption)+1)!=".") {
+      caption = paste(caption,".",sep="")
+    }
   }
   else {
     return (caption)
@@ -217,6 +259,7 @@ PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) 
 PandocAT$methods(add = function(x,new.paragraph=T,
                                 caption=NULL,
                                 show.image.links=T,
+                                caption.type=NULL,
                                 ...) {
   
   timer           <- proc.time()
@@ -232,26 +275,37 @@ PandocAT$methods(add = function(x,new.paragraph=T,
     .self$add.p("")
   }
   
-  if(!is.null(caption)) {
-    caption = .self$priv.format.caption(caption)
-  }
+  is.image = F
+  caption.res = ""
   for (r in res) {
     if(r$type=="image") {
       if(show.image.links) {
         rr = r$result
-        caption = paste(caption,
-                        sprintf("Link to image file: %s.",
-                        pandoc.link.verbatim.return(as.character(rr)))
+        caption.res = paste(caption.res,
+                            sprintf("Image file: %s.",
+                                    pandoc.link.verbatim.return(as.character(rr)))
         )
         hres.ref = attr(rr,"href")
         if(!is.null(hres.ref)) {
-          caption = paste(caption,
-                          sprintf("Link to high resolution image file: %s.",
-                                  pandoc.link.verbatim.return(hres.ref))
+          caption.res = paste(caption.res,
+                              sprintf("High resolution image file: %s.",
+                                      pandoc.link.verbatim.return(hres.ref))
           )
         }
       }
+      is.image = T
     }
+  }
+  if(is.null(caption.type)) {
+    if(is.image) {
+      caption.type = "figure"
+    }
+  }
+  if(!is.null(caption)) {
+    caption = .self$priv.format.caption(caption,type=caption.type)
+  }
+  if(nzchar(caption.res)) {
+    caption = paste(caption,caption.res)
   }
   if(!is.null(caption)) {
     .self$add.p(caption)
@@ -298,8 +352,8 @@ PandocAT$methods(add.table = function(x,
     caption = pandoc.escape.special(caption)
   }
   
-  caption = .self$priv.format.caption(caption,type="Table")
-
+  caption = .self$priv.format.caption(caption,type="table")
+  
   if(is.null(x) || nrow(x)==0) {
     if(!is.null(caption)) {
       .self$add.p(caption)
@@ -325,14 +379,14 @@ PandocAT$methods(add.table = function(x,
   
   if(export.to.file) {
     file.name = .self$write.table.file(x,
-                                name.base=paste(str.to.file.name(caption,20),".tsv",sep=""),
-                                descr=NULL,
-                                row.names=show.row.names,
-                                row.names.header=T)    
+                                       name.base=paste(str.to.file.name(caption,20),".tsv",sep=""),
+                                       descr=NULL,
+                                       row.names=show.row.names,
+                                       row.names.header=T)    
     caption = paste(caption,
                     "Full dataset is also saved in a delimited text file",
                     pandoc.link.return(file.name,pandoc.verbatim.return(file.name))
-                    )
+    )
   }
   
   if(show.first.rows > 0) {
@@ -451,14 +505,12 @@ PandocAT$methods(make.file.name = function(name.base="",make.unique=T) {
   if(name.base=="" && !make.unique) {
     stop("Need either non-empty name.base or make.unique=T")
   }
-  out_dir="output"
-  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
   fn.start = format.report.section.as.file()
   if(make.unique) {
-    fn = tempfile(paste(fn.start,"-",sep=""),tmpdir=out_dir,fileext=name.base)
+    fn = tempfile(paste(fn.start,"-",sep=""),tmpdir=.self$data.dir,fileext=name.base)
   }
   else {
-    fn = file.path(out_dir,paste(fn.start,name.base,sep="-"))
+    fn = file.path(.self$data.dir,paste(fn.start,name.base,sep="-"))
   }
   return(fn)
 })
@@ -524,7 +576,7 @@ PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.l
     f_body = f_body[sect_ord]
   }
   lapply(f_body, function(x) cat(paste(pander.return(x$result), collapse = '\n'), 
-                               file = fp, append = TRUE))
+                                 file = fp, append = TRUE))
   
   for(out.format in out.formats.loc) {
     ## It would be nice to add `options="-s -S"` to support
