@@ -4008,6 +4008,7 @@ stabsel.report <- function(m_a,
                          stab.res$PFER)  
   
   report$add.vector(get.feature.ranking(stab.res,only.names=F)$ranked,
+                    name="P(selection)",
                     caption=paste("Selection probability for the variables.",
                                   cutoff.descr)
   )

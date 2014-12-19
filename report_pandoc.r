@@ -251,9 +251,8 @@ PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) 
       caption = paste(caption,".",sep="")
     }
   }
-  else {
-    return (caption)
-  }
+  
+  return (caption)
 })
 
 PandocAT$methods(add = function(x,new.paragraph=T,
@@ -390,10 +389,10 @@ PandocAT$methods(add.table = function(x,
   }
   
   if(show.first.rows > 0) {
-    x = x[1:show.first.rows,]
+    x = x[1:show.first.rows,,drop=F]
   }
   if(show.first.cols > 0) {
-    x = x[,1:show.first.cols]
+    x = x[,1:show.first.cols,drop=F]
   }
   
   if(!show.row.names) {

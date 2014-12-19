@@ -106,7 +106,7 @@ gen.tasks.t1d.prot <- function() {
     
     descr = "All samples, aggregated by SubjectID, paired Wilcoxon test"
     
-    do.summary.meta = T
+    do.summary.meta = F
     
     do.tests = T
     
@@ -162,10 +162,11 @@ gen.tasks.t1d.prot <- function() {
     
     do.summary.meta = T
     
-    do.tests = F
+    do.tests = T
     
     test.counts.task = within(test.counts.task, {  
       
+      do.genesel=T
       do.stabsel=T
       do.adonis=T
       
@@ -184,7 +185,6 @@ gen.tasks.t1d.prot <- function() {
     
   })
   
-  return (list(task2))
   return (list(task1,task2))
 }
 
