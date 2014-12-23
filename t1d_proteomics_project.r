@@ -57,12 +57,12 @@ gen.tasks.t1d.prot <- function() {
       
       do.deseq2 = F
       do.genesel=T
-      do.stabsel=T
+      do.stabsel=F
       do.glmer=F
-      do.adonis=T
+      do.adonis=F
       do.divrich=c()
-      do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
       do.select.samples=c()
       
       count.filter.feature.options=list(min_incidence_frac=0.25)
@@ -160,18 +160,18 @@ gen.tasks.t1d.prot <- function() {
     
     descr = "All samples, aggregated by SubjectID, unpaired Wilcoxon test"
     
-    do.summary.meta = T
+    do.summary.meta = F
     
     do.tests = T
     
     test.counts.task = within(test.counts.task, {  
       
-      do.genesel=T
-      do.stabsel=T
-      do.adonis=T
+      do.genesel=F
+      do.stabsel=F
+      do.adonis=F
       
-      do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
       
       genesel.task = within(genesel.task, {
         
@@ -185,6 +185,7 @@ gen.tasks.t1d.prot <- function() {
     
   })
   
+  return (list(task1))
   return (list(task1,task2))
 }
 

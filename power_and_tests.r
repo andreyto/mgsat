@@ -152,7 +152,13 @@ split_count_df<-function(dat,col_ignore=c()) {
 join_count_df<-function(m_a) {
   
   if(!is.null(m_a$count)) {
-    cbind(as.data.frame(m_a$count),m_a$attr)
+    count = as.data.frame(m_a$count)
+    if(!is.null(m_a$attr)) {
+      cbind(count,m_a$attr)
+    }
+    else {
+      count
+    }
   }
   else {
     m_a$attr
@@ -1257,7 +1263,8 @@ plot.abund.meta <- function(m_a,
                             n.top=20,
                             id.var.dodge=NULL,
                             flip.coords=T,
-                            sqrt.scale=F) {
+                            sqrt.scale=F,
+                            stat_summary.fun.y="mean") {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -1322,7 +1329,7 @@ plot.abund.meta <- function(m_a,
   gp = ggplot(dat, aes_s)
   
   if(geom == "bar") {
-    gp = gp + stat_summary(fun.y=mean, geom="bar", aes(width=0.5), 
+    gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
                            position=position_dodge(width=0.9))
     #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
     #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
@@ -1331,7 +1338,7 @@ plot.abund.meta <- function(m_a,
     gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
   }
   else if(geom == "boxplot") {
-    gp = gp + geom_boxplot(fill=NA,na.value=NA,outlier.size = 0)
+    gp = gp + geom_boxplot(fill=NA,na.value=NA,notch=F)
   }
   else {
     stop(paste("Unexpected parameter value: geom = ",geom))
@@ -1362,6 +1369,14 @@ plot.abund.meta <- function(m_a,
                     drop=T,margins=facet_grid.margins)
   }
   gp = gp + wr
+  
+  if(!is.null(id.var.dodge)) {
+    legend.position = "right"
+  }
+  else {
+    legend.position = "none"
+  }
+  
   if(length(id.vars.facet) > 0) {
     clade.names = as.character(clades)
     #this will be used to label each facet with number of cases in it
@@ -1373,29 +1388,14 @@ plot.abund.meta <- function(m_a,
     facet.cnt$.n = paste("n =", facet.cnt$.n)
     #facet.cnt$y = facet.cnt$V2
     
-    if(!is.null(id.var.dodge)) {
-      legend.position = "right"
-    }
-    else {
-      legend.position = "none"
-    }
-    make.global(facet.cnt)
     gp = gp +
-      geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=2), colour="black", inherit.aes=FALSE, parse=FALSE)+
-      theme(legend.position = legend.position,
-            axis.title=element_blank(),
-            axis.text.y=element_text(color=c("black","black")))
-  }
-  else {
-    gp = gp + 
-      theme(
-        axis.title=element_blank(),
-        axis.text.y=element_text(color=c("black","black")))
-    
+      geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=2), colour="black", inherit.aes=FALSE, parse=FALSE)
   }
   
   gp = gp + 
-    theme(
+    theme(legend.position = legend.position,
+          axis.title=element_blank(),
+          axis.text.y=element_text(color=c("black","black")),
       plot.title = element_text(size = rel(2)),
       axis.text.x = element_text(size = rel(0.85),angle=90),
       axis.text.y = element_text(size = rel(0.85)))
@@ -1890,10 +1890,11 @@ plot.profiles <- function(m_a,
                           show.profile.task=list(
                             geoms=c("bar","violin","boxplot"),
                             dodged=T,
-                            faceted=T
+                            faceted=T,
+                            stat_summary.fun.y="mean"
                           ),
                           show.clade.meta.task=list(),
-                          feature.descr="abundance",
+                          feature.descr="Abundance.",
                           sqrt.scale=F) {
   
   report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),section.action="push")
@@ -1907,9 +1908,19 @@ plot.profiles <- function(m_a,
     feature.order = list(list(ord=NULL,ord_descr="original"))
   }
   
+  if(length(clade.meta.x.vars)==0) {
+    do.clade.meta = F
+  }
+  
   for (id.vars in id.vars.list) {
     
-    report$add.header(paste("Grouping variables",paste0(id.vars,collapse=",")))
+    if(length(id.vars)>0) {
+      msg = paste("Grouping variables",paste0(id.vars,collapse=","))
+    }
+    else {
+      msg = "Entire pool of samples"
+    }
+    report$add.header(msg)
     
     
     report$add.header(sprintf("Iterating over %s profile sorting order",feature.descr))
@@ -1969,7 +1980,7 @@ plot.profiles <- function(m_a,
         if(show.profile.task$faceted) {
           id.vars.dodge[["faceted"]] = list(dodge=NULL,descr="faceted")
         }
-        if(show.profile.task$dodged) {
+        if(show.profile.task$dodged && length(id.vars)>0) {
           id.vars.dodge[["dodged"]] = list(dodge=id.vars[1],descr="dodged")
         }
         
@@ -1981,13 +1992,14 @@ plot.profiles <- function(m_a,
           for(other.params in list(
             list(flip.coords=T,
                  sqrt.scale=F,
-                 descr="in flipped orientation, not scaled"),
+                 descr="Plot is in flipped orientation, Y axis not scaled."),
             list(flip.coords=F,
                  sqrt.scale=sqrt.scale,
-                 descr=paste("in original orientation", if(sqrt.scale) ", SQRT scaled" else "", sep=""))
+                 descr=paste("Plot is in original orientation", if(sqrt.scale) ", Y axis SQRT scaled." else ".", sep=""))
           )) {
             
-            report$add.header(paste(sprintf("%s are ",feature.descr), other.params$descr, ". Iterating over bar geometry",sep=""))
+            report$add.header(paste(feature.descr, 
+                                    other.params$descr, "Iterating over bar geometry"))
             report$push.section(report.section)
             
             for(geom in show.profile.task$geoms) {
@@ -2000,17 +2012,31 @@ plot.profiles <- function(m_a,
                                           id.var.dodge=id.var.dodge$dodge,
                                           flip.coords=other.params$flip.coords,
                                           sqrt.scale=other.params$sqrt.scale,
-                                          value.name=value.name
+                                          value.name=value.name,
+                                          stat_summary.fun.y=show.profile.task$stat_summary.fun.y
                 )
                 #env=as.environment(as.list(environment(), all.names=TRUE))
                 #print(names(as.list(env)))
                 #print(evals("pl.hist",env=env))
+                if(length(id.vars)>0) {
+                  gr.by.msg = sprintf("Data grouped by %s.", paste(id.vars,collapse=","))
+                }
+                else {
+                  gr.by.msg = "Data for all pooled samples."
+                }
+                geom.descr = geom
+                if(geom == "bar") {
+                  geom.descr = sprintf("%s (sample %s)",
+                                       geom.descr,
+                                       show.profile.task$stat_summary.fun.y
+                  )
+                }
                 report$add(pl.hist,
-                           caption=paste(sprintf("%s grouped by ",feature.descr),
-                                         paste(id.vars,collapse=","),
+                           caption=paste(sprintf("%s %s",feature.descr,gr.by.msg),
                                          if(!is.null(pl.par$ord)) 
-                                         {sprintf("in %s sorting order",pl.par$ord_descr)} 
-                                         else {""})
+                                         {sprintf("Sorting order of features is %s.",pl.par$ord_descr)} 
+                                         else {""},
+                                         geom.descr,"plot.")
                 )
               })
             }
@@ -2827,7 +2853,8 @@ mgsat.16s.task.template = within(list(), {
       show.profile.task=list(
         geoms=c("bar","violin","boxplot"),
         dodged=T,
-        faceted=T
+        faceted=T,
+        stat_summary.fun.y="mean"
       )
       show.clade.meta.task=list()      
     })
@@ -3135,7 +3162,7 @@ show.clade.meta <- function(m_a,
                             group.var,
                             value.name="abundance",
                             trans="boxcox",
-                            vars.descr="abundances") {
+                            vars.descr="Abundances") {
   
   
   count = m_a$count[,clade.names,drop=F]
@@ -3160,8 +3187,7 @@ show.clade.meta <- function(m_a,
     group.var.msg = paste("split by",group.var)
   }
   
-  report.section = report$add.header(paste("Plots of",
-                                           vars.descr,
+  report.section = report$add.header(paste(vars.descr,
                                            trans.msg,
                                            "as a function of",
                                            x.var,
@@ -4008,7 +4034,7 @@ stabsel.report <- function(m_a,
                          stab.res$PFER)  
   
   report$add.vector(get.feature.ranking(stab.res,only.names=F)$ranked,
-                    name="P(selection)",
+                    name="Prob(selection)",
                     caption=paste("Selection probability for the variables.",
                                   cutoff.descr)
   )
@@ -4024,11 +4050,12 @@ stabsel.report <- function(m_a,
 }
 
 
-genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds=F) {
+genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds=F,
+                                     plot.profiles.task=list()) {
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
-  
+
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
   report$add.descr(sprintf("Wilcoxon test (rank-sum for independent samples and signed-rank for paired samples) 
@@ -4054,17 +4081,10 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
                    only paired observations are used, and one half of the number of ties is 
                    added to the numerator (Grissom, R. J., and J. J. Kim. \"Effect Sizes for Research: Univariate 
                    and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)).
-                   Logarithm in base 2 of the fold change is also reported if requested.
+                   Logarithm in base 2 of the fold change (l2fc) is also reported if requested.
                    For independent samples, the fold change is computed between the sample means of
                    the groups (last to first). For paired samples - as the sample median of the logfold change
-                   in each matched pair of observations.
-                   Groups are ordered as %s.
-                   ",paste(levels(m_a$attr[,group.attr]),collapse=",")))
-  
-  report$add.descr(sprintf("Stability selection parameters are: %s",arg.list.as.str(genesel.param)))
-  if(!is.null(genesel.param$block.attr)) {
-    report$add.descr(sprintf("Samples are paired according to attribute %s",genesel.param$block.attr))
-  }
+                   in each matched pair of observations."))
   
   res.stab.sel.genesel = do.call(
     stab.sel.genesel,
@@ -4072,12 +4092,80 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
       genesel.param)
   )
   
-  report$add.printed(summary(m_a$attr[,group.attr]),
-                     caption=paste("Summary of response variable",group.attr))
+  ord = res.stab.sel.genesel$stab_feat$name
+  feature.order = list(list(ord=ord,ord_descr="GeneSelector paired test ranking",sfx="gsp"))
+
+  report$add.descr(sprintf("Stability selection parameters are: %s",arg.list.as.str(genesel.param)))
   
+  report$add.printed(summary(m_a$attr[,group.attr]),
+                     caption=paste("Summary of response variable (unpaired samples)",group.attr))
+  
+  caption.descr = ""
+  if(!is.null(genesel.param$block.attr)) {
+    caption.descr = sprintf("Samples are paired according to attribute %s, resulting in %s samples.",
+                      genesel.param$block.attr,res.stab.sel.genesel$n.samp)
+  }
+
+  caption.descr = sprintf("%s When fold change or difference is computed, this is done as '%s'.",caption.descr,
+                          paste(res.stab.sel.genesel$levels.last.first,collapse=" by ")
+                          )
+
   report$add.table(res.stab.sel.genesel$stab_feat,
                    caption=
-                     paste("GeneSelector stability ranking for response ",group.attr))
+                     paste(sprintf("GeneSelector stability ranking for response %s.",group.attr),
+                           caption.descr)
+  )
+  
+  plot.profiles.task = within(plot.profiles.task, {
+  id.vars.list = list(c())
+  clade.meta.x.vars=c()
+  do.profile=T
+  do.clade.meta=F
+  })
+  
+  if(!is.null(res.stab.sel.genesel$m_a.contrasts)) {
+    m_a.c = res.stab.sel.genesel$m_a.contrasts
+    tryCatchAndWarn({
+      
+      plot.profiles.task$value.name = "abundance.diff"
+      plot.profiles.task$feature.descr = paste("Abundance difference between paired samples.",
+                                               caption.descr)
+      
+      do.call(plot.profiles,
+              c(list(m_a=m_a.c,
+                     feature.order=feature.order),
+                plot.profiles.task
+              )
+      )
+      
+    })
+    
+  }
+  
+  if(!is.null(res.stab.sel.genesel$m_a.lfc.paired)) {
+    m_a.c = res.stab.sel.genesel$m_a.lfc.paired
+    tryCatchAndWarn({
+      
+      plot.profiles.task$value.name = "l2fc"
+      plot.profiles.task$feature.descr = paste("Log2 fold change in abundance between paired samples.",
+                                                caption.descr)
+      
+      if(is.null(plot.profiles.task$show.profile.task)) {
+        plot.profiles.task$show.profile.task = list()
+      }
+      plot.profiles.task$show.profile.task$stat_summary.fun.y="median"
+      do.call(plot.profiles,
+              c(list(m_a=m_a.c,
+                     feature.order=feature.order),
+                plot.profiles.task
+              )
+      )
+      
+    })
+    
+  }
+  
+  
   if(do.nmds) {
     report$add.package.citation("vegan")
     m_a.mds = m_a
@@ -4344,8 +4432,13 @@ test.counts.project <- function(m_a,
   make.global(m_a.norm)
   
   if(do.genesel) {
+    if(is.null(genesel.task$plot.profiles.task)) {
+      genesel.task$plot.profiles.task=plot.profiles.task
+    }
     tryCatchAndWarn({ 
-      res$genesel = do.call(genesel.stability.report,c(list(m_a=m_a.norm),genesel.task))
+      res$genesel = do.call(genesel.stability.report,
+                            c(list(m_a=m_a.norm),
+                              genesel.task))
     })
   }
   
@@ -5575,7 +5668,8 @@ stab.sel.genesel <- function(m_a,
                              replicates=400,
                              samp.fold.ratio=0.5,
                              maxrank=20,
-                             comp.log.fold.change=F
+                             comp.log.fold.change=F,
+                             ret.data.contrasts=T
 ) {
   library(GeneSelector)
   
@@ -5583,10 +5677,12 @@ stab.sel.genesel <- function(m_a,
   if(type=="paired") {
     type="onesample"
     s.c = sample.contrasts(m_a, group.attr = group.attr, block.attr = block.attr)
-    #DEBUG:
-    make.global(s.c)
+    levels.last.first = names(s.c$contrasts)
     m_a.c = s.c$m_a.contr
-    x = m_a.c$count  
+    x = m_a.c$count
+    ## GeneSelector Wilcoxon signed rank implementation does not work correctly with ties
+    ## (possibly because it was designed for microarrays where ties rarely happen?).
+    ## We add a small random number to break ties.
     x = x + matrix(rnorm(prod(dim(x)),0,.Machine$double.eps*100),nrow=nrow(x),ncol=ncol(x))
     y.relev = rep(1,nrow(x))
   }
@@ -5597,6 +5693,7 @@ stab.sel.genesel <- function(m_a,
     ##make last level to be first, so that effect sizes and statistics
     ##are computed for last over first
     y.relev = relevel(y,levels(y)[length(levels(y))])
+    levels.last.first = levels(y.relev)
   }
   
   x = t(x)
@@ -5620,16 +5717,20 @@ stab.sel.genesel <- function(m_a,
                                    pval=rnk.vals$pval,
                                    group=y.relev,
                                    type=type))
+  m_a.lfc.paired = NULL
   if(comp.log.fold.change) {
     rnk.vals = cbind(rnk.vals,
-                     log.fold.change.group.mean=t(group.log.fold.change(m_a$count,m_a$attr[,group.attr],base=2))
+                     l2fc.group.mean=t(group.log.fold.change(m_a$count,m_a$attr[,group.attr],base=2))
     )
     if(type.orig=="paired") {
       m_a.g = s.c$m_a.groups
+      log.fold.change.paired = log(m_a.g$count[m_a.g$attr$.contrast==1,]+1,base=2) - 
+        log(m_a.g$count[m_a.g$attr$.contrast==-1,]+1,base=2)
+      m_a.lfc.paired = list(count=log.fold.change.paired,attr=NULL)
+      
       rnk.vals = cbind(rnk.vals,
-                       log.fold.change.paired.median = aaply(
-                       log(m_a.g$count[m_a.g$attr$.contrast==1,]+1,base=2) - 
-                       log(m_a.g$count[m_a.g$attr$.contrast==-1,]+1,base=2),
+                       l2fc.paired.median = aaply(
+                         log.fold.change.paired,
                        2,
                        median
                        )
@@ -5677,7 +5778,19 @@ stab.sel.genesel <- function(m_a,
   }
   rnk.vals$index = NULL
   rnk.vals = rnk.vals[index,]
-  return (list(stab_feat=rnk.vals,gsel=gsel))
+  ret = list(stab_feat=rnk.vals,
+             gsel=gsel,
+             levels.last.first=levels.last.first,
+             n.feat = n_feat,
+             n.samp = n_samp)
+  if(type!="unpaired") {
+    if(ret.data.contrasts) {
+      ret$m_a.contrasts = m_a.c
+      ret$m_a.lfc.paired = m_a.lfc.paired
+    }
+    ret$contrasts = s.c$contrasts
+  }
+  return(ret)
 }
 
 feat.sel.samr <- function(m_a.abs) {
@@ -5729,6 +5842,7 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
     contrasts = c(1,-1)
     names(contrasts) = lev
   }
+  contrasts.ret = contrasts
   #ord = order(attr[,block.attr],attr[,group.attr])
   #dat = cbind(attr[ord,],m_a$count[ord,])
   dat = cbind(attr,m_a$count)
@@ -5787,7 +5901,7 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   else {
     m_a.groups = NULL
   }
-  return (list(m_a.contr=m_a.contr,m_a.groups=m_a.groups))
+  return (list(m_a.contr=m_a.contr,m_a.groups=m_a.groups,contrasts=contrasts.ret))
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
@@ -6326,16 +6440,18 @@ count.summary <- function(count,fun,group,format="data.frame") {
   else stop(paste("Unknown format argument value",format))
 }
 
-group.mean.ratio <- function(count,group) {
+group.mean.ratio <- function(count,group,row.names.pref="") {
   group.mean = count.summary(count,mean,group)
   stopifnot(dim(group.mean)[1] == 2)
   x = (group.mean[2,-1] / (group.mean[1,-1]+.Machine$double.eps))
-  row.names(x) = paste(group.mean[2,1],group.mean[1,1],sep=".by.")
+  row.names(x) = paste(row.names.pref,paste(group.mean[2,1],group.mean[1,1],sep=".by."),sep=".")
   return (as.matrix(x))
 }
 
 group.log.fold.change <- function(count,group,base=2) {
-  return (log(group.mean.ratio(count=count,group=group)+.Machine$double.eps,base=base))
+  row.names.pref = sprintf("l%sfc",base)
+  return (log(group.mean.ratio(count=count,group=group,row.names.pref=row.names.pref)
+              +.Machine$double.eps,base=base))
 }
 
 power.pieper.t1d <- function(
