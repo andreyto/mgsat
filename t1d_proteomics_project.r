@@ -128,7 +128,7 @@ gen.tasks.t1d.prot <- function() {
         genesel.param = within(genesel.param, {
           block.attr = "FamilyID"
           type="paired"
-          replicates=0
+          replicates=400
           maxrank=20
           samp.fold.ratio=0.5
           comp.log.fold.change=T
@@ -160,18 +160,18 @@ gen.tasks.t1d.prot <- function() {
     
     descr = "All samples, aggregated by SubjectID, unpaired Wilcoxon test"
     
-    do.summary.meta = F
+    do.summary.meta = T
     
     do.tests = T
     
     test.counts.task = within(test.counts.task, {  
       
-      do.genesel=F
-      do.stabsel=F
-      do.adonis=F
+      do.genesel=T
+      do.stabsel=T
+      do.adonis=T
       
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
       
       genesel.task = within(genesel.task, {
         

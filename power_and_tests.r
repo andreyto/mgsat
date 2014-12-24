@@ -637,8 +637,21 @@ wilcox.test.multi <- function(data,resp.vars,group.var,subset) {
   #p.adjust(pvals,method="BH")
 }
 
-wilcox.test.multi.fast <- function(tr.mat,group) {
-  RankingWilcoxon(tr.mat,group,type="unpaired",pvalues=T)@pval
+wilcox.test.multi.fast <- function(mat,group=NULL,type="unpaired",pval=T,only.pval=T) {
+  tr.mat=t(mat)
+  if(is.null(group)) {
+    stopifnot(type=="onesample")
+    group = rep(1,ncol(tr.mat))
+  }
+  res = RankingWilcoxon(tr.mat,group,type=type,pvalues=pval)
+  res = toplist(res,nrow(tr.mat))
+  res[res$index,] = res
+  if(only.pval) {
+    return (res$pval)
+  }
+  else {
+    return (res)
+  }
 }
 
 #test.method argument is for passing function definition to the new
@@ -649,7 +662,7 @@ booted.wilcox.test.multi.fast <- function(n,mat,group,indices,test.method) {
   ##replace=TRUE to select more samples than in original dataset
   ##TODO: apply strata to keep group count ratio
   ind.n = sample(indices, n, replace = TRUE, prob = NULL)
-  d <- t(mat)[,ind.n] # allows boot to select n samples
+  d <- mat[ind.n,] # allows boot to select n samples
   g <- group[ind.n]
   #print(summary(g))
   test.method(d,g)
@@ -1396,9 +1409,9 @@ plot.abund.meta <- function(m_a,
     theme(legend.position = legend.position,
           axis.title=element_blank(),
           axis.text.y=element_text(color=c("black","black")),
-      plot.title = element_text(size = rel(2)),
-      axis.text.x = element_text(size = rel(0.85),angle=90),
-      axis.text.y = element_text(size = rel(0.85)))
+          plot.title = element_text(size = rel(2)),
+          axis.text.x = element_text(size = rel(0.85),angle=90),
+          axis.text.y = element_text(size = rel(0.85)))
   
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
@@ -3086,12 +3099,13 @@ cohens.d.from.mom <- function(mean.gr,var.gr,n.gr) {
   md/csd                        ## cohen's d
 }
 
-show.distr <- function(x) {
+show.distr <- function(x,binwidth=NULL) {
   #because aes leaves its expressions unevaluated, we need
   #to bind the value of x as data frame parameter of ggplot
   ggplot(data.frame(x=x),aes(x))+
-    geom_histogram()
-  #geom_density(aes(y = ..density..))
+    geom_histogram(aes(y=..density..),
+                   binwidth=binwidth,color="black",fill=NA)+
+    geom_density()
   #stat_density()
   #hist(x,
   #     freq = F,
@@ -4055,7 +4069,7 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
-
+  
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
   report$add.descr(sprintf("Wilcoxon test (rank-sum for independent samples and signed-rank for paired samples) 
@@ -4094,7 +4108,7 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
   
   ord = res.stab.sel.genesel$stab_feat$name
   feature.order = list(list(ord=ord,ord_descr="GeneSelector paired test ranking",sfx="gsp"))
-
+  
   report$add.descr(sprintf("Stability selection parameters are: %s",arg.list.as.str(genesel.param)))
   
   report$add.printed(summary(m_a$attr[,group.attr]),
@@ -4103,13 +4117,13 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
   caption.descr = ""
   if(!is.null(genesel.param$block.attr)) {
     caption.descr = sprintf("Samples are paired according to attribute %s, resulting in %s samples.",
-                      genesel.param$block.attr,res.stab.sel.genesel$n.samp)
+                            genesel.param$block.attr,res.stab.sel.genesel$n.samp)
   }
-
+  
   caption.descr = sprintf("%s When fold change or difference is computed, this is done as '%s'.",caption.descr,
                           paste(res.stab.sel.genesel$levels.last.first,collapse=" by ")
-                          )
-
+  )
+  
   report$add.table(res.stab.sel.genesel$stab_feat,
                    caption=
                      paste(sprintf("GeneSelector stability ranking for response %s.",group.attr),
@@ -4117,10 +4131,10 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
   )
   
   plot.profiles.task = within(plot.profiles.task, {
-  id.vars.list = list(c())
-  clade.meta.x.vars=c()
-  do.profile=T
-  do.clade.meta=F
+    id.vars.list = list(c())
+    clade.meta.x.vars=c()
+    do.profile=T
+    do.clade.meta=F
   })
   
   if(!is.null(res.stab.sel.genesel$m_a.contrasts)) {
@@ -4148,7 +4162,7 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
       
       plot.profiles.task$value.name = "l2fc"
       plot.profiles.task$feature.descr = paste("Log2 fold change in abundance between paired samples.",
-                                                caption.descr)
+                                               caption.descr)
       
       if(is.null(plot.profiles.task$show.profile.task)) {
         plot.profiles.task$show.profile.task = list()
@@ -5551,7 +5565,7 @@ wilcox.eff.size.r <-function(pval, n){
 }
 
 ## x is the sample matrix, with samples in COLUMNS
-wilcox.eff.size <- function(x,stat,pval,group=NULL,type="unpaired") {
+wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
   nsamp = ncol(x)  
   if(type == "unpaired") {
     group = factor(group)
@@ -5568,7 +5582,10 @@ wilcox.eff.size <- function(x,stat,pval,group=NULL,type="unpaired") {
     stop("type parameter must be one of c('unpaired','onesample')")
   }
   rbs = 2*common.lang - 1
-  r = wilcox.eff.size.r(pval,nsamp)
+  r = NULL
+  if(!is.null(pval)) {
+    r = wilcox.eff.size.r(pval,nsamp)
+  }
   return (data.frame(common.lang.eff.size=common.lang,
                      rank.biserial.corr.eff.size=rbs,
                      r.eff.size=r)
@@ -5731,8 +5748,8 @@ stab.sel.genesel <- function(m_a,
       rnk.vals = cbind(rnk.vals,
                        l2fc.paired.median = aaply(
                          log.fold.change.paired,
-                       2,
-                       median
+                         2,
+                         median
                        )
       )
     }
@@ -5801,6 +5818,93 @@ feat.sel.samr <- function(m_a.abs) {
   samfit = SAMseq(t(m_a.abs$count),m_a.abs$attr$T1D,resp.type="Two class unpaired",geneid=colnames(m_a.abs$count))
   print(samfit)
   plot(samfit)
+}
+
+test.dist.matr.within.between <- function(m_a,group.attr,block.attr,n.perm=4000,n.perm.boot.ci=4000) {
+  require(boot)
+  require(vegan)
+  ##check that there is strictly one observation in each cell of (block,group)
+  group.attr.lev = levels(m_a$attr[,group.attr])
+  block.attr.lev = levels(m_a$attr[,block.attr])
+  stopifnot(length(group.attr.lev)==2)
+  fam.counts = as.matrix(with(m_a$attr,xtabs(as.formula(sprintf("~%s+%s",block.attr,group.attr)))))
+  stopifnot(all(as.numeric(fam.counts)==1))
+  ##sort by keys
+  m_a = subset.m_a(m_a,subset=order(m_a$attr[,block.attr],m_a$attr[,group.attr]))
+  dd = as.matrix(vegdist(m_a$count,"bray"))
+  dd = dd[m_a$attr[,group.attr]==group.attr.lev[1],
+          m_a$attr[,group.attr]==group.attr.lev[2]]
+  make.global(dd)
+  stopifnot(nrow(dd)==ncol(dd))
+  d.obs = diag(dd)
+  make.global(d.obs)
+  n.d.obs = length(d.obs)
+  i.row = 1:nrow(dd)
+  n.col = ncol(dd)
+  ##compute rank-sum sample statistic and, from that, common
+  ##language effect size
+  st = foreach(i.iter=1:n.perm,.combine=c) %do% {
+    ind = cbind(i.row,sample.int(n.col))
+    rx = rank(c(d.obs,dd[ind]),na.last=NA,ties.method="average") 
+    (sum(rx[1:n.d.obs]) - n.d.obs*(n.d.obs+1)/2)/(n.d.obs*n.d.obs)
+  }
+  make.global(st)
+  p.val = mean(st>=0.5)
+  st.es = mean(st)
+  b.m = boot(st,function(x,i) mean(x[i]),n.perm.boot.ci)
+  ci.type = "basic"
+  st.ci = boot.ci(b.m,type=ci.type)[[ci.type]]
+  
+  report$add.header(sprintf('Comparison and test of significant difference for profile
+dissimilarities within and between blocks defined
+by attribute %s for groups defined by attribute %s',block.attr,group.attr))
+  report$add.descr(paste(
+    sprintf('Bray-Curtis dissimilarity index is computed between profiles. The matrix of 
+distances D is formed where rows correspond to observations with level %s
+of %s, and columns - to level %s. The null hypothesis is that elements of 
+this matrix corresponding to rows and columns with the same level of %s ("within" block distances)
+come from the same distribution as the elements drawn from combinations of rows and columns
+where %s are not equal ("between" blocks distances).',
+            group.attr.lev[1],group.attr,group.attr.lev[2],
+            block.attr,block.attr),
+    sprintf('The alternative hypothesis is that the observed 
+"within" distribution is stochatsically smaller than the one assumed under the null hypothesis. 
+%s random samples of the "within" distribution under the null hypothesis, each of the same 
+size as the observed "within" sample, are simulated by permuting the %s labels of the columns
+of matrix D.',n.perm,block.attr), 
+    'The common language effect size of Wilcoxon rank-sum test (Grissom, R. J., and J. J. Kim. 
+\"Effect Sizes for Research: Univariate 
+and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)) is
+computed between the observed "within" dissimilarities and each of the 
+simulated samples. The expected
+value of this sample statistic under the null hypothesis is 0.5. 
+The p-value is estimated as the fraction of the statistic values of 0.5 or higher 
+(such value would mean that 
+the distances in the simulated sample are overall as small or smaller than in the observed sample).',
+    sprintf('The estimated p-value was %f, the effect size (sample 
+mean of the test statistic) was %f, and the %s
+confidence interval of the effect size was [%f,%f], as 
+estimated by bootstrap with %s replicates.',
+            p.val,st.es,st.ci[1],st.ci[4],st.ci[5],n.perm.boot.ci)))
+  g = show.distr(st)
+  g = g + 
+    geom_vline(xintercept=0.5,color="red",size=rel(2)) +
+    geom_vline(xintercept=st.es,color="blue",size=rel(1.5),linetype="dashed") +
+    #geom_vline(xintercept=st.ci[4],color="blue",size=rel(1),linetype="dotted") +
+    #geom_vline(xintercept=st.ci[5],color="blue",size=rel(1),linetype="dotted") +
+    xlab("Effect size") +
+    ylab("Density")
+  report$add(g,caption=sprintf('Emprical distribution density plot of the Wilcoxon rank-sum common
+             language effect size calculated between the profile-profile
+             distances observed within %s blocks and samples simulated from the null
+             distributionthat assumes no difference between "within" and 
+             "between" distances. Vertical solid red line corresponds to the expected
+             effect size under the null distribution. Dashed blue line corresponds to
+             the sample mean.
+             Distances were computed only across levels of %s variable.',
+                               block.attr,group.attr))
+  res = list(p.val=p.val,statistic=st,statistic.es=st.es,statistic.ci=st.ci)
+  return(res)
 }
 
 ## Taken from (http://depts.washington.edu/cshrb/wordpress/wp-content/uploads/2013/04/Tutorials-Tutorial-on-Count-Regression-R-code.txt)
@@ -6506,14 +6610,14 @@ power.pieper.t1d <- function(
   
   dim.data.filt = dim(m)
   #mtp.res = MTP(X=t(m),Y=taxa.meta.data$group,get.adjp=F)
-  tr.m = t(m)
+  
   group = taxa.meta.data$group
   make.global(m)
   make.global(group)
   m.raw = count_matr_from_df(taxa.meta.data.raw,taxa.meta.attr.names)
   eff.raw = group.mean.ratio(m.raw,group)
   
-  pvals = wilcox.test.multi.fast(tr.m,group)  
+  pvals = wilcox.test.multi.fast(m,group)  
   #make.global(pvals)
   
   if(mult.adj=="fdrtool") {

@@ -482,6 +482,8 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
     level = min(5,length(report.section$path))
   }
   x = paste(format.report.section(report.section),x)
+  ##newlines currently break header formatting, remove them
+  x = gsub("\n"," ",x)
   .self$add.p(pandoc.header.return(x,level=level,...),echo=echo)
   
   if(section.action=="push") {
