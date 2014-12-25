@@ -277,7 +277,7 @@ PandocAT$methods(add = function(x,new.paragraph=T,
   is.image = F
   caption.res = ""
   for (r in res) {
-    if(r$type=="image") {
+    if(any(r$type=="image")) {
       if(show.image.links) {
         rr = r$result
         caption.res = paste(caption.res,

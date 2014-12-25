@@ -5868,7 +5868,7 @@ where %s are not equal ("between" blocks distances).',
             group.attr.lev[1],group.attr,group.attr.lev[2],
             block.attr,block.attr),
     sprintf('The alternative hypothesis is that the observed 
-"within" distribution is stochatsically smaller than the one assumed under the null hypothesis. 
+"within" distribution is stochastically smaller than the one assumed under the null hypothesis. 
 %s random samples of the "within" distribution under the null hypothesis, each of the same 
 size as the observed "within" sample, are simulated by permuting the %s labels of the columns
 of matrix D.',n.perm,block.attr), 
@@ -5879,7 +5879,7 @@ computed between the observed "within" dissimilarities and each of the
 simulated samples. The expected
 value of this sample statistic under the null hypothesis is 0.5. 
 The p-value is estimated as the fraction of the statistic values of 0.5 or higher 
-(such value would mean that 
+(each such value means that 
 the distances in the simulated sample are overall as small or smaller than in the observed sample).',
     sprintf('The estimated p-value was %f, the effect size (sample 
 mean of the test statistic) was %f, and the %s
@@ -5897,7 +5897,7 @@ estimated by bootstrap with %s replicates.',
   report$add(g,caption=sprintf('Emprical distribution density plot of the Wilcoxon rank-sum common
              language effect size calculated between the profile-profile
              distances observed within %s blocks and samples simulated from the null
-             distributionthat assumes no difference between "within" and 
+             distribution that assumes no difference between "within" and 
              "between" distances. Vertical solid red line corresponds to the expected
              effect size under the null distribution. Dashed blue line corresponds to
              the sample mean.

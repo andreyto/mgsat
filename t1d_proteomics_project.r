@@ -29,6 +29,33 @@ read.pieper.t1d <- function(count.file="Original Collapesed APEX (All informatio
   return(m_a)
 }
 
+## This function should carry out analysis specific to metadata fields by themselves, without
+## relation to the abundance profiles. You can write it to do nothing (empty body).
+
+summary.meta.t1d.proteomics <- function(m_a) {
+  require(doBy)
+  
+  report$add.header("Summary of metadata variables")
+  
+  meta = m_a$attr
+  
+  report$add.printed(summary(meta),caption="Summary of metadata variables")
+  
+  #xtabs.formulas = list("Group~","Group~FamilyID","FamilyID~.")
+  xtabs.formulas = list("TechReplRelID~FamilyID+Group+SubjectID",
+                        "SubjectID~FamilyID+Group",
+                        "Group~FamilyID"
+  )
+  fact.xtabs = meta
+  #xtabs.formulas = list("~SubjectID","~FamilyID+SubjectID","~SubjectID+TechReplRelID")
+  for(xtabs.formula in xtabs.formulas) {
+    fact.xtabs = summaryBy(as.formula(xtabs.formula),data=fact.xtabs,FUN=length,keep.names=T)
+    report$add(fact.xtabs,caption=paste("Sample cross tabulation",xtabs.formula))
+    #report$add.printed(summary(fact.xtabs))
+  }
+  
+}
+
 
 ## This function must generate a list with analysis tasks
 
@@ -48,6 +75,8 @@ gen.tasks.t1d.prot <- function() {
     read.data.task = list(
       count.file=NULL
     )
+    
+    summary.meta.method=summary.meta.t1d.proteomics
     
     taxa.levels = c("prot")
     
@@ -162,7 +191,7 @@ gen.tasks.t1d.prot <- function() {
     
     do.summary.meta = T
     
-    do.tests = T
+    do.tests = F
     
     test.counts.task = within(test.counts.task, {  
       
@@ -185,7 +214,7 @@ gen.tasks.t1d.prot <- function() {
     
   })
   
-  return (list(task1))
+  return (list(task2))
   return (list(task1,task2))
 }
 

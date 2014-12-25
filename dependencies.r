@@ -36,7 +36,9 @@ vanilla_packages = c(
   "lme4",
   "pander",
   ##fitting to parametric distributions and goodness of fit tests
-  "fitdistrplus"
+  "fitdistrplus",
+  ##SQL-like aggregate tables, used for metadata summaries
+  "doBy"
 )
 
 bio_packages = c(
