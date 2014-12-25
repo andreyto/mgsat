@@ -2768,6 +2768,9 @@ mgsat.16s.task.template = within(list(), {
     do.plot.profiles.abund=T
     do.heatmap.abund=T
     do.select.samples=c()
+    do.extra.method=c()
+    
+    feature.ranking = "stabsel"
     
     alpha = 0.05
     
@@ -2889,6 +2892,11 @@ mgsat.16s.task.template = within(list(), {
       caption="Heatmap of abundance profile"
       stand.show="range"
     })
+
+    extra.method.task = within(list(), {
+      func = function(m_a,m_a.norm,res.tests,...) {}
+      ##possibly other arguments to func()
+    })
     
   })
   
@@ -2908,7 +2916,7 @@ stop.cluster.project <- function(cl) {
 ## create new MGSAT result object
 new_mgsatres <- function(...) {
   x = list(...)
-  class(x) <- append(class(x),"mgsatres")
+  class(x) <- append(class(x),"mgsatres",0)
   return(x)
 }
 
@@ -2923,6 +2931,14 @@ get.feature.ranking.default <- function(x.f) {
   stop("Not defined for arbitrary objects")
 }
 
+get.feature.ranking.genesel <- function(x.f,only.names=T) {
+  ranked = x.f$stab_feat
+  if(only.names) {
+    ranked = ranked$name
+  }
+  return(list(ranked=ranked))
+}
+
 get.feature.ranking.stabsel <- function(x.f,only.names=T) {
   ranked = x.f$max[order(x.f$max,decreasing = T)]
   if(only.names) {
@@ -2933,7 +2949,10 @@ get.feature.ranking.stabsel <- function(x.f,only.names=T) {
 
 get.feature.ranking.mgsatres <- function(x.f,method="stabsel") {
   meth.res = x.f[[method]]
-  if(method=="stabsel") {
+  if(is.null(meth.res)) {
+    res = NULL
+  }
+  if(method %in% c("stabsel","genesel")) {
     res = get.feature.ranking(meth.res)
   }
   else {
@@ -3040,6 +3059,7 @@ proc.project <- function(
           test.counts.task.call = test.counts.task
           test.counts.task.call$do.select.samples = (taxa.level %in% test.counts.task.call$do.select.samples)
           test.counts.task.call$do.divrich = (taxa.level %in% test.counts.task.call$do.divrich)
+          test.counts.task.call$do.extra.method = (taxa.level %in% test.counts.task.call$do.extra.method)
           
           res.tests = tryCatchAndWarn(
             do.call(test.counts.project,
@@ -4307,7 +4327,8 @@ plot.profiles.abund <- function(m_a,
                                 label,
                                 plot.profiles.task,                                
                                 res.tests=NULL,
-                                norm.count.task=NULL) {
+                                norm.count.task=NULL,
+                                feature.ranking="stabsel") {
   
   m_a.norm <- norm.count.report(m_a,
                                 res.tests=res.tests,
@@ -4317,10 +4338,14 @@ plot.profiles.abund <- function(m_a,
   tryCatchAndWarn({
     
     feature.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
-    if (!is.null(names(res.tests)) && !is.null(res.tests$stabsel)) {
-      feature.order[[2]] = list(ord=get.feature.ranking(res.tests,"stabsel")$ranked,
-                                ord_descr="Stability selection",
-                                sfx="stabsel")
+    if (!is.null(res.tests)) {
+      make.global(res.tests)
+      ord=get.feature.ranking(res.tests,feature.ranking)$ranked
+      if(!is.null(ord)) {
+      feature.order[[2]] = list(ord=ord,
+                                ord_descr=sprintf("Ranking by '%s' method",feature.ranking),
+                                sfx=feature.ranking)
+      }
     }
     
     do.call(plot.profiles,
@@ -4382,6 +4407,7 @@ test.counts.project <- function(m_a,
                                 do.divrich=T,
                                 do.plot.profiles.abund=T,
                                 do.heatmap.abund=T,
+                                do.extra.method=F,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
                                 stabsel.task=NULL,
@@ -4395,7 +4421,9 @@ test.counts.project <- function(m_a,
                                 plot.profiles.abund.task=NULL,
                                 heatmap.abund.task=NULL,
                                 alpha=0.05,
-                                do.return.data=T
+                                do.return.data=T,
+                                feature.ranking="stabsel",
+                                extra.method.task = NULL
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
@@ -4488,13 +4516,13 @@ test.counts.project <- function(m_a,
     })
   }
   
-  if( do.select.samples && do.stabsel ) {
+  if( do.select.samples ) {
     
     tryCatchAndWarn({ 
       do.call(select.samples.report,
               c(
                 list(m_a=m_a.norm,
-                     feature.ranking=get.feature.ranking(res)$ranked
+                     feature.ranking=get.feature.ranking(res,feature.ranking)$ranked
                 ),
                 select.samples.task
               )
@@ -4511,7 +4539,8 @@ test.counts.project <- function(m_a,
                 list(m_a=m_a,
                      label=label,
                      res.tests=res,
-                     plot.profiles.task=plot.profiles.task),
+                     plot.profiles.task=plot.profiles.task,
+                     feature.ranking=feature.ranking),
                 plot.profiles.abund.task
               )
       )
@@ -4530,6 +4559,17 @@ test.counts.project <- function(m_a,
     })
   }
   
+  if(do.extra.method && !is.null(extra.method.task)) {
+    extra.method.func = extra.method.task$func
+    extra.method.task$func = NULL
+    res$extra.method = do.call(extra.method.func,
+            c(list(m_a=m_a,
+                   m_a.norm=m_a.norm,
+                   res.tests=res),
+              extra.method.task
+              )
+            )
+  }
   
   if(do.return.data) {
     res$m_a = m_a
@@ -5673,6 +5713,11 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
       ranking = ranking, pval = pvals, type = type, method = "Wilcoxon")
 }
 
+new_genesel <- function(...) {
+  x = new_mgsatres(...)
+  class(x) <- append(class(x),"genesel",0)
+  return(x)
+}
 
 ## It is assumed that the count matrix x is transformed/normalized already
 ## e.g. with decostand(ihs(count),method="standardize",MARGIN=2),
@@ -5795,7 +5840,7 @@ stab.sel.genesel <- function(m_a,
   }
   rnk.vals$index = NULL
   rnk.vals = rnk.vals[index,]
-  ret = list(stab_feat=rnk.vals,
+  ret = new_genesel(stab_feat=rnk.vals,
              gsel=gsel,
              levels.last.first=levels.last.first,
              n.feat = n_feat,
@@ -5843,7 +5888,7 @@ test.dist.matr.within.between <- function(m_a,group.attr,block.attr,n.perm=4000,
   n.col = ncol(dd)
   ##compute rank-sum sample statistic and, from that, common
   ##language effect size
-  st = foreach(i.iter=1:n.perm,.combine=c) %do% {
+  st = foreach(i.iter=1:n.perm,.combine=c) %dopar% {
     ind = cbind(i.row,sample.int(n.col))
     rx = rank(c(d.obs,dd[ind]),na.last=NA,ties.method="average") 
     (sum(rx[1:n.d.obs]) - n.d.obs*(n.d.obs+1)/2)/(n.d.obs*n.d.obs)

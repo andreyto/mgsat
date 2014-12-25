@@ -94,6 +94,8 @@ gen.tasks.t1d.prot <- function() {
       do.heatmap.abund=F
       do.select.samples=c()
       
+      feature.ranking = "genesel"
+      
       count.filter.feature.options=list(min_incidence_frac=0.25)
       #count.filter.feature.options=list()
       
@@ -191,7 +193,7 @@ gen.tasks.t1d.prot <- function() {
     
     do.summary.meta = T
     
-    do.tests = F
+    do.tests = T
     
     test.counts.task = within(test.counts.task, {  
       
@@ -202,6 +204,8 @@ gen.tasks.t1d.prot <- function() {
       do.plot.profiles.abund=T
       do.heatmap.abund=T
       
+      do.extra.method = taxa.levels
+      
       genesel.task = within(genesel.task, {
         
         genesel.param = within(genesel.param, {
@@ -210,6 +214,16 @@ gen.tasks.t1d.prot <- function() {
         
       })
       
+      extra.method.task = within(extra.method.task, {
+      
+        func = function(m_a,m_a.norm,res.tests) {
+          test.dist.matr.within.between(m_a=m_a.norm,
+                                        group.attr="Group",
+                                        block.attr="FamilyID",
+                                        n.perm=4000,
+                                        n.perm.boot.ci=4000)
+        }
+      })
     })
     
   })
