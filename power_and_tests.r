@@ -2849,6 +2849,9 @@ mgsat.16s.task.template = within(list(), {
       n.perm=4000
       dist.metr="bray"
       col.trans="range"
+      norm.count.task = within(norm.count.task, {
+        method = "norm.prop"
+      })      
     })
     
     glmer.task = within(list(), {
@@ -3122,7 +3125,7 @@ cohens.d.from.mom <- function(mean.gr,var.gr,n.gr) {
 show.distr <- function(x,binwidth=NULL) {
   #because aes leaves its expressions unevaluated, we need
   #to bind the value of x as data frame parameter of ggplot
-  ggplot(data.frame(x=x),aes(x))+
+  ggplot(data.frame(x=x),aes(x=x))+
     geom_histogram(aes(y=..density..),
                    binwidth=binwidth,color="black",fill=NA)+
     geom_density()
@@ -3138,7 +3141,7 @@ show.distr <- function(x,binwidth=NULL) {
 show.distr.group <- function(x,group) {
   #because aes leaves its expressions unevaluated, we need
   #to bind the value of x as data frame parameter of ggplot
-  ggplot(data.frame(x=x,group=group),aes(x=x,fill=group))+
+  ggplot(data.frame(x=x,Group=group),aes(x=x,fill=Group))+
     #geom_histogram(alpha=0.2, position="identity")+
     geom_density(alpha=0.2,aes(y = ..density..))
 }
@@ -4254,7 +4257,14 @@ test.counts.adonis.report <- function(m_a,
                                       n.perm=4000,
                                       dist.metr="bray",
                                       col.trans="range",
-                                      data.descr="proportions of counts") {
+                                      data.descr="proportions of counts",
+                                      norm.count.task=NULL) {
+  if(!is.null(norm.count.task)) {
+    m_a <- norm.count.report(m_a,
+                                descr="Adonis",
+                                norm.count.task=norm.count.task)
+  }
+  
   ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
   ##the influence of very abundant species:
   count = m_a$count
@@ -4359,6 +4369,19 @@ plot.profiles.abund <- function(m_a,
   
 }
 
+##pull necessary data (such as DESeq2 normalization) from previously
+##done tests into the norm.count.task object
+update.norm.count.task <- function(norm.count.task,res.tests=NULL) {
+  ## if dds is required but not defined (set to NA)
+  if(!is.null(norm.count.task$method.args$dds) && 
+       is.na(norm.count.task$method.args$dds)) {
+    if(!is.null(res.tests$deseq2$dds)) {
+      norm.count.task$method.args$dds = res.tests$deseq2$dds
+    }
+  }
+  return (norm.count.task)  
+}
+
 norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL) {
   
   if(is.null(descr)) {
@@ -4372,11 +4395,7 @@ norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL
     
     descr = paste("Count normalization method",descr,":",arg.list.as.str(norm.count.task))
     
-    ## if dds is required but not defined (set to NA)
-    if(!is.null(norm.count.task$method.args$dds) && 
-         is.na(norm.count.task$method.args$dds)) {
-      norm.count.task$method.args$dds = res.tests$deseq2$dds
-    }
+    norm.count.task = update.norm.count.task(norm.count.task,res.tests=res.tests)
     
     m_a.norm <- do.call(norm.count.m_a,
                         c(list(m_a),
@@ -4387,6 +4406,7 @@ norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL
   else {
     
     descr = paste("Counts are not normalized and no features are dropped",descr)
+    
     m_a.norm = m_a
     
   }
@@ -4506,10 +4526,18 @@ test.counts.project <- function(m_a,
   }
   
   if(do.adonis) {
-    tryCatchAndWarn({     
+    tryCatchAndWarn({ 
+      if(!is.null(adonis.task$norm.count.task)) {
+        adonis.task$norm.count.task = 
+          update.norm.count.task(adonis.task$norm.count.task,res.tests=res)
+        m_a.adonis = m_a
+      }
+      else {
+        m_a.adonis = m_a.norm
+      }
       res$adonis = do.call(test.counts.adonis.report,
                            c(
-                             list(m_a=m_a.norm),
+                             list(m_a=m_a.adonis),
                              adonis.task
                            )
       )
@@ -5613,6 +5641,11 @@ wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
     stopifnot(nlevels(group) == 2)
     npairs = prod(taby)
     common.lang = stat/npairs
+    ##statistics from RankingWilcoxon is for the group with most samples,
+    ##but we want in the order of the levels
+    if(taby[2]>taby[1]) {
+      common.lang = 1 - common.lang
+    }
   }
   else if(type == "onesample") {
     common.lang = (rowSums(x > 0) + 0.5*rowSums(x==0))/
@@ -5865,44 +5898,90 @@ feat.sel.samr <- function(m_a.abs) {
   plot(samfit)
 }
 
-test.dist.matr.within.between <- function(m_a,group.attr,block.attr,n.perm=4000,n.perm.boot.ci=4000) {
-  require(boot)
+make.selection.mask.matrix <- function(m.source,val=T) {
+  matrix(val,nrow(m.source),ncol(m.source))
+}
+
+make.matrix.for.subscript.testing <- function(nrow=3,ncol=4) {
+  m = matrix("",nrow,ncol)
+  for(irow in 1:nrow) for(icol in 1:ncol) m[irow,icol] = sprintf("c(%s,%s)",irow,icol)
+  m
+}
+
+make.mask.for.selected.subscript.testing <- function(m.source,m.selected) {
+  mask = make.selection.mask.matrix(m.source,F)
+  m.ind.sel=foreach(x=as.character(m.selected),.combine=rbind) %do% {
+    eval(parse(text=x))
+  }
+  print(m.ind.sel)
+  mask[m.ind.sel] = T
+  mask
+}
+
+rank.biserial.corr <- function(x,y) {
+  rx = rank(c(x,y),na.last=NA,ties.method="average")
+  n.x = length(x)
+  n.y = length(y)
+  comm.lang = (sum(rx[1:n.x]) - n.x*(n.x+1)/2)/(n.x*n.y)
+  return (2*comm.lang-1)
+}
+
+test.dist.matr.within.between <- function(m_a,group.attr,block.attr,n.perm=4000) {
   require(vegan)
+  require(permute)
   ##check that there is strictly one observation in each cell of (block,group)
   group.attr.lev = levels(m_a$attr[,group.attr])
   block.attr.lev = levels(m_a$attr[,block.attr])
   stopifnot(length(group.attr.lev)==2)
   fam.counts = as.matrix(with(m_a$attr,xtabs(as.formula(sprintf("~%s+%s",block.attr,group.attr)))))
-  stopifnot(all(as.numeric(fam.counts)==1))
   ##sort by keys
   m_a = subset.m_a(m_a,subset=order(m_a$attr[,block.attr],m_a$attr[,group.attr]))
   dd = as.matrix(vegdist(m_a$count,"bray"))
   dd = dd[m_a$attr[,group.attr]==group.attr.lev[1],
           m_a$attr[,group.attr]==group.attr.lev[2]]
+  
   make.global(dd)
-  stopifnot(nrow(dd)==ncol(dd))
-  d.obs = diag(dd)
-  make.global(d.obs)
-  n.d.obs = length(d.obs)
-  i.row = 1:nrow(dd)
-  n.col = ncol(dd)
-  ##compute rank-sum sample statistic and, from that, common
-  ##language effect size
-  st = foreach(i.iter=1:n.perm,.combine=c) %dopar% {
-    ind = cbind(i.row,sample.int(n.col))
-    rx = rank(c(d.obs,dd[ind]),na.last=NA,ties.method="average") 
-    (sum(rx[1:n.d.obs]) - n.d.obs*(n.d.obs+1)/2)/(n.d.obs*n.d.obs)
+  
+  block = m_a$attr[,block.attr,drop=F]
+  
+  make.global(block)
+  
+  dd.block.col = block[colnames(dd),]
+  dd.block.row = block[rownames(dd),]
+  
+  mask.within = make.selection.mask.matrix(dd,F)
+  
+  for(irow in 1:nrow(dd)) {
+    mask.within[irow,] = (dd.block.col == dd.block.row[irow])
   }
-  make.global(st)
-  p.val = mean(st>=0.5)
-  st.es = mean(st)
-  b.m = boot(st,function(x,i) mean(x[i]),n.perm.boot.ci)
-  ci.type = "basic"
-  st.ci = boot.ci(b.m,type=ci.type)[[ci.type]]
+  
+  make.global(mask.within)
+  
+  st.obs = rank.biserial.corr(dd[!mask.within],dd[mask.within])
+
+  n.col = ncol(dd)
+  ##how() is masked by kernlab
+  ##permute blocks ("plots"), otherwise keep the order unchanged
+  ctrl = permute::how(
+    within=Within(type="none"),
+    plots=Plots(type="free",strata=dd.block.col)
+  )
+  perm = shuffleSet(n=n.col,
+                    nset=n.perm,
+                    control=ctrl
+                    )
+  make.global(perm)
+  st.perm = foreach(i.iter=1:n.perm,.combine=c,.export=c("rank.biserial.corr")) %dopar% {
+    i.col = perm[i.iter,]
+    mask.within.i = mask.within[,i.col]
+    rank.biserial.corr(dd[!mask.within.i],dd[mask.within.i])
+  }
+  make.global(st.perm)
+  p.val = mean(st.perm>=st.obs)
   
   report$add.header(sprintf('Comparison and test of significant difference for profile
 dissimilarities within and between blocks defined
-by attribute %s for groups defined by attribute %s',block.attr,group.attr))
+by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   report$add.descr(paste(
     sprintf('Bray-Curtis dissimilarity index is computed between profiles. The matrix of 
 distances D is formed where rows correspond to observations with level %s
@@ -5913,42 +5992,39 @@ where %s are not equal ("between" blocks distances).',
             group.attr.lev[1],group.attr,group.attr.lev[2],
             block.attr,block.attr),
     sprintf('The alternative hypothesis is that the observed 
-"within" distribution is stochastically smaller than the one assumed under the null hypothesis. 
-%s random samples of the "within" distribution under the null hypothesis, each of the same 
-size as the observed "within" sample, are simulated by permuting the %s labels of the columns
+"within" distribution is stochastically smaller than the observed "between" distribution. 
+%s random samples of the "within" and "between" distributions under the null hypothesis, of the same 
+size as the observed sample, are simulated by permuting the %s labels of the columns
 of matrix D.',n.perm,block.attr), 
-    'The common language effect size of Wilcoxon rank-sum test (Grissom, R. J., and J. J. Kim. 
+    'The rank biserial correlation (Grissom, R. J., and J. J. Kim. 
 \"Effect Sizes for Research: Univariate 
 and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)) is
-computed between the observed "within" dissimilarities and each of the 
-simulated samples. The expected
-value of this sample statistic under the null hypothesis is 0.5. 
-The p-value is estimated as the fraction of the statistic values of 0.5 or higher 
-(each such value means that 
-the distances in the simulated sample are overall as small or smaller than in the observed sample).',
-    sprintf('The estimated p-value was %f, the effect size (sample 
-mean of the test statistic) was %f, and the %s
-confidence interval of the effect size was [%f,%f], as 
-estimated by bootstrap with %s replicates.',
-            p.val,st.es,st.ci[1],st.ci[4],st.ci[5],n.perm.boot.ci)))
-  g = show.distr(st)
+computed between the observed "between" and "within" dissimilarities both in the observed and
+simulated samples.
+The p-value is estimated as the fraction of the simulated statistic values that are as high or higher 
+than the observed value.',
+    sprintf('The estimated p-value was %f and the observed value of the statistic was %f.',
+            p.val,st.obs)))
+  dd.pl = rbind(
+    data.frame(x=as.numeric(dd[!mask.within]),
+               group="Between"),
+    data.frame(x=as.numeric(dd[mask.within]),
+               group="Within")
+  )
+  make.global(dd.pl)
+  g = show.distr.group(dd.pl$x,dd.pl$group)
   g = g + 
-    geom_vline(xintercept=0.5,color="red",size=rel(2)) +
-    geom_vline(xintercept=st.es,color="blue",size=rel(1.5),linetype="dashed") +
+    #geom_vline(xintercept=st.obs,color="blue",size=rel(1.5),linetype="dashed") +
     #geom_vline(xintercept=st.ci[4],color="blue",size=rel(1),linetype="dotted") +
     #geom_vline(xintercept=st.ci[5],color="blue",size=rel(1),linetype="dotted") +
-    xlab("Effect size") +
-    ylab("Density")
-  report$add(g,caption=sprintf('Emprical distribution density plot of the Wilcoxon rank-sum common
-             language effect size calculated between the profile-profile
-             distances observed within %s blocks and samples simulated from the null
-             distribution that assumes no difference between "within" and 
-             "between" distances. Vertical solid red line corresponds to the expected
-             effect size under the null distribution. Dashed blue line corresponds to
-             the sample mean.
+    xlab("Dissimilarity") +
+    ylab("Empirical Distribution Density")
+  report$add(g,caption=sprintf('Emprical distribution density plots of the 
+             profile-profile
+             dissimilarities observed between and within %s blocks.
              Distances were computed only across levels of %s variable.',
                                block.attr,group.attr))
-  res = list(p.val=p.val,statistic=st,statistic.es=st.es,statistic.ci=st.ci)
+  res = list(p.val=p.val,statistic=st.obs)
   return(res)
 }
 

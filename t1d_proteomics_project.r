@@ -1,4 +1,18 @@
-read.pieper.t1d <- function(count.file="Original Collapesed APEX (All information).AT.tsv",taxa.level=NULL) {
+load.meta.t1d.pieper <- function(file.name) {
+  
+  meta =read.delim(file.name, header=TRUE,stringsAsFactors=T, sep="\t")
+  make.global(meta)
+  meta$ProteomicsID = factor(sub("-",".",as.character(meta$ProteomicsID),fixed=T))
+  rownames(meta) = meta$ProteomicsID
+  ##Setting Control to base level plays nice with DESeq2 defaults
+  meta$T1D = relevel(meta$T1D,"Control")
+  return (meta)
+}
+
+read.pieper.t1d <- function(count.file="Original Collapesed APEX (All information).AT.tsv",
+                            meta.file="metadata.Family_groups_T1D-C.txt",
+                            load.meta.method=NULL,
+                            taxa.level=NULL) {
   require(data.table)
   
   file_name = count.file
@@ -18,12 +32,18 @@ read.pieper.t1d <- function(count.file="Original Collapesed APEX (All informatio
   meta = as.data.frame(t(as.data.frame(strsplit(row.names(data),"[-_]"))))
   make.global(meta)
   row.names(meta) = row.names(data)
-  names(meta) = c("Group","FamilyID","TechReplRelID")
+  names(meta) = c("Group","DummyID","TechReplRelID")
   meta = within(meta,{
-    SubjectID = factor(paste(Group,FamilyID,sep="."))
+    ProteomicsID = factor(paste(Group,DummyID,sep="."))
   })
   meta$SampleID = row.names(meta)
-  attr.names = names(meta)
+  meta.bio = do.call(load.meta.method,
+                     list(file.name=meta.file)
+                     )
+  meta = join(meta,meta.bio,by="ProteomicsID",match="first")
+  meta = within(meta,{
+    UnitID = factor(paste(FamilyID,Group,sep="."))
+  })  
   m_a = list(count=data,attr=meta,feat.attr=feat.attr)
   make.global(m_a)
   return(m_a)
@@ -73,7 +93,9 @@ gen.tasks.t1d.prot <- function() {
     read.data.method=read.pieper.t1d
     
     read.data.task = list(
-      count.file=NULL
+      count.file=NULL,
+      meta.file=NULL,
+      load.meta.method=load.meta.t1d.pieper
     )
     
     summary.meta.method=summary.meta.t1d.proteomics
@@ -112,19 +134,20 @@ gen.tasks.t1d.prot <- function() {
   
   get.taxa.meta.aggr.base<-function(m_a) { 
     m_a = aggregate.by.meta.data.m_a(m_a,
-                                     group_col="SubjectID",
+                                     group_col="UnitID",
                                      count_aggr=mean)    
-    report$add.p(paste("After aggregating by averaging technical replicates per subject:",nrow(m_a$count)))
+    report$add.p(paste("After aggregating by averaging samples per family/condition:",nrow(m_a$count)))
     
     return (m_a)
   }
   
   task0 = within( mgsat.proteomics.task.template, {
     
-    descr = "All samples, aggregated by SubjectID"
+    descr = "All samples, aggregated by UnitID (family/condition)"
     
     read.data.task = within(read.data.task, {
       count.file="Original Collapesed APEX (All information).AT.tsv"
+      meta.file="metadata.Family_groups_T1D-C.txt"
     })
     
     get.taxa.meta.aggr<-function(m_a) { 
@@ -135,7 +158,7 @@ gen.tasks.t1d.prot <- function() {
   
   task1 = within( task0, {
     
-    descr = "All samples, aggregated by SubjectID, paired Wilcoxon test"
+    descr = "All samples, aggregated by UnitID (family/condition), paired Wilcoxon test"
     
     do.summary.meta = F
     
@@ -169,8 +192,9 @@ gen.tasks.t1d.prot <- function() {
       
       adonis.task = within(adonis.task, {
         
-        dist.metr="euclidean"
-        col.trans="standardize"
+        #dist.metr="euclidean"
+        #col.trans="standardize"
+        norm.count.task=NULL
         data.descr="normalized counts"
         
         tasks = list(
@@ -189,7 +213,7 @@ gen.tasks.t1d.prot <- function() {
   
   task2 = within( task1, {
     
-    descr = "All samples, aggregated by SubjectID, unpaired Wilcoxon test"
+    descr = "All samples, aggregated by UnitID (family/condition), unpaired Wilcoxon test"
     
     do.summary.meta = T
     
@@ -220,15 +244,13 @@ gen.tasks.t1d.prot <- function() {
           test.dist.matr.within.between(m_a=m_a.norm,
                                         group.attr="Group",
                                         block.attr="FamilyID",
-                                        n.perm=4000,
-                                        n.perm.boot.ci=4000)
+                                        n.perm=4000)
         }
       })
     })
     
   })
   
-  return (list(task2))
   return (list(task1,task2))
 }
 

@@ -610,6 +610,62 @@ task4 = within( task1, {
   
 })
 
+task4.1 = within( task4, {
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "All subjects where AA is defined, association with Auto Antibody status (AA)"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$AA %in% c("AA+","AA-")))
+    m_a$attr$AA = factor(m_a$attr$AA)
+    return (m_a)
+  }
+  
+  test.counts.task = within(test.counts.task, {
+    
+    do.deseq2 = T
+    do.adonis = F
+    do.genesel = F
+    do.stabsel = F
+    do.divrich = c()
+    do.plot.profiles.abund=F
+    do.heatmap.abund=F    
+  })
+})
+
+task1.1 = within( task1, {
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "All samples, Adonis test for association with T1D"
+  
+  main.meta.var.cont = "age" 
+  
+  test.counts.task = within(test.counts.task, {
+    
+    do.deseq2 = F
+    do.adonis = T
+    do.genesel = F
+    do.stabsel = F
+    do.divrich = c()
+    do.plot.profiles.abund=F
+    do.heatmap.abund=F    
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = sprintf("age.quant+%s",main.meta.var)
+    })
+        
+  })
+  
+})
+
+
 task5.1 = within( task1, {
   descr = "Control samples with Auto Antibody status (AA) AA- vs T1D samples with A1C <= 7.3"
   
@@ -699,6 +755,7 @@ extra.tasks = foreach(task=list(task5.1,task5.2)) %do% {
 })
 }
 
+return (list(task4.1))
 return (list(task1,task2,task3,task3.1,task4))
 }
 
