@@ -4009,7 +4009,8 @@ stabsel.report <- function(m_a,
                            args.stabsel = list(
                              PFER=0.05,
                              sampling.type="SS",
-                             assumption="r-concave"
+                             assumption="r-concave",
+                             q=NULL
                            )
 ) {
   
@@ -4024,8 +4025,21 @@ stabsel.report <- function(m_a,
   resp = m_a$attr[,resp.attr]
   count = m_a$count
   
-  #MB's paper
-  q = ceiling(sqrt(0.8*nrow(count)))
+  if(is.null(args.stabsel$q)) {
+    #MB's paper
+    q = ceiling(sqrt(0.8*nrow(count)))
+    ##alternative is nrow(count)/log(ncol(count))
+    ##as the condition on the size of support for Theta
+    ##in refs [CT07, BRT09, BvdG11] from
+    ##{Confidence Intervals and Hypothesis Testing for
+    ##High-Dimensional Regression,
+    ##Adel Javanmard and Andrea Montanari}
+    ##http://web.stanford.edu/~montanar/sslasso/
+    args.stabsel$q = q
+  }
+  else {
+    q = args.stabsel$q
+  }
   
   param.fit = do.call(parfitfun,
                       c(list(x=count,y=resp,q=q),
@@ -4034,7 +4048,7 @@ stabsel.report <- function(m_a,
   )$param
   
   args.fitfun = c(args.fitfun,param.fit)
-  args.stabsel$q = q
+
   stab.res = do.call(stabsel,c(
     list(x=count,y=resp,
          fitfun=fitfun,
@@ -4138,7 +4152,7 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
                      caption=paste("Summary of response variable (unpaired samples)",group.attr))
   
   caption.descr = ""
-  if(!is.null(genesel.param$block.attr)) {
+  if(genesel.param$type=="paired" && !is.null(genesel.param$block.attr)) {
     caption.descr = sprintf("Samples are paired according to attribute %s, resulting in %s samples.",
                             genesel.param$block.attr,res.stab.sel.genesel$n.samp)
   }
@@ -5837,16 +5851,19 @@ stab.sel.genesel <- function(m_a,
   #make.global(type)
   
   if(replicates > 0) {
+    minclassize = min(table(y.relev))
+    ##TODO: expose minclassize and balanced to user
     #contrary to the help page, does not work when y is a factor - need to convert
     fold_matr = GenerateFoldMatrix(y = as.numeric(y.relev), 
                                    k=trunc(n_samp*(1-samp.fold.ratio)),
                                    replicates=replicates,
-                                   type=type)
+                                   type=type,
+                                   minclassize=minclassize)
     
     rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
     #make.global(rep_rnk)
     #toplist(rep_rnk,show=F)
-    stab_ovr = GetStabilityOverlap(rep_rnk, scheme = "original", decay = "linear")
+    #stab_ovr = GetStabilityOverlap(rep_rnk, scheme = "original", decay = "linear")
     ### for a short summary
     #summary(stab_ovr, measure = "intersection", display = "all", position = 10)
     #summary(stab_ovr, measure = "overlapscore", display = "all", position = 10)
