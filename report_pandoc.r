@@ -36,6 +36,12 @@ arg.list.as.str<-function(x,collapse=",") {
   )
 }
 
+#' Write citations for a vector of package names into file in BibText format
+citation.to.file <- function(package,file.name,append=F,...) {
+  cit = unlist(sapply(package,function(p) toBibtex(citation(p,...))))
+  write(cit,file.name,append=append)
+}
+
 #' Adopted from phyloseq code
 #' Computes text size of axis label based on the number of
 #' labels.
