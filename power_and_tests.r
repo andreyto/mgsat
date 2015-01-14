@@ -2685,7 +2685,7 @@ read.data.project.yap <- function(taxa.summary.file,
     taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
     report$add.p(sprintf("Loaded OTU taxonomy file %s.",
                          pandoc.link.verbatim.return(cons.taxonomy.file)
-                         ))
+    ))
     count.file = otu.shared.file
   }
   else {
@@ -2904,7 +2904,7 @@ mgsat.16s.task.template = within(list(), {
       caption="Heatmap of abundance profile"
       stand.show="range"
     })
-
+    
     extra.method.task = within(list(), {
       func = function(m_a,m_a.norm,res.tests,...) {}
       ##possibly other arguments to func()
@@ -4059,7 +4059,7 @@ stabsel.report <- function(m_a,
   )$param
   
   args.fitfun = c(args.fitfun,param.fit)
-
+  
   stab.res = do.call(stabsel,c(
     list(x=count,y=resp,
          fitfun=fitfun,
@@ -4180,58 +4180,58 @@ genesel.stability.report <- function(m_a,group.attr,
                      paste(sprintf("GeneSelector stability ranking for response %s.",group.attr),
                            caption.descr)
   )
-
+  
   if(do.plot.profiles) {
-  
-  plot.profiles.task = within(plot.profiles.task, {
-    id.vars.list = list(c())
-    clade.meta.x.vars=c()
-    do.profile=T
-    do.clade.meta=F
-  })
-  
-  if(!is.null(res.stab.sel.genesel$m_a.contrasts)) {
-    m_a.c = res.stab.sel.genesel$m_a.contrasts
-    tryCatchAndWarn({
-      
-      plot.profiles.task$value.name = "abundance.diff"
-      plot.profiles.task$feature.descr = paste("Abundance difference between paired samples.",
-                                               caption.descr)
-      
-      do.call(plot.profiles,
-              c(list(m_a=m_a.c,
-                     feature.order=feature.order),
-                plot.profiles.task
-              )
-      )
-      
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c())
+      clade.meta.x.vars=c()
+      do.profile=T
+      do.clade.meta=F
     })
     
-  }
-  
-  if(!is.null(res.stab.sel.genesel$m_a.lfc.paired)) {
-    m_a.c = res.stab.sel.genesel$m_a.lfc.paired
-    tryCatchAndWarn({
+    if(!is.null(res.stab.sel.genesel$m_a.contrasts)) {
+      m_a.c = res.stab.sel.genesel$m_a.contrasts
+      tryCatchAndWarn({
+        
+        plot.profiles.task$value.name = "abundance.diff"
+        plot.profiles.task$feature.descr = paste("Abundance difference between paired samples.",
+                                                 caption.descr)
+        
+        do.call(plot.profiles,
+                c(list(m_a=m_a.c,
+                       feature.order=feature.order),
+                  plot.profiles.task
+                )
+        )
+        
+      })
       
-      plot.profiles.task$value.name = "l2fc"
-      plot.profiles.task$feature.descr = paste("Log2 fold change in abundance between paired samples.",
-                                               caption.descr)
-      
-      if(is.null(plot.profiles.task$show.profile.task)) {
-        plot.profiles.task$show.profile.task = list()
-      }
-      plot.profiles.task$show.profile.task$stat_summary.fun.y="median"
-      do.call(plot.profiles,
-              c(list(m_a=m_a.c,
-                     feature.order=feature.order),
-                plot.profiles.task
-              )
-      )
-      
-    })
+    }
     
-  }
-  
+    if(!is.null(res.stab.sel.genesel$m_a.lfc.paired)) {
+      m_a.c = res.stab.sel.genesel$m_a.lfc.paired
+      tryCatchAndWarn({
+        
+        plot.profiles.task$value.name = "l2fc"
+        plot.profiles.task$feature.descr = paste("Log2 fold change in abundance between paired samples.",
+                                                 caption.descr)
+        
+        if(is.null(plot.profiles.task$show.profile.task)) {
+          plot.profiles.task$show.profile.task = list()
+        }
+        plot.profiles.task$show.profile.task$stat_summary.fun.y="median"
+        do.call(plot.profiles,
+                c(list(m_a=m_a.c,
+                       feature.order=feature.order),
+                  plot.profiles.task
+                )
+        )
+        
+      })
+      
+    }
+    
   }
   
   if(do.nmds) {
@@ -4290,11 +4290,13 @@ test.counts.adonis.report <- function(m_a,
                                       col.trans="range",
                                       data.descr="proportions of counts",
                                       norm.count.task=NULL) {
+  report$add.header(paste("PermANOVA (adonis) analysis of ",data.descr))
+  report$add.package.citation("vegan")  
   is.dist = inherits(m_a$count,"dist")
   if(!is.dist && !is.null(norm.count.task)) {
     m_a <- norm.count.report(m_a,
-                                descr="Adonis",
-                                norm.count.task=norm.count.task)
+                             descr="Adonis",
+                             norm.count.task=norm.count.task)
   }
   
   ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
@@ -4316,8 +4318,6 @@ test.counts.adonis.report <- function(m_a,
   }
   
   #print(ad.res)
-  report$add.header(paste("PermANOVA (adonis) analysis of ",data.descr))
-  report$add.package.citation("vegan")
   report$add.descr(sprintf("Non-parametric multivariate test for association between
                            %s and meta-data variables.%s%s",
                            data.descr,
@@ -4346,8 +4346,8 @@ test.counts.adonis.report <- function(m_a,
                                               "with formula",
                                               pandoc.escape.special(formula_str),
                                               strata.descr
-                                              )
-                         )
+      )
+      )
       report$add.table(ad.res$aov.tab,
                        show.row.names=T,
                        caption=paste(descr,"AOV Table"))
@@ -4394,9 +4394,9 @@ plot.profiles.abund <- function(m_a,
       make.global(res.tests)
       ord=get.feature.ranking(res.tests,feature.ranking)$ranked
       if(!is.null(ord)) {
-      feature.order[[2]] = list(ord=ord,
-                                ord_descr=sprintf("Ranking by '%s' method",feature.ranking),
-                                sfx=feature.ranking)
+        feature.order[[2]] = list(ord=ord,
+                                  ord_descr=sprintf("Ranking by '%s' method",feature.ranking),
+                                  sfx=feature.ranking)
       }
     }
     
@@ -4633,12 +4633,12 @@ test.counts.project <- function(m_a,
     extra.method.func = extra.method.task$func
     extra.method.task$func = NULL
     res$extra.method = do.call(extra.method.func,
-            c(list(m_a=m_a,
-                   m_a.norm=m_a.norm,
-                   res.tests=res),
-              extra.method.task
-              )
-            )
+                               c(list(m_a=m_a,
+                                      m_a.norm=m_a.norm,
+                                      res.tests=res),
+                                 extra.method.task
+                               )
+    )
   }
   
   if(do.return.data) {
@@ -5918,10 +5918,10 @@ stab.sel.genesel <- function(m_a,
   rnk.vals$index = NULL
   rnk.vals = rnk.vals[index,]
   ret = new_genesel(stab_feat=rnk.vals,
-             gsel=gsel,
-             levels.last.first=levels.last.first,
-             n.feat = n_feat,
-             n.samp = n_samp)
+                    gsel=gsel,
+                    levels.last.first=levels.last.first,
+                    n.feat = n_feat,
+                    n.samp = n_samp)
   if(type!="unpaired") {
     if(ret.data.contrasts) {
       ret$m_a.contrasts = m_a.c
@@ -5981,7 +5981,7 @@ test.dist.matr.within.between <- function(m_a,
   require(vegan)
   require(permute)
   
-report$add.header(sprintf('Comparison and test of significant difference for profile
+  report$add.header(sprintf('Comparison and test of significant difference for profile
 dissimilarities within and between blocks defined
 by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   
@@ -5993,7 +5993,7 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   
   ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
   ##the influence of very abundant species:
-
+  
   if(!is.null(col.trans) && col.trans != "ident") {
     m_a$count = decostand(m_a$count,method=col.trans,MARGIN=2)
     col.trans.descr = sprintf(" Profile columns are normalized with %s method of decostand function.",col.trans)
@@ -6003,7 +6003,7 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   }
   
   dist.metr.descr = sprintf(" Dissimilarity index is %s.",dist.metr)
-
+  
   ##check that there is strictly one observation in each cell of (block,group)
   group.attr.lev = levels(factor(m_a$attr[,group.attr]))
   block.attr.lev = levels(factor(m_a$attr[,block.attr]))
@@ -6014,10 +6014,8 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   dd = as.matrix(vegdist(m_a$count,dist.metr))
   dd = dd[m_a$attr[,group.attr]==group.attr.lev[1],
           m_a$attr[,group.attr]==group.attr.lev[2]]
-    
-  block = m_a$attr[,block.attr,drop=F]
   
-  make.global(block)
+  block = m_a$attr[,block.attr,drop=F]
   
   dd.block.col = block[colnames(dd),]
   dd.block.row = block[rownames(dd),]
@@ -6028,13 +6026,12 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
     mask.within[irow,] = (dd.block.col == dd.block.row[irow])
   }
   
-  make.global(mask.within)
-  
   st.obs = rank.biserial.corr(dd[!mask.within],dd[mask.within])
-
+  
   n.col = ncol(dd)
-  ##how() is masked by kernlab
-  ##permute blocks ("plots"), otherwise keep the order unchanged
+  ## how() is masked by kernlab
+  ## permute blocks ("plots"), otherwise keep the order unchanged
+  ## All permute machinery refuses to work with unbalanced datasets
   ctrl = permute::how(
     within=Within(type="none"),
     plots=Plots(type="free",strata=dd.block.col)
@@ -6043,41 +6040,47 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   perm = shuffleSet(n=n.col,
                     nset=n.perm-1,
                     control=ctrl
-                    )
+  )
   perm = rbind(perm,1:n.col)
   
-  make.global(perm)
+  
   st.perm = foreach(i.iter=1:n.perm,.combine=c,.export=c("rank.biserial.corr")) %dopar% {
     i.col = perm[i.iter,]
     mask.within.i = mask.within[,i.col]
     rank.biserial.corr(dd[!mask.within.i],dd[mask.within.i])
   }
-
+  
   p.val = mean(st.perm>=st.obs)
   
   report$add.descr(paste(
     sprintf('%s%s The matrix of 
-distances D is formed where rows correspond to observations with level %s
-of %s, and columns - to level %s. The null hypothesis is that elements of 
-this matrix corresponding to rows and columns with the same level of %s ("within" block distances)
-come from the same distribution as the elements drawn from combinations of rows and columns
-where %s are not equal ("between" blocks distances).',
+  dissimilarities D is formed where rows correspond to observations with level %s
+  of %s, and columns - to level %s. The elements of 
+  this matrix corresponding to rows and columns with the same 
+  level of %s are called \"within\" block dissimilarities, while
+  the elements drawn from combinations of rows and columns
+  where %s are not equal are called \"between\" blocks dissimilarities.',
             dist.metr.descr,
             col.trans.descr,
             group.attr.lev[1],group.attr,group.attr.lev[2],
             block.attr,block.attr),
-    sprintf('The alternative hypothesis is that the observed 
-"within" distribution is stochastically smaller than the observed "between" distribution. 
-%s random samples of the "within" and "between" distributions under the null hypothesis, of the same 
-size as the observed sample, are simulated by permuting the %s labels of the columns
-of matrix D.',n.perm,block.attr), 
+    'The null hypothesis is that the observed difference of \"between\" and \"within\" 
+  block dissimilarities is consistent with what could be expected 
+  if the block structure was assigned to the observations at random.',
+    'The alternative hypothesis is that the \"between\"/\"within\" 
+  difference is larger than would have been expected from a random block assignment.',
+    sprintf('We simulate %s matrices in which both \"between\" and \"within\" 
+  dissimilarities come from the null distribution 
+  by permuting the %s labels of the columns
+  of matrix D.',n.perm,block.attr), 
     'The rank biserial correlation (Grissom, R. J., and J. J. Kim. 
-\"Effect Sizes for Research: Univariate 
-and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)) is
-computed between the observed "between" and "within" dissimilarities both in the observed and
-simulated samples.
-The p-value is estimated as the fraction of the simulated statistic values that are as high or higher 
-than the observed value.',
+  \"Effect Sizes for Research: Univariate 
+  and Multivariate Applications, 2nd Edn New York.\" NY: Taylor and Francis (2012)) is
+  computed between the observed \"between\" and \"within\" dissimilarities both in the observed and
+  simulated samples. Positive values of this correlation statistic would indicate 
+  \"between\" dissimilarities being stochastically larger than \"within\" dissimilarities.
+  The p-value is estimated as the fraction of the simulated statistic values that are as high or higher 
+  than the observed value.',
     sprintf('The estimated p-value was %f and the observed value of the statistic was %f.',
             p.val,st.obs)))
   dd.pl = rbind(
