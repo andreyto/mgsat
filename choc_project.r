@@ -336,8 +336,8 @@ gen.tasks.choc <- function() {
                                    & m_a$attr$visit.1
                                    & m_a$attr$visit.2))
       #DEBUG: scrambling SubjectID of before.chemo to see how paired tests behave on random pairings
-      #m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"] = 
-      #  sample(m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"])
+      m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"] = 
+        sample(m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"])
       return(m_a)
     }
     
