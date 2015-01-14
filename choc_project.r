@@ -345,7 +345,7 @@ gen.tasks.choc <- function() {
       
       do.divrich = c()
       do.deseq2 = F
-      do.adonis = F
+      do.adonis = T
       do.genesel = F
       do.stabsel = F
       do.glmer = F
@@ -392,6 +392,14 @@ gen.tasks.choc <- function() {
           #     strata="SubjectID",
           #     descr="Association with Antibiotic use and therapy status paired by subject")
         )
+        
+        dist.metr="euclidian"
+        col.trans="standardize"
+
+        norm.count.task = within(norm.count.task, {
+          method="norm.clr"
+          drop.features = list()
+        })
         
       })
       
