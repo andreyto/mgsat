@@ -393,13 +393,13 @@ gen.tasks.choc <- function() {
           #     descr="Association with Antibiotic use and therapy status paired by subject")
         )
         
-        dist.metr="euclidian"
-        col.trans="standardize"
+        #dist.metr="euclidian"
+        #col.trans="standardize"
 
-        norm.count.task = within(norm.count.task, {
-          method="norm.clr"
-          drop.features = list()
-        })
+        #norm.count.task = within(norm.count.task, {
+        #  method="norm.clr"
+        #  drop.features = list()
+        #})
         
       })
       
@@ -420,14 +420,14 @@ gen.tasks.choc <- function() {
                                         group.attr="TherapyStatus",
                                         block.attr="SubjectID",
                                         n.perm=4000,
-                                        dist.metr="euclidian",
-                                        col.trans="standardize",
+                                        #dist.metr="euclidian",
+                                        #col.trans="standardize",
                                         norm.count.task=norm.count.task.extra
                                         )
         }
         norm.count.task.extra = within(norm.count.task, {
-          method="norm.clr"
-          drop.features = list()
+          method="norm.prop"
+          #drop.features = list()
         })
         
       })
