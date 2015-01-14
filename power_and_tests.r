@@ -4530,7 +4530,7 @@ test.counts.project <- function(m_a,
   
   m_a.norm <- norm.count.report(m_a,
                                 res.tests=res,
-                                descr="data analysis",
+                                descr="data analysis (unless modified by specific methods)",
                                 norm.count.task)
   
   make.global(m_a.norm)
