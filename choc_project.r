@@ -69,13 +69,6 @@ load.meta.choc <- function(file.name) {
   
   meta$visit = as.numeric(laply(as.character(meta$SampleID.compound),
                                 function(x) unlist(strsplit(x,".v",fixed=T))[2]))
-  meta.visit.max = join(meta,
-                        ddply(meta,"SubjectID",summarise,visit.max=max(visit)),
-                        by="SubjectID",
-                        match="first")
-  stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
-              nrow(meta.visit.max)==nrow(meta))
-  meta = meta.visit.max
   meta$SampleID.1 = as.factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
   meta$Sample.type = as.factor(meta$Sample.type)
   meta$Sample.type.1 = as.factor(meta$Sample.type.1)
@@ -150,6 +143,7 @@ gen.tasks.choc <- function() {
   task0 = within( mgsat.16s.task.template, {
     
     taxa.levels = c(2,6,"otu")
+    #taxa.levels = c(2)
     
     descr = "All samples, no aggregation"
     
@@ -163,6 +157,22 @@ gen.tasks.choc <- function() {
     })
     
     get.taxa.meta.aggr.base<-function(m_a) { 
+      ##any aggregated attributes have to be computed here,
+      ##after the available count samples have been joined,
+      ##as opposed to in the load.meta() function.
+      meta = m_a$attr
+      meta.visit.max = join(meta,
+                            ddply(meta,"SubjectID",summarise,
+                                  visit.max=max(visit),
+                                  visit.min=min(visit),
+                                  visit.1=any(visit==1),
+                                  visit.2=any(visit==2)),
+                            by="SubjectID",
+                            match="first")
+      stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
+                  nrow(meta.visit.max)==nrow(meta))
+      m_a$attr = meta.visit.max
+      
       ##As of 2014-11-05, there are only 6 samples at visit 5, and less in higher visits
       ##and their profiles look similar to visit 4
       m_a = subset.m_a(m_a,subset=(m_a$attr$visit<=4))
@@ -321,20 +331,27 @@ gen.tasks.choc <- function() {
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
-      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient" & m_a$attr$visit <= 2))
+      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient" 
+                                   & m_a$attr$visit <= 2 
+                                   & m_a$attr$visit.1
+                                   & m_a$attr$visit.2))
+      #DEBUG: scrambling SubjectID of before.chemo to see how paired tests behave on random pairings
+      #m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"] = 
+      #  sample(m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"])
       return(m_a)
     }
     
     test.counts.task = within(test.counts.task, {
       
-      #do.divrich = c()
-      do.deseq2 = T
-      do.adonis = T
-      do.genesel = T
-      do.stabsel = T
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
       do.glmer = F
-      do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      do.extra.method = taxa.levels
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
@@ -350,7 +367,14 @@ gen.tasks.choc <- function() {
       
       genesel.task = within(genesel.task, {
         group.attr = main.meta.var
+        do.plot.profiles = F
+        genesel.param = within(genesel.param, {
+          block.attr = "SubjectID"
+          type="unpaired"
+          replicates=0
+        })
       })
+      
       
       stabsel.task = within(stabsel.task, {
         resp.attr=main.meta.var
@@ -360,11 +384,13 @@ gen.tasks.choc <- function() {
         
         tasks = list(
           list(formula.rhs=main.meta.var,
+               descr="Association with therapy status unpaired by subject"),
+          list(formula.rhs=main.meta.var,
                strata="SubjectID",
-               descr="Association with therapy status paired by subject"),
-          list(formula.rhs=paste("Antibiotic * ", main.meta.var),
-               strata="SubjectID",
-               descr="Association with Antibiotic use and therapy status paired by subject")
+               descr="Association with therapy status paired by subject")
+          #list(formula.rhs=paste("Antibiotic * ", main.meta.var),
+          #     strata="SubjectID",
+          #     descr="Association with Antibiotic use and therapy status paired by subject")
         )
         
       })
@@ -377,6 +403,25 @@ gen.tasks.choc <- function() {
       
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var,"Antibiotic")
+      })
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          test.dist.matr.within.between(m_a=m_a,
+                                        group.attr="TherapyStatus",
+                                        block.attr="SubjectID",
+                                        n.perm=4000,
+                                        dist.metr="euclidian",
+                                        col.trans="standardize",
+                                        norm.count.task=norm.count.task.extra
+                                        )
+        }
+        norm.count.task.extra = within(norm.count.task, {
+          method="norm.clr"
+          drop.features = list()
+        })
+        
       })
       
     })
@@ -437,6 +482,7 @@ gen.tasks.choc <- function() {
       adonis.task = within(adonis.task, {
         
         tasks = list(
+          
           list(formula.rhs=main.meta.var,
                strata="SubjectID",
                descr="Association with visit paired by subject")
@@ -462,6 +508,34 @@ gen.tasks.choc <- function() {
   return (list(task3))
 }
 
+
+'
+> library(coin)
+> m_a$attr$SubjectID = factor(m_a$attr$SubjectID)
+> wilcoxsign_test(Roseburia.Otu2637~TherapyStatus|SubjectID,cbind(m_a$count,m_a$attr))
+
+Asymptotic Wilcoxon-Signed-Rank Test (zeros handled a la Pratt)
+
+data:  y by x (neg, pos) 
+stratified by block
+Z = 2.3863, p-value = 0.01702
+alternative hypothesis: true mu is not equal to 0
+
+Warning message:
+In wilcoxsign_test.IndependenceProblem(object = <S4 object of class "IndependenceProblem">) :
+Handling of zeros defaults to \'Pratt\' in newer versions of coin
+#GeneSelector::WilcoxonRanking paired gave Roseburia.Otu2637   stat=167 	p.value=0.017181
+
+> wilcox_test(Roseburia.Otu2637~TherapyStatus,cbind(m_a$count,m_a$attr))
+
+Asymptotic Wilcoxon Mann-Whitney Rank Sum Test
+
+data:  Roseburia.Otu2637 by
+TherapyStatus (before.chemo, after.chemo)
+Z = -2.7655, p-value = 0.005683
+alternative hypothesis: true mu is not equal to 0
+#GeneSelector::WilcoxonRanking unpaired gave Roseburia.Otu2637   stat=295.0 	p.value=0.008712
+'
 
 ## number of cores to use on multicore machines
 options(mc.cores=4)
@@ -492,7 +566,7 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=F)
+set_trace_options(try.debug=T)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down

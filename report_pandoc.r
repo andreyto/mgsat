@@ -4,7 +4,7 @@ library(pander)
 
 panderOptions("round",4)
 panderOptions("table.style","rmarkdown") #"grid"
-panderOptions("table.split.table",180)
+panderOptions("table.split.table",Inf)
 panderOptions("table.alignment.default","left")
 panderOptions("evals.messages",F)
 #panderOptions("graph.fontsize",10)
@@ -36,7 +36,16 @@ arg.list.as.str<-function(x,collapse=",") {
   )
 }
 
-#' Write citations for a vector of package names into file in BibText format
+#' Write citations for a vector of package names into file in BibTex format
+#' TODO can just use bibtex::write.bib
+#' TODO after writing (or before if BibTex allows that type), optionally replace 
+#' Manual type with TechReport that Zotero understands in BibTex (converts to Report). 
+#' Otherwise Zotero
+#' replaces Manual with Book. The replacement parameter should be a list of
+#' to:from tuples. In the path BibTex -> Zotero -> RIS -> Endnote Web Page
+#' gets converted to Journal Article still. It seems that in certain styles in
+#' EndNote (ACS), the only way too show URL is to set type to Web Page. Otherwise
+#' it is not clear at all that packages are CRAN packages.
 citation.to.file <- function(package,file.name,append=F,...) {
   cit = unlist(sapply(package,function(p) toBibtex(citation(p,...))))
   write(cit,file.name,append=append)
@@ -166,6 +175,15 @@ pandoc.link.verbatim.return <- function(url,text=NULL) {
   pandoc.link.return(url,pandoc.verbatim.return(text))
 }
 
+pandoc.anchor.return <- function(anchor,text) {
+  anchor.tag = sprintf('<a name="%s"></a>',anchor)
+  ret = sprintf("%s%s",
+               anchor.tag,
+               pandoc.link.verbatim.return(sprintf("#%s",anchor),
+                                  text))
+  return(ret)
+}
+
 ## make string x a (more or less) valid file name
 str.to.file.name <- function(x,max.length=0) {
   x = gsub('[^-[:alnum:]._]+','.',x)
@@ -242,12 +260,9 @@ PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) 
       ind = .self$priv.append.index(type)
     }
     if(nzchar(ind)) {
-      anchor.name = sprintf('%s.%s',type,ind)
-      anchor = sprintf('<a name="%s"></a>',anchor.name)
-      name = sprintf("%s%s",
-                     anchor,
-                     pandoc.link.return(sprintf("#%s",anchor.name),
-                                        sprintf("%s %s.",capitalize(type),ind)))
+      anchor = sprintf('%s.%s',type,ind)
+      anchor.name = sprintf("%s %s.",capitalize(type),ind)
+      name = pandoc.anchor.return(anchor,anchor.name)
     }
     else {
       name = ""

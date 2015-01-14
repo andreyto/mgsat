@@ -1461,10 +1461,13 @@ write.table.file.report.m_a = function(m_a,name.base,descr=NULL,row.names=F) {
                           file.base=file.base,
                           row.names = row.names)
   if (!is.null(descr)) {
+    links = sapply(files,
+                   pandoc.link.verbatim.return
+    )
     report$add.descr(paste("Wrote counts and metadata for",
                            descr,
                            "to files",
-                           paste(files,collapse=",")))
+                           paste(links,collapse=",")))
   }
   return (files) 
 }
@@ -2680,6 +2683,9 @@ read.data.project.yap <- function(taxa.summary.file,
                                   taxa.level=3) {
   if (taxa.level == "otu") {
     taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
+    report$add.p(sprintf("Loaded OTU taxonomy file %s.",
+                         pandoc.link.verbatim.return(cons.taxonomy.file)
+                         ))
     count.file = otu.shared.file
   }
   else {
@@ -2688,7 +2694,9 @@ read.data.project.yap <- function(taxa.summary.file,
     count.file = taxa.summary.file
   }  
   report$add.p(sprintf("Loaded %i records for %i clades from count file %s for taxonomic level %s",
-                       nrow(taxa.lev.all$count),ncol(taxa.lev.all$count),count.file,taxa.level))
+                       nrow(taxa.lev.all$count),ncol(taxa.lev.all$count),
+                       pandoc.link.verbatim.return(count.file),
+                       taxa.level))
   
   if(!is.null(count.filter.options)) {
     report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
@@ -2823,6 +2831,7 @@ mgsat.16s.task.template = within(list(), {
     genesel.task = within(list(), {
       group.attr = main.meta.var
       do.nmds = F
+      do.plot.profiles = T
       genesel.param = within(list(), {
         block.attr = NULL
         type="unpaired"
@@ -2890,8 +2899,8 @@ mgsat.16s.task.template = within(list(), {
     heatmap.abund.task = within(list(), {
       attr.annot.names=c(main.meta.var)
       attr.row.labels=NULL
-      stand.clust="standardize"
-      dist.metr="euclidean"
+      stand.clust="range"
+      dist.metr="bray"
       caption="Heatmap of abundance profile"
       stand.show="range"
     })
@@ -4035,6 +4044,8 @@ stabsel.report <- function(m_a,
     ##High-Dimensional Regression,
     ##Adel Javanmard and Andrea Montanari}
     ##http://web.stanford.edu/~montanar/sslasso/
+    
+    q = min(q,ncol(count))
     args.stabsel$q = q
   }
   else {
@@ -4101,7 +4112,10 @@ stabsel.report <- function(m_a,
 }
 
 
-genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds=F,
+genesel.stability.report <- function(m_a,group.attr,
+                                     genesel.param=list(),
+                                     do.nmds=F,
+                                     do.plot.profiles = T,
                                      plot.profiles.task=list()) {
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
@@ -4166,6 +4180,8 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
                      paste(sprintf("GeneSelector stability ranking for response %s.",group.attr),
                            caption.descr)
   )
+
+  if(do.plot.profiles) {
   
   plot.profiles.task = within(plot.profiles.task, {
     id.vars.list = list(c())
@@ -4216,6 +4232,7 @@ genesel.stability.report <- function(m_a,group.attr,genesel.param=list(),do.nmds
     
   }
   
+  }
   
   if(do.nmds) {
     report$add.package.citation("vegan")
@@ -4273,7 +4290,8 @@ test.counts.adonis.report <- function(m_a,
                                       col.trans="range",
                                       data.descr="proportions of counts",
                                       norm.count.task=NULL) {
-  if(!is.null(norm.count.task)) {
+  is.dist = inherits(m_a$count,"dist")
+  if(!is.dist && !is.null(norm.count.task)) {
     m_a <- norm.count.report(m_a,
                                 descr="Adonis",
                                 norm.count.task=norm.count.task)
@@ -4282,7 +4300,6 @@ test.counts.adonis.report <- function(m_a,
   ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
   ##the influence of very abundant species:
   count = m_a$count
-  is.dist = inherits(count,"dist")
   if(!is.dist && !is.null(col.trans) && col.trans != "ident") {
     count = decostand(count,method=col.trans,MARGIN=2)
     col.trans.descr = sprintf(" Profile columns are normalized with %s method of decostand function.",col.trans)
@@ -4308,6 +4325,13 @@ test.counts.adonis.report <- function(m_a,
                            dist.metr.descr))
   
   res = lapply(tasks,function(task) {
+    strata = task$strata #implicitely defined here even if undefined in task
+    if(is.null(strata)) {
+      strata.descr = ""
+    }
+    else {
+      strata.descr = paste("with strata = ",strata)
+    }
     with(task,{
       formula_str = paste("count",formula.rhs,sep="~")
       ad.res = adonis(
@@ -4317,9 +4341,13 @@ test.counts.adonis.report <- function(m_a,
         permutations=n.perm,
         method=dist.metr)
       
+      #report$add.p(pandoc.formula.return(as.formula(formula_str),caption=descr)
       report$add.printed(ad.res,caption=paste(descr,
                                               "with formula",
-                                              pandoc.escape.special(formula_str)))
+                                              pandoc.escape.special(formula_str),
+                                              strata.descr
+                                              )
+                         )
       report$add.table(ad.res$aov.tab,
                        show.row.names=T,
                        caption=paste(descr,"AOV Table"))
@@ -5851,14 +5879,13 @@ stab.sel.genesel <- function(m_a,
   #make.global(type)
   
   if(replicates > 0) {
-    minclassize = min(table(y.relev))
-    ##TODO: expose minclassize and balanced to user
+    #minclassize = min(table(y.relev))*samp.fold.ratio*0.9
+    ##TODO: expose minclassize and balanced to user. But currently neither works.
     #contrary to the help page, does not work when y is a factor - need to convert
     fold_matr = GenerateFoldMatrix(y = as.numeric(y.relev), 
                                    k=trunc(n_samp*(1-samp.fold.ratio)),
                                    replicates=replicates,
-                                   type=type,
-                                   minclassize=minclassize)
+                                   type=type)
     
     rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
     #make.global(rep_rnk)
@@ -5943,22 +5970,51 @@ rank.biserial.corr <- function(x,y) {
   return (2*comm.lang-1)
 }
 
-test.dist.matr.within.between <- function(m_a,group.attr,block.attr,n.perm=4000) {
+test.dist.matr.within.between <- function(m_a,
+                                          group.attr,
+                                          block.attr,
+                                          n.perm=4000,
+                                          dist.metr="bray",
+                                          col.trans="range",
+                                          data.descr="proportions of counts",
+                                          norm.count.task=NULL) {
   require(vegan)
   require(permute)
+  
+report$add.header(sprintf('Comparison and test of significant difference for profile
+dissimilarities within and between blocks defined
+by attribute %s across groups defined by attribute %s',block.attr,group.attr))
+  
+  if(!is.null(norm.count.task)) {
+    m_a <- norm.count.report(m_a,
+                             descr="Dist.Matr.Within.Between",
+                             norm.count.task=norm.count.task)
+  }
+  
+  ##Negative values break bray-curtis and jaccard distances; we standardize to "range" to reduce
+  ##the influence of very abundant species:
+
+  if(!is.null(col.trans) && col.trans != "ident") {
+    m_a$count = decostand(m_a$count,method=col.trans,MARGIN=2)
+    col.trans.descr = sprintf(" Profile columns are normalized with %s method of decostand function.",col.trans)
+  }
+  else {
+    col.trans.descr = ""
+  }
+  
+  dist.metr.descr = sprintf(" Dissimilarity index is %s.",dist.metr)
+
   ##check that there is strictly one observation in each cell of (block,group)
-  group.attr.lev = levels(m_a$attr[,group.attr])
-  block.attr.lev = levels(m_a$attr[,block.attr])
+  group.attr.lev = levels(factor(m_a$attr[,group.attr]))
+  block.attr.lev = levels(factor(m_a$attr[,block.attr]))
   stopifnot(length(group.attr.lev)==2)
   fam.counts = as.matrix(with(m_a$attr,xtabs(as.formula(sprintf("~%s+%s",block.attr,group.attr)))))
   ##sort by keys
   m_a = subset.m_a(m_a,subset=order(m_a$attr[,block.attr],m_a$attr[,group.attr]))
-  dd = as.matrix(vegdist(m_a$count,"bray"))
+  dd = as.matrix(vegdist(m_a$count,dist.metr))
   dd = dd[m_a$attr[,group.attr]==group.attr.lev[1],
           m_a$attr[,group.attr]==group.attr.lev[2]]
-  
-  make.global(dd)
-  
+    
   block = m_a$attr[,block.attr,drop=F]
   
   make.global(block)
@@ -5983,29 +6039,31 @@ test.dist.matr.within.between <- function(m_a,group.attr,block.attr,n.perm=4000)
     within=Within(type="none"),
     plots=Plots(type="free",strata=dd.block.col)
   )
+  
   perm = shuffleSet(n=n.col,
-                    nset=n.perm,
+                    nset=n.perm-1,
                     control=ctrl
                     )
+  perm = rbind(perm,1:n.col)
+  
   make.global(perm)
   st.perm = foreach(i.iter=1:n.perm,.combine=c,.export=c("rank.biserial.corr")) %dopar% {
     i.col = perm[i.iter,]
     mask.within.i = mask.within[,i.col]
     rank.biserial.corr(dd[!mask.within.i],dd[mask.within.i])
   }
-  make.global(st.perm)
+
   p.val = mean(st.perm>=st.obs)
   
-  report$add.header(sprintf('Comparison and test of significant difference for profile
-dissimilarities within and between blocks defined
-by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   report$add.descr(paste(
-    sprintf('Bray-Curtis dissimilarity index is computed between profiles. The matrix of 
+    sprintf('%s%s The matrix of 
 distances D is formed where rows correspond to observations with level %s
 of %s, and columns - to level %s. The null hypothesis is that elements of 
 this matrix corresponding to rows and columns with the same level of %s ("within" block distances)
 come from the same distribution as the elements drawn from combinations of rows and columns
 where %s are not equal ("between" blocks distances).',
+            dist.metr.descr,
+            col.trans.descr,
             group.attr.lev[1],group.attr,group.attr.lev[2],
             block.attr,block.attr),
     sprintf('The alternative hypothesis is that the observed 
