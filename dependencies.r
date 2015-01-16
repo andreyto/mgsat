@@ -38,7 +38,11 @@ vanilla_packages = c(
   ##fitting to parametric distributions and goodness of fit tests
   "fitdistrplus",
   ##SQL-like aggregate tables, used for metadata summaries
-  "doBy"
+  "doBy",
+  ##correct treatment of zeros in signed-rank Wilcoxon test
+  ##with an interface compatible with base::wilcox.test while
+  ##being relatively fast
+  "exactRankTests"
 )
 
 bio_packages = c(

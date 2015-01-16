@@ -98,7 +98,7 @@ take_first<-function(x,n) {
 }
 
 str_blank <- function(x) {
-  return (nchar(gsub("\\s","",x)))
+  return (nchar(gsub("\\s","",x))==0)
 }
 
 ## replace oldnames with newnames in vector allnames
@@ -624,17 +624,50 @@ read.koren<-function(file_name) {
   data
 }
 
-wilcox.test.multi <- function(data,resp.vars,group.var,subset) {
-  pvals = foreach(resp.var=resp.vars,.combine=c) %do% {
-    form = as.formula(paste(resp.var,group.var,sep="~"))
-    print(form)
-    pval = wilcox.test(form,
-                       data=data,
-                       subset=subset)$p.value
-    print(pval)
+wilcox.test.multi <- function(mat,group=NULL,
+                              type=c("unpaired","paired","onesample"),
+                              impl=c("wilcox.exact","wilcox.coin")) {
+  type = type[1]
+  impl = impl[1]
+  if(is.null(group)) {
+    stopifnot(type=="onesample")
+  }
+  else {
+    group <- factor(group)
+    stopifnot(nlevels(group) == 2) 
+    group.lev = levels(group)
+  }
+  if(impl == "wilcox.exact") {
+    packages = "exactRankTests"
+  }
+  else if(impl == "wilcox.coin") {
+    packages = "coin"
+    data = cbind(data.frame(.group=group),mat)    
+  }
+  pvals = foreach(resp.var=colnames(mat),.combine=c,.packages=packages) %do% {
+    if(impl == "wilcox.exact") {
+      resp = mat[,resp.var]
+      pval = wilcox.exact(x=resp[group==group.lev[2]],
+                          y=resp[group==group.lev[1]],
+                          paired=(type=="paired"))$p.value
+    }
+    else if(impl == "wilcox.coin") {
+      form = as.formula(paste(resp.var,".group",sep="~"))
+      
+      if(type == "unpaired") {
+        res.test = wilcox_test(form,
+                               data=data)
+      }
+      else if(type == "paired") {
+        res.test = wilcoxsign_test(form,
+                                   data=data)
+      }
+      pval = pvalue(res.test)
+    }
     pval
   }
-  #p.adjust(pvals,method="BH")
+  names(pvals) = colnames(mat)
+  return (pvals)
 }
 
 wilcox.test.multi.fast <- function(mat,group=NULL,type="unpaired",pval=T,only.pval=T) {
@@ -643,7 +676,7 @@ wilcox.test.multi.fast <- function(mat,group=NULL,type="unpaired",pval=T,only.pv
     stopifnot(type=="onesample")
     group = rep(1,ncol(tr.mat))
   }
-  res = RankingWilcoxon(tr.mat,group,type=type,pvalues=pval)
+  res = RankingWilcoxonAT(tr.mat,group,type=type,pvalues=pval,pvalues.impl="genesel")
   res = toplist(res,nrow(tr.mat))
   res[res$index,] = res
   if(only.pval) {
@@ -2832,6 +2865,11 @@ mgsat.16s.task.template = within(list(), {
       group.attr = main.meta.var
       do.nmds = F
       do.plot.profiles = T
+      norm.count.task = within(norm.count.task, {
+        ## this makes plots generated here for paired test
+        ## to show easily understood proportions
+        method = "norm.prop"
+      })      
       genesel.param = within(list(), {
         block.attr = NULL
         type="unpaired"
@@ -4116,13 +4154,19 @@ genesel.stability.report <- function(m_a,group.attr,
                                      genesel.param=list(),
                                      do.nmds=F,
                                      do.plot.profiles = T,
-                                     plot.profiles.task=list()) {
+                                     plot.profiles.task=list(),
+                                     norm.count.task=NULL) {
   
   ## m_a$count passed here should be normalized for library size, because we perform Wilcox test
   ## inside, and could find false significance due to different depth of sequencing
   
   report$add.header("GeneSelector stability ranking")
   report$add.package.citation("GeneSelector")
+  if(!is.null(norm.count.task)) {
+    m_a <- norm.count.report(m_a,
+                             descr="GeneSelector",
+                             norm.count.task=norm.count.task)
+  }  
   report$add.descr(sprintf("Wilcoxon test (rank-sum for independent samples and signed-rank for paired samples) 
                    is applied to each feature (clade, gene) on random
                    subsamples of the data. Consensus ranking is found with a
@@ -4181,13 +4225,21 @@ genesel.stability.report <- function(m_a,group.attr,
                            caption.descr)
   )
   
-  if(do.plot.profiles) {
+  if(do.plot.profiles && genesel.param$type!="unpaired") {
     
+    id.vars.list = plot.profiles.task$id.vars.list
+    ## add group.attr if it is not already where in
+    ## order to get empty element in the next step
+    if(! group.attr %in% id.vars.list) {
+      id.vars.list = c(group.attr,id.vars.list)
+    }
+    ## remove group.attr from all elements of id.vars.list
+    plot.profiles.task$id.vars.list = sapply(id.vars.list,function(y) y[y != group.attr])
+    ## remove group.attr from clade.meta.x.vars
+    plot.profiles.task$clade.meta.x.vars = 
+      plot.profiles.task$clade.meta.x.vars[plot.profiles.task$clade.meta.x.vars != group.attr]
     plot.profiles.task = within(plot.profiles.task, {
-      id.vars.list = list(c())
-      clade.meta.x.vars=c()
       do.profile=T
-      do.clade.meta=F
     })
     
     if(!is.null(res.stab.sel.genesel$m_a.contrasts)) {
@@ -4458,6 +4510,19 @@ norm.count.report <- function(m_a,norm.count.task=NULL,res.tests=NULL,descr=NULL
   return(m_a.norm)
 }
 
+## Either returns default m_a.norm or updates norm.count.task within task if defined
+pull.norm.count.task <- function(m_a,m_a.norm,task,res.tests) {
+  if(!is.null(task$norm.count.task)) {
+    task$norm.count.task = 
+      update.norm.count.task(task$norm.count.task,res.tests=res.tests)
+    m_a.task = m_a
+  }
+  else {
+    m_a.task = m_a.norm
+  }
+  return(list(m_a.task=m_a.task,task=task))
+}
+
 test.counts.project <- function(m_a,
                                 label,
                                 do.genesel=T,
@@ -4539,10 +4604,12 @@ test.counts.project <- function(m_a,
     if(is.null(genesel.task$plot.profiles.task)) {
       genesel.task$plot.profiles.task=plot.profiles.task
     }
+    genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
+                                          task=genesel.task,res.tests=res)
     tryCatchAndWarn({ 
       res$genesel = do.call(genesel.stability.report,
-                            c(list(m_a=m_a.norm),
-                              genesel.task))
+                            c(list(m_a=genesel.norm.t$m_a.task),
+                              genesel.norm.t$task))
     })
   }
   
@@ -4569,18 +4636,12 @@ test.counts.project <- function(m_a,
   
   if(do.adonis) {
     tryCatchAndWarn({ 
-      if(!is.null(adonis.task$norm.count.task)) {
-        adonis.task$norm.count.task = 
-          update.norm.count.task(adonis.task$norm.count.task,res.tests=res)
-        m_a.adonis = m_a
-      }
-      else {
-        m_a.adonis = m_a.norm
-      }
+      adonis.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
+                                           task=adonis.task,res.tests=res)
       res$adonis = do.call(test.counts.adonis.report,
                            c(
-                             list(m_a=m_a.adonis),
-                             adonis.task
+                             list(m_a=adonis.norm.t$m_a.task),
+                             adonis.norm.t$task
                            )
       )
     })
@@ -5676,8 +5737,9 @@ wilcox.eff.size.r <-function(pval, n){
 
 ## x is the sample matrix, with samples in COLUMNS
 wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
-  nsamp = ncol(x)  
+
   if(type == "unpaired") {
+    nsamp = ncol(x)
     group = factor(group)
     taby <- table(group)
     stopifnot(nlevels(group) == 2)
@@ -5690,6 +5752,8 @@ wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
     }
   }
   else if(type == "onesample") {
+    ## assumes zero fudge was done when computing p-values
+    nsamp = rowSums(x!=0)
     common.lang = (rowSums(x > 0) + 0.5*rowSums(x==0))/
       ncol(x)
   }
@@ -5707,9 +5771,21 @@ wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
   )
 }
 
+## GeneSelector Wilcoxon signed rank implementation does not work correctly with zeros
+## (possibly because it was designed for microarrays where ties never happen?).
+## Here we: 
+## - fix treatment of zeros in calculating statistic by using "zero fudge"
+## - call exactRankTests::wilcox.exact by default when p-values are requested.
+## wilcox.exact implements exact p-value computation (by default, at n <50)
+## even when ties are present.
+## Our statistic now is computed in the same way as in wilcox.exact.
+## Call RankingWilcoxonAT(...,pvalues=F) in GeneSelector ranking replications,
+## and call RankingWilcoxonAT(...,pvalues=T) to get p-values just once on the
+## full dataset (~10x slower than statistic only).
 
 RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample"), 
-                               pvalues = FALSE, gene.names = NULL, ...) 
+                               pvalues = FALSE, gene.names = NULL, 
+                               pvalues.impl="wilcox.exact",...) 
 {
   mode(x) <- "numeric"
   if (length(y) != ncol(x)) 
@@ -5717,7 +5793,7 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
   type <- match.arg(type)
   if (!is.element(type, eval(formals(RankingWilcoxonAT)$type))) 
     stop("Argument 'type' must be one of 'unpaired', 'paired' or 'onesample'. \n")
-  y <- as.factor(y)
+  y <- factor(y)
   if (type == "unpaired") {
     if (nlevels(y) != 2) 
       stop("Type has been chosen 'unpaired', but y has not exactly two levels ! \n")
@@ -5728,9 +5804,18 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
     r1 <- colSums(Rx[ind, , drop = FALSE]) - sum(1:max(taby))
     e1 <- taby[1] * taby[2]/2
     if (pvalues) {
-      maxr <- sum((min(taby) + 1):length(y)) - sum(1:sum(ind))
-      pvals <- 2 * pwilcox(ifelse(r1 < e1, maxr - r1, r1), 
-                           taby[1], taby[2], lower.tail = FALSE)
+      if(pvalues.impl=="genesel") {
+        maxr <- sum((min(taby) + 1):length(y)) - sum(1:sum(ind))
+        pvals <- 2 * pwilcox(ifelse(r1 < e1, maxr - r1, r1), 
+                             taby[1], taby[2], lower.tail = FALSE)
+      }
+      else {
+        require("exactRankTests")
+        pvals = apply(x,1,function(z) {
+          wilcox.exact(x=z[ind],y=z[!ind],paired=F)$p.value
+        })
+      }
+      
     }
     else pvals <- rep(NA, nrow(x))
   }
@@ -5745,15 +5830,26 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
       stop("Incorrect coding for type='paired'. \n")
     diffxx <- xx2 - xx1
     r1 <- apply(diffxx, 1, function(z) {
+      ##zero fudge
+      z = z[z!=0]
       zz <- rank(abs(z))
       sum(zz[z > 0])
     })
-    ly <- length(y)
+    ##zero fudge
+    ly <- rowSums(diffxx!=0)
     e1 <- (ly/2) * (ly/2 + 1)/4
     if (pvalues) {
-      maxr <- sum(1:(ly/2))
-      pvals <- 2 * psignrank(ifelse(r1 < e1, maxr - r1, 
-                                    r1), n = ly/2, lower.tail = FALSE)
+      if(pvalues.impl=="genesel") {
+        maxr = (1+ly/2)*ly/4
+        pvals <- 2 * psignrank(ifelse(r1 < e1, maxr - r1, 
+                                      r1), n = ly/2, lower.tail = FALSE)
+      }
+      else {
+        require("exactRankTests")
+        pvals = apply(diffxx,1,function(z) {
+          wilcox.exact(x=z,y=NULL,paired=F)$p.value 
+        })
+      }
     }
     else pvals <- rep(NA, nrow(x))
   }
@@ -5762,17 +5858,26 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
       warning("Type has been chosen 'onesample', but y has more than one level. \n")
     
     r1 <- apply(x, 1, function(z) {
+      ##zero fudge
       z = z[z!=0]
       zz <- rank(abs(z))
       sum(zz[z > 0])
     })
+    ##zero fudge
     ly <- rowSums(x!=0)
     e1 <- (ly) * (ly + 1)/4
-    #maxr <- sum(1:ly)
     maxr = (1+ly)*ly/2
     if (pvalues) {
-      pvals <- 2 * psignrank(ifelse(r1 < e1, maxr - r1, 
-                                    r1), n = ly, lower.tail = FALSE)
+      if(pvalues.impl=="genesel") {
+        pvals <- 2 * psignrank(ifelse(r1 < e1, maxr - r1, 
+                                      r1), n = ly, lower.tail = FALSE)
+      }
+      else {
+        require("exactRankTests")
+        pvals = apply(x,1,function(z) {
+          wilcox.exact(x=z,y=NULL,paired=F)$p.value
+        })
+      }
     }
     else pvals <- rep(NA, nrow(x))
   }
@@ -5785,8 +5890,61 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
       names(pvals) <- names(statistic) <- rownames(x)
   }
   new("GeneRanking", x = x, y = as.factor(y), statistic = statistic, 
-      ranking = ranking, pval = pvals, type = type, method = "Wilcoxon")
+      ranking = ranking, pval = pvals, type = type, method = "WilcoxonAT")
 }
+
+## We have to patch this in order to add RankingWilcoxonAT to hard-wired
+## list of methods
+RepeatRankingAT <- function (R, P, scheme = c("subsampling", "labelexchange"), iter = 10, 
+          varlist = list(genewise = FALSE, factor = 1/5), ...) 
+{
+  scheme <- match.arg(scheme)
+  if (!is.element(scheme, c("subsampling", "labelexchange"))) 
+    stop("'scheme' must be  either 'subsampling' or 'labelexchange'")
+  x <- R@x
+  y <- R@y
+  Pm <- P@foldmatrix
+  type <- R@type
+  iter <- ncol(Pm)
+  rankm <- pvalm <- statisticm <- matrix(nrow = nrow(x), ncol = iter)
+  rankfun <- switch(R@method, ordinaryT = RankingTstat, WelchT = RankingWelchT, 
+                    BaldiLongT = RankingBaldiLong, Bstat = RankingBstat, 
+                    Ebam = RankingEbam, Foldchange = RankingFC, FoxDimmicT = RankingFoxDimmic, 
+                    Limma = RankingLimma, Permutation = RankingPermutation, 
+                    Sam = RankingSam, ShrinkageT = RankingShrinkageT, SoftthresholdT = RankingSoftthresholdT, 
+                    WilcEbam = RankingWilcEbam, Wilcoxon = RankingWilcoxon, 
+                    WilcoxonAT = RankingWilcoxonAT)
+  if (scheme == "subsampling") {
+    for (i in 1:iter) {
+      currx <- x[, Pm[, i]]
+      curry <- y[Pm[, i]]
+      repet <- rankfun(currx, curry, type, ...)
+      rankm[, i] <- repet@ranking
+      pvalm[, i] <- repet@pval
+      statisticm[, i] <- repet@statistic
+    }
+  }
+  if (scheme == "labelexchange") {
+    ly <- levels(y)
+    nly <- nlevels(y)
+    if (nly != 2) 
+      stop("scheme 'labelexchange' not allowed if y has only one level \n")
+    for (i in 1:iter) {
+      curry <- y
+      curry[!Pm[, i]] <- ifelse(y[!Pm[, i]] == ly[1], ly[2], 
+                                ly[1])
+      repet <- rankfun(x, curry, type, ...)
+      rankm[, i] <- repet@ranking
+      pvalm[, i] <- repet@pval
+      statisticm[, i] <- repet@statistic
+    }
+  }
+  colnames(rankm) <- colnames(pvalm) <- colnames(statisticm) <- paste("iter", 
+                                                                      1:iter, sep = ".")
+  new("RepeatedRanking", original = R, rankings = rankm, pvals = pvalm, 
+      statistics = statisticm, scheme = scheme)
+}
+
 
 new_genesel <- function(...) {
   x = new_mgsatres(...)
@@ -5817,10 +5975,6 @@ stab.sel.genesel <- function(m_a,
     levels.last.first = names(s.c$contrasts)
     m_a.c = s.c$m_a.contr
     x = m_a.c$count
-    ## GeneSelector Wilcoxon signed rank implementation does not work correctly with ties
-    ## (possibly because it was designed for microarrays where ties rarely happen?).
-    ## We add a small random number to break ties.
-    x = x + matrix(rnorm(prod(dim(x)),0,.Machine$double.eps*100),nrow=nrow(x),ncol=ncol(x))
     y.relev = rep(1,nrow(x))
   }
   else {
@@ -5839,11 +5993,12 @@ stab.sel.genesel <- function(m_a,
   n_samp = ncol(x)
   
   ranking_methods = c(RankingWilcoxon,RankingLimma,RankingFC)
-  ranking_method = RankingWilcoxon
+  ranking_method = RankingWilcoxonAT
   
   rnk = ranking_method(x,y.relev,type=type,pvalues=T)
   
   rnk.vals = toplist(rnk,n_feat)
+  rnk.vals$ranking = seq(nrow(rnk.vals))
   rnk.vals[rnk.vals$index,] = rnk.vals
   rnk.vals$pval.adjusted = p.adjust(rnk.vals$pval,method="BH")
   rnk.vals = cbind(data.frame(name=rownames(x)),rnk.vals)
@@ -5861,9 +6016,11 @@ stab.sel.genesel <- function(m_a,
     )
     if(type.orig=="paired") {
       m_a.g = s.c$m_a.groups
-      log.fold.change.paired = log(m_a.g$count[m_a.g$attr$.contrast==1,]+1,base=2) - 
-        log(m_a.g$count[m_a.g$attr$.contrast==-1,]+1,base=2)
-      m_a.lfc.paired = list(count=log.fold.change.paired,attr=NULL)
+      log.fold.change.paired = log(m_a.g$count[m_a.g$attr$.contrast==1,]+.Machine$double.eps*100,base=2) - 
+        log(m_a.g$count[m_a.g$attr$.contrast==-1,]+.Machine$double.eps*100,base=2)
+      m_a.lfc.paired = list(count=log.fold.change.paired,
+                            attr=m_a.g$attr[m_a.g$attr$.contrast==1,])
+      with(m_a.lfc.paired, stopifnot(all(rownames(count)==rownames(attr))))
       
       rnk.vals = cbind(rnk.vals,
                        l2fc.paired.median = aaply(
@@ -5887,7 +6044,7 @@ stab.sel.genesel <- function(m_a,
                                    replicates=replicates,
                                    type=type)
     
-    rep_rnk = RepeatRanking(rnk,fold_matr,scheme="subsampling",pvalues=T)
+    rep_rnk = RepeatRankingAT(rnk,fold_matr,scheme="subsampling",pvalues=F)
     #make.global(rep_rnk)
     #toplist(rep_rnk,show=F)
     #stab_ovr = GetStabilityOverlap(rep_rnk, scheme = "original", decay = "linear")
@@ -5913,9 +6070,11 @@ stab.sel.genesel <- function(m_a,
   }
   else {
     gsel = NULL
+    #index = order(rnk.vals$ranking)
     index = order(rnk.vals$pval.adjusted,rnk.vals$pval)
   }
   rnk.vals$index = NULL
+  rnk.vals$ranking = NULL
   rnk.vals = rnk.vals[index,]
   ret = new_genesel(stab_feat=rnk.vals,
                     gsel=gsel,
@@ -5929,6 +6088,9 @@ stab.sel.genesel <- function(m_a,
     }
     ret$contrasts = s.c$contrasts
   }
+  #DEBUG:
+  ret.gs = ret
+  make.global(ret.gs)
   return(ret)
 }
 
@@ -6131,7 +6293,11 @@ lmerCI <- function(obj, rnd = 2) {
 ## group variable. If any of the non-zero contrast levels is not matched
 ## (missing from data), the entire block is dropped.
 ## Default value of contrasts will be set to result in (last-first) levels.
-## Value: m_a object; its attr is currently set to NULL.
+## Value: named list with m_a objects for contrasts and balanced observations
+## attr values will have just one record picked from e.g. a pair that formed
+## the contrast; therefore, if nay attr values are used later, they must be
+## already indetical within the grouped original records. No checks are made here 
+## about that requirement.
 sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.groups=T) {
   #m_m = melt(m_a$count,varnames=c("SampleID","clade"),value.name="cnt")
   #attr_sub = m_a$attr[,c("SampleID",pair.attr)]
@@ -6191,7 +6357,13 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   rownames(dat) = dat[,block.attr]
   
   attr.mask = names(dat) %in% c(attr.names,contr.attr)
-  m_a.contr = list(count=as.matrix(dat[,!attr.mask]),attr=NULL)
+  m_a.contr = list(count=as.matrix(dat[,!attr.mask]),
+                   attr=join(dat[,block.attr,drop=F],
+                             m_a$attr,
+                             by=block.attr,
+                             match="first")
+  )
+  with(m_a.contr, stopifnot(all(rownames(count)==rownames(attr))))
   
   if(return.groups) {
     ##only groups with all requested contrast levels
@@ -6199,7 +6371,11 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
     rownames(dat.groups) = maply(dat.groups[,attr.names],paste,sep=".",.expand=F)
     attr.mask = names(dat.groups) %in% c(attr.names,contr.attr)
     m_a.groups = list(count=as.matrix(dat.groups[,!attr.mask]),
-                      attr=dat.groups[,attr.mask])
+                      attr=join(dat.groups[,attr.mask,drop=F],
+                                m_a$attr,
+                                by=attr.names,
+                                match="first"))
+    with(m_a.groups, stopifnot(all(rownames(count)==rownames(attr))))
   }
   else {
     m_a.groups = NULL

@@ -45,12 +45,16 @@ load.meta.choc <- function(file.name) {
   meta$Antibiotic = tolower(meta$Antibiotic.treatment.within.the.last.1.months.) != "no"
   meta$Antibiotic[str_blank(meta$Antibiotic.treatment.within.the.last.1.months.)] = NA
   meta$Antibiotic[tolower(meta$Antibiotic.treatment.within.the.last.1.months.)=="unknown"] = NA
-  meta$Antibiotic = as.factor(meta$Antibiotic)
+  ## R gotcha: if logical converted to factor, it loses is.logical() status, and gives
+  ## unexpected results in various statements that assume logical inputs
+  #meta$Antibiotic = as.factor(meta$Antibiotic)
   
   meta$Fever = tolower(meta$Fever.descr) != "no"
   meta$Fever[str_blank(meta$Fever.descr)] = NA
   meta$Fever[tolower(meta$Fever.descr)=="unknown"] = NA
-  meta$Fever = as.factor(meta$Fever)
+  ## R gotcha: if logical converted to factor, it loses is.logical() status, and gives
+  ## unexpected results in various statements that assume logical inputs
+  #meta$Fever = as.factor(meta$Fever)
   
   ## ggplot needs Date object
   Specimen.Collection.Date = 
@@ -64,6 +68,8 @@ load.meta.choc <- function(file.name) {
     - 
       as.date(paste(meta$YearOfBirth,"-06-01",sep=""),order="ymd")
   )/365
+  
+  meta$age.quant = quantcut(meta$age)
   
   meta$Specimen.Collection.Date = Specimen.Collection.Date
   
@@ -98,6 +104,7 @@ summary.meta.choc <- function(m_a) {
   report$add(summary(meta),caption="Summary of metadata variables")
   
   xtabs.formulas = list("~Sample.type+TherapyStatus","~Antibiotic + Sample.type",
+                        "~Fever + Sample.type",
                         "~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
   for(xtabs.formula in xtabs.formulas) {
     fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
@@ -161,17 +168,18 @@ gen.tasks.choc <- function() {
       ##after the available count samples have been joined,
       ##as opposed to in the load.meta() function.
       meta = m_a$attr
-      meta.visit.max = join(meta,
+      meta.aggr = join(meta,
                             ddply(meta,"SubjectID",summarise,
                                   visit.max=max(visit),
                                   visit.min=min(visit),
                                   visit.1=any(visit==1),
-                                  visit.2=any(visit==2)),
+                                  visit.2=any(visit==2),
+                                  Antibiotic.Before.Therapy=any(ifelse(visit==1,as.logical(Antibiotic),F))),
                             by="SubjectID",
                             match="first")
-      stopifnot(!any(is.na(meta.visit.max$visit.max)) && 
-                  nrow(meta.visit.max)==nrow(meta))
-      m_a$attr = meta.visit.max
+      stopifnot(!any(is.na(meta.aggr$visit.max)) && 
+                  nrow(meta.aggr)==nrow(meta))
+      m_a$attr = meta.aggr
       
       ##As of 2014-11-05, there are only 6 samples at visit 5, and less in higher visits
       ##and their profiles look similar to visit 4
@@ -233,7 +241,7 @@ gen.tasks.choc <- function() {
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c("Sample.type","visit","Antibiotic")
+        attr.annot.names=c("Sample.type","visit","Antibiotic.Before.Therapy")
       })
       
     })
@@ -245,7 +253,7 @@ gen.tasks.choc <- function() {
     
     main.meta.var = "Sample.type"
     
-    descr = "Samples before therapy aggregated by SubjectID"
+    descr = "Patient/Sibling samples before therapy aggregated by SubjectID"
     
     do.summary.meta = T
     
@@ -257,17 +265,21 @@ gen.tasks.choc <- function() {
       m_a = aggregate.by.meta.data.m_a(m_a,group_col="SubjectID")
       return(m_a)
     }
+
+    summary.meta.task = within(summary.meta.task, {
+      group.var = c(main.meta.var)
+    })
     
     test.counts.task = within(test.counts.task, {
       
-      #do.divrich = c()
-      do.deseq2 = T
-      do.adonis = T
-      do.genesel = T
-      do.stabsel = T
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
       do.glmer = F
       do.plot.profiles.abund=F
-      do.heatmap.abund=T
+      do.heatmap.abund=F
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
@@ -298,21 +310,21 @@ gen.tasks.choc <- function() {
           list(formula.rhs=main.meta.var,
                strata="FamilyID",
                descr="Association with the patient/control status paired by family"),
-          list(formula.rhs=paste(main.meta.var,"* age"),
-               strata="FamilyID",
-               descr="Association with the patient/control status and age  paired by family")
+          list(formula.rhs=paste("age.quant *", main.meta.var),
+               strata=NULL,
+               descr="Association with the age quartiles and patient/control status")
         )
         
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic"))
+        id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic.Before.Therapy"))
         do.profile=T
         do.clade.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c(main.meta.var,"Antibiotic")
+        attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
       })
       
     })
@@ -323,7 +335,7 @@ gen.tasks.choc <- function() {
     
     main.meta.var = "TherapyStatus"
     
-    descr = "Patients samples at visits 1 (before therapy) and 2 (after therapy)"
+    descr = "Patients' samples at visits 1 (before therapy) and 2 (after therapy), only paired samples"
     
     do.summary.meta = F
     
@@ -336,8 +348,8 @@ gen.tasks.choc <- function() {
                                    & m_a$attr$visit.1
                                    & m_a$attr$visit.2))
       #DEBUG: scrambling SubjectID of before.chemo to see how paired tests behave on random pairings
-      m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"] = 
-        sample(m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"])
+      #m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"] = 
+      #  sample(m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"])
       return(m_a)
     }
     
@@ -345,13 +357,13 @@ gen.tasks.choc <- function() {
       
       do.divrich = c()
       do.deseq2 = F
-      do.adonis = T
-      do.genesel = F
+      do.adonis = F
+      do.genesel = T
       do.stabsel = F
       do.glmer = F
       do.plot.profiles.abund=F
       do.heatmap.abund=F
-      do.extra.method = taxa.levels
+      do.extra.method = c() #taxa.levels
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
@@ -371,7 +383,7 @@ gen.tasks.choc <- function() {
         genesel.param = within(genesel.param, {
           block.attr = "SubjectID"
           type="unpaired"
-          replicates=0
+          replicates=400
         })
       })
       
@@ -387,10 +399,10 @@ gen.tasks.choc <- function() {
                descr="Association with therapy status unpaired by subject"),
           list(formula.rhs=main.meta.var,
                strata="SubjectID",
-               descr="Association with therapy status paired by subject")
-          #list(formula.rhs=paste("Antibiotic * ", main.meta.var),
-          #     strata="SubjectID",
-          #     descr="Association with Antibiotic use and therapy status paired by subject")
+               descr="Association with therapy status paired by subject"),
+          list(formula.rhs=paste("Antibiotic.Before.Therapy * ", main.meta.var),
+               strata="SubjectID",
+               descr="Association with Antibiotic use before therapy and therapy status paired by subject")
         )
         
         #dist.metr="euclidian"
@@ -404,13 +416,13 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic"))
+        id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic.Before.Therapy"))
         do.profile=T
         do.clade.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c(main.meta.var,"Antibiotic")
+        attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
       })
       
       extra.method.task = within(extra.method.task, {
@@ -505,7 +517,7 @@ gen.tasks.choc <- function() {
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c(main.meta.var,"Antibiotic")
+        attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
       })
       
     })
