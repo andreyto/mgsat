@@ -333,7 +333,7 @@ gen.tasks.choc <- function() {
 
   task3 = within( task0, {
     
-    taxa.levels = c(2)
+    taxa.levels = c(6)
     
     main.meta.var = "TherapyStatus"
     
@@ -357,13 +357,13 @@ gen.tasks.choc <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.divrich = c()
+      do.divrich = c(6)
       do.deseq2 = F
       do.adonis = F
-      do.genesel = T
+      do.genesel = F
       do.stabsel = F
       do.glmer = F
-      do.plot.profiles.abund=T
+      do.plot.profiles.abund=F
       do.heatmap.abund=F
       do.extra.method = c() #taxa.levels
       
