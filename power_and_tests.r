@@ -1310,7 +1310,8 @@ plot.abund.meta <- function(m_a,
                             id.var.dodge=NULL,
                             flip.coords=T,
                             sqrt.scale=F,
-                            stat_summary.fun.y="mean") {
+                            stat_summary.fun.y="mean",
+                            make.summary.table=T) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -1334,6 +1335,20 @@ plot.abund.meta <- function(m_a,
     dat$clade = factor(dat$clade,levels=clades.order,ordered=T)
   }
   
+  if(make.summary.table) {
+  dat.summary = eval(parse(text=sprintf('ddply(dat, c("clade",id.vars),
+        summarise,
+        mean = mean(%s),
+        sd = sd(%s),
+        median = median(%s),
+        positive.ratio = mean(%s>0)
+        )',value.name,value.name,value.name,value.name)
+  ))
+  }
+  else {
+    dat.summary = NULL
+  }
+
   ##show only n.top
   clades = levels(dat$clade)
   clades = clades[1:min(length(clades),n.top)]
@@ -1346,9 +1361,6 @@ plot.abund.meta <- function(m_a,
     sd_dodge = max(abs(val))*1e-6
     dat[,value.name] = val + rnorm(length(val),0,sd_dodge)
   }
-  
-  #print(ddply(dat, c("T1D","clade"), summarise, mean_abund = mean(abundance)))
-  
   
   if(is.null(id.var.dodge)) {
     fill="clade"
@@ -1455,7 +1467,7 @@ plot.abund.meta <- function(m_a,
     ggsave(file_name)
   }
   
-  return (gp)
+  return (new_mgsatres(plot=gp,dat.summary=dat.summary))
 }
 
 read.table.m_a <- function(file.base) {
@@ -1868,16 +1880,40 @@ mgsat.divrich.report <- function(m_a,
   res = new_mgsatres()
   
   res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep)
+  caption.inc.rich=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
+                  group.descr.short)
+  report$add.table(res$rich.samples,
+                   caption=caption.inc.rich
+                   )
   report$add(mgsat.plot.richness.samples(res$rich.samples),
-             caption=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
-                             group.descr.short)
-  )
+             caption=caption.inc.rich
+             )
   
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
+    if(do.plot.profiles) {
+      do.call(plot.profiles,
+              c(list(m_a=list(count=as.matrix(res$rich.counts),attr=m_a$attr),
+                     feature.descr=sprintf("Abundance-based richness estimates"),
+                     value.name="Richness Estimate"),
+                plot.profiles.task
+              )
+      )
+    }
   }
   
   res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
+
+  if(do.plot.profiles) {
+    do.call(plot.profiles,
+            c(list(m_a=list(count=as.matrix(res$div.counts[,c("N1","N2")]),attr=m_a$attr),
+                   feature.descr="Abundance-based diversity indices (Hill numbers)",
+                   value.name="index"),
+              plot.profiles.task
+            )
+    )
+  }
+  
   
   divrich.counts = res$div.counts$e
   if(is.raw.count.data) {
@@ -1886,6 +1922,9 @@ mgsat.divrich.report <- function(m_a,
   
   m_a.dr=list(count=as.matrix(divrich.counts),attr=m_a$attr)
   
+  write.table.file.report.m_a(m_a=m_a.dr,
+                              name.base="divrich.counts",
+                              descr="Abundance based richness and diversity")
   
   if(!is.null(counts.glm.task)) {
     
@@ -1897,16 +1936,6 @@ mgsat.divrich.report <- function(m_a,
     
   }
   
-  if(do.plot.profiles) {
-    do.call(plot.profiles,
-            c(list(m_a=m_a.dr,
-                   feature.descr=sprintf("Abundance-based diversity indices (Hill numbers) and richness estimates",
-                                         group.descr.short),
-                   value.name="index"),
-              plot.profiles.task
-            )
-    )
-  }
   
   report$push.section(report.section)
   mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
@@ -2014,6 +2043,8 @@ plot.profiles <- function(m_a,
       
       if(do.profile) {
         
+        dat.summary.done = list()
+        
         report$add.header("Iterating over dodged vs faceted bars")
         report$add.descr("The same data are shown in multiple combinations of graphical representations. 
                          This is the same data, but each plot highlights slightly different aspects of it.
@@ -2053,7 +2084,15 @@ plot.profiles <- function(m_a,
             
             for(geom in show.profile.task$geoms) {
               tryCatchAndWarn({
-                pl.hist = plot.abund.meta(m_a=m_a,
+                id.vars.key = paste(id.vars,collapse="#")
+                if(!id.vars.key %in% dat.summary.done) {
+                  make.summary.table = T
+                  dat.summary.done[[length(dat.summary.done)+1]] = id.vars.key
+                }
+                else {
+                  make.summary.table = F
+                }
+                pl.abu = plot.abund.meta(m_a=m_a,
                                           id.vars=id.vars,
                                           clades.order=pl.par$ord,
                                           geom=geom,
@@ -2062,8 +2101,11 @@ plot.profiles <- function(m_a,
                                           flip.coords=other.params$flip.coords,
                                           sqrt.scale=other.params$sqrt.scale,
                                           value.name=value.name,
-                                          stat_summary.fun.y=show.profile.task$stat_summary.fun.y
+                                          stat_summary.fun.y=show.profile.task$stat_summary.fun.y,
+                                         make.summary.table = make.summary.table
                 )
+                
+                pl.hist = pl.abu$plot
                 #env=as.environment(as.list(environment(), all.names=TRUE))
                 #print(names(as.list(env)))
                 #print(evals("pl.hist",env=env))
@@ -2080,6 +2122,12 @@ plot.profiles <- function(m_a,
                                        show.profile.task$stat_summary.fun.y
                   )
                 }
+
+                dat.summary = pl.abu$dat.summary
+                if(!is.null(dat.summary)) {
+                  report$add.table(dat.summary,caption=paste("Summary table.",gr.by.msg))
+                }
+                
                 report$add(pl.hist,
                            caption=paste(sprintf("%s %s",feature.descr,gr.by.msg),
                                          if(!is.null(pl.par$ord)) 
@@ -2087,6 +2135,7 @@ plot.profiles <- function(m_a,
                                          else {""},
                                          geom.descr,"plot.")
                 )
+                  
               })
             }
             report$pop.section()
@@ -3002,11 +3051,13 @@ get.feature.ranking.mgsatres <- function(x.f,method="stabsel") {
   if(is.null(meth.res)) {
     res = NULL
   }
+  else {
   if(method %in% c("stabsel","genesel")) {
     res = get.feature.ranking(meth.res)
   }
   else {
     stop(paste("I do not know what to do for method",method))
+  }
   }
   return (res)
 }
@@ -3562,8 +3613,8 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
     if(do.genesel) {
       ## We need to use row-normalized counts here, because we perform Wilcox test
       ## inside, and could false significance due to different depth of sequencing
-      res.stab.sel.genesel = stab.sel.genesel(m_a$count,m_a$attr[,resp.attr])
-      res$stability.genesel = res.stab.sel.genesel
+      res.genesel.stability = genesel.stability(m_a$count,m_a$attr[,resp.attr])
+      res$stability.genesel = res.genesel.stability
       report$add.header("GeneSelector stability ranking")
       report$add.package.citation("GeneSelector")
       report$add.descr("Univariate test (Wilcoxon) is applied to each clade on random
@@ -3572,14 +3623,14 @@ test.counts.t1d <- function(data,attr.names,label,alpha=0.05,
                        The top clades of the consensus ranking
                        are returned, along with the p-values computed on the full
                        original dataset (with multiple testing correction).")
-      report$add.table(res.stab.sel.genesel$stab_feat,
+      report$add.table(res.genesel.stability$stab_feat,
                        caption=
                          paste("GeneSelector stability ranking for response ",resp.attr)
       )
       report$add.package.citation("vegan")
       report$add(
         plot.features.mds(m_a,species.sel=(colnames(m_a$count) %in% 
-                                             res.stab.sel.genesel$stab_feat$name),
+                                             res.genesel.stability$stab_feat$name),
                           sample.group=m_a$attr[,resp.attr]),
         caption="metaMDS plot of abundance profile. 'x' marks top selected clades, 'o' marks samples"
       )
@@ -4195,13 +4246,13 @@ genesel.stability.report <- function(m_a,group.attr,
                    the groups (last to first). For paired samples - as the sample median of the logfold change
                    in each matched pair of observations."))
   
-  res.stab.sel.genesel = do.call(
-    stab.sel.genesel,
+  res.genesel.stability = do.call(
+    genesel.stability,
     c(list(m_a,group.attr=group.attr),
       genesel.param)
   )
   
-  ord = res.stab.sel.genesel$stab_feat$name
+  ord = res.genesel.stability$stab_feat$name
   feature.order = list(list(ord=ord,ord_descr="GeneSelector paired test ranking",sfx="gsp"))
   
   report$add.descr(sprintf("Stability selection parameters are: %s",arg.list.as.str(genesel.param)))
@@ -4212,14 +4263,14 @@ genesel.stability.report <- function(m_a,group.attr,
   caption.descr = ""
   if(genesel.param$type=="paired" && !is.null(genesel.param$block.attr)) {
     caption.descr = sprintf("Samples are paired according to attribute %s, resulting in %s samples.",
-                            genesel.param$block.attr,res.stab.sel.genesel$n.samp)
+                            genesel.param$block.attr,res.genesel.stability$n.samp)
   }
   
   caption.descr = sprintf("%s When fold change or difference is computed, this is done as '%s'.",caption.descr,
-                          paste(res.stab.sel.genesel$levels.last.first,collapse=" by ")
+                          paste(res.genesel.stability$levels.last.first,collapse=" by ")
   )
   
-  report$add.table(res.stab.sel.genesel$stab_feat,
+  report$add.table(res.genesel.stability$stab_feat,
                    caption=
                      paste(sprintf("GeneSelector stability ranking for response %s.",group.attr),
                            caption.descr)
@@ -4242,8 +4293,8 @@ genesel.stability.report <- function(m_a,group.attr,
       do.profile=T
     })
     
-    if(!is.null(res.stab.sel.genesel$m_a.contrasts)) {
-      m_a.c = res.stab.sel.genesel$m_a.contrasts
+    if(!is.null(res.genesel.stability$m_a.contrasts)) {
+      m_a.c = res.genesel.stability$m_a.contrasts
       tryCatchAndWarn({
         
         plot.profiles.task$value.name = "abundance.diff"
@@ -4261,8 +4312,8 @@ genesel.stability.report <- function(m_a,group.attr,
       
     }
     
-    if(!is.null(res.stab.sel.genesel$m_a.lfc.paired)) {
-      m_a.c = res.stab.sel.genesel$m_a.lfc.paired
+    if(!is.null(res.genesel.stability$m_a.lfc.paired)) {
+      m_a.c = res.genesel.stability$m_a.lfc.paired
       tryCatchAndWarn({
         
         plot.profiles.task$value.name = "l2fc"
@@ -4289,14 +4340,14 @@ genesel.stability.report <- function(m_a,group.attr,
   if(do.nmds) {
     report$add.package.citation("vegan")
     m_a.mds = m_a
-    m_a.mds$count = m_a.mds$count[,res.stab.sel.genesel$stab_feat$name]
+    m_a.mds$count = m_a.mds$count[,res.genesel.stability$stab_feat$name]
     report$add(
       plot.features.mds(m_a.mds,sample.group=m_a$attr[,group.attr]),
       caption="metaMDS plot of clades selected by GeneSelector. 'x' marks clades, 'o' marks samples"
     )
   }
   
-  return (res.stab.sel.genesel)
+  return (res.genesel.stability)
   
 }
 
@@ -4443,6 +4494,7 @@ plot.profiles.abund <- function(m_a,
     
     feature.order = list(list(ord=NULL,ord_descr="average abundance",sfx="ab"))
     if (!is.null(res.tests)) {
+      #DEBUG:
       make.global(res.tests)
       ord=get.feature.ranking(res.tests,feature.ranking)$ranked
       if(!is.null(ord)) {
@@ -5500,7 +5552,7 @@ select.samples <- function(m_a,
                             id.vars=c(sample.group.name),
                             geom="bar",
                             id.var.dodge=sample.group.name
-  )
+  )$plot
   #env=as.environment(as.list(environment(), all.names=TRUE))
   #print(names(as.list(env)))
   #print(evals("pl.hist",env=env))
@@ -5515,7 +5567,7 @@ select.samples <- function(m_a,
                             id.vars=c(sample.group.name),
                             geom="bar",
                             id.var.dodge=sample.group.name
-  )
+  )$plot
   #env=as.environment(as.list(environment(), all.names=TRUE))
   #print(names(as.list(env)))
   #print(evals("pl.hist",env=env))
@@ -5737,7 +5789,7 @@ wilcox.eff.size.r <-function(pval, n){
 
 ## x is the sample matrix, with samples in COLUMNS
 wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
-
+  
   if(type == "unpaired") {
     nsamp = ncol(x)
     group = factor(group)
@@ -5896,7 +5948,7 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
 ## We have to patch this in order to add RankingWilcoxonAT to hard-wired
 ## list of methods
 RepeatRankingAT <- function (R, P, scheme = c("subsampling", "labelexchange"), iter = 10, 
-          varlist = list(genewise = FALSE, factor = 1/5), ...) 
+                             varlist = list(genewise = FALSE, factor = 1/5), ...) 
 {
   scheme <- match.arg(scheme)
   if (!is.element(scheme, c("subsampling", "labelexchange"))) 
@@ -5956,15 +6008,15 @@ new_genesel <- function(...) {
 ## e.g. with decostand(ihs(count),method="standardize",MARGIN=2),
 ## otherwise set tran_norm to TRUE and the command above will be
 ## applied
-stab.sel.genesel <- function(m_a,
-                             group.attr,
-                             block.attr=NULL,
-                             type="unpaired",
-                             replicates=400,
-                             samp.fold.ratio=0.5,
-                             maxrank=20,
-                             comp.log.fold.change=F,
-                             ret.data.contrasts=T
+genesel.stability <- function(m_a,
+                              group.attr,
+                              block.attr=NULL,
+                              type="unpaired",
+                              replicates=400,
+                              samp.fold.ratio=0.5,
+                              maxrank=20,
+                              comp.log.fold.change=F,
+                              ret.data.contrasts=T
 ) {
   library(GeneSelector)
   
@@ -5979,7 +6031,7 @@ stab.sel.genesel <- function(m_a,
   }
   else {
     x = m_a$count
-    y = m_a$attr[,group.attr]
+    y = factor(m_a$attr[,group.attr])
     stopifnot(length(levels(y))==2)
     ##make last level to be first, so that effect sizes and statistics
     ##are computed for last over first
@@ -5992,7 +6044,6 @@ stab.sel.genesel <- function(m_a,
   n_feat = nrow(x)
   n_samp = ncol(x)
   
-  ranking_methods = c(RankingWilcoxon,RankingLimma,RankingFC)
   ranking_method = RankingWilcoxonAT
   
   rnk = ranking_method(x,y.relev,type=type,pvalues=T)
@@ -6014,6 +6065,9 @@ stab.sel.genesel <- function(m_a,
     rnk.vals = cbind(rnk.vals,
                      l2fc.group.mean=t(group.log.fold.change(m_a$count,m_a$attr[,group.attr],base=2))
     )
+    group.mean = t(count.summary(m_a$count,mean,m_a$attr[,group.attr],
+                                 format="matrix",group.prefix="mean"))
+    rnk.vals = cbind(rnk.vals,group.mean)
     if(type.orig=="paired") {
       m_a.g = s.c$m_a.groups
       log.fold.change.paired = log(m_a.g$count[m_a.g$attr$.contrast==1,]+.Machine$double.eps*100,base=2) - 
@@ -6029,6 +6083,9 @@ stab.sel.genesel <- function(m_a,
                          median
                        )
       )
+      group.median = t(count.summary(m_a.g$count,median,m_a.g$attr[,group.attr],
+                                     format="matrix",group.prefix="median.paired"))
+      rnk.vals = cbind(rnk.vals,group.median)
     }
   }
   #make.global(rnk.vals)
@@ -6088,9 +6145,6 @@ stab.sel.genesel <- function(m_a,
     }
     ret$contrasts = s.c$contrasts
   }
-  #DEBUG:
-  ret.gs = ret
-  make.global(ret.gs)
   return(ret)
 }
 
@@ -6905,15 +6959,21 @@ proc.mr_oralc <- function() {
 }
 
 
-count.summary <- function(count,fun,group,format="data.frame") {
-  group = as.data.frame(group)
-  group.summ = ddply(cbind(as.data.frame(count),group),names(group),colwise(fun))
+count.summary <- function(count,fun,group,format="data.frame",group.prefix=NULL) {
+  .group = group
+  .group = data.frame(.group)
+  group.summ = ddply(cbind(as.data.frame(count),.group),names(.group),colwise(fun))
   if(format == "data.frame") {
     return (group.summ)
   }
   else if(format == "matrix") {
-    x = as.matrix(group.summ[,-1])
-    rownames(x) = group.summ[,1]
+    x = as.matrix(group.summ[,!names(group.summ) %in% names(.group),drop=F])
+    rnames = apply(group.summ[,names(.group),drop=F],1,function(x) paste(x,collapse="."))
+    if(!is.null(group.prefix)) {
+      rnames = paste(group.prefix,rnames,sep=".")
+    }
+    
+    rownames(x) = rnames
     return (x)
   }
   else stop(paste("Unknown format argument value",format))
@@ -7004,8 +7064,8 @@ power.pieper.t1d <- function(
   
   #make.global(pvals.adj)
   
-  group.mean = count_matr_from_df(count.summary(m,mean,group),c("group"))
-  group.sd = count_matr_from_df(count.summary(m,sd,group),c("group"))
+  group.mean = count_matr_from_df(count.summary(m,mean,group),c(".group"))
+  group.sd = count_matr_from_df(count.summary(m,sd,group),c(".group"))
   group.mean.sig = group.mean[,ind.sig]
   #print(group.mean.sig)
   group.sd.sig = group.sd[,ind.sig]

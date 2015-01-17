@@ -201,6 +201,8 @@ gen.tasks.choc <- function() {
   
   
   task1 = within( task0, {
+
+    descr = "All samples, no aggregation"    
     
     do.summary.meta = T
     
@@ -218,7 +220,6 @@ gen.tasks.choc <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      #do.divrich = c(2)
       do.deseq2 = F
       do.adonis = F
       do.genesel = F
@@ -272,14 +273,13 @@ gen.tasks.choc <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.divrich = c()
-      do.deseq2 = F
-      do.adonis = F
-      do.genesel = F
-      do.stabsel = F
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = T
       do.glmer = F
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
@@ -333,6 +333,8 @@ gen.tasks.choc <- function() {
 
   task3 = within( task0, {
     
+    taxa.levels = c(2)
+    
     main.meta.var = "TherapyStatus"
     
     descr = "Patients' samples at visits 1 (before therapy) and 2 (after therapy), only paired samples"
@@ -361,7 +363,7 @@ gen.tasks.choc <- function() {
       do.genesel = T
       do.stabsel = F
       do.glmer = F
-      do.plot.profiles.abund=F
+      do.plot.profiles.abund=T
       do.heatmap.abund=F
       do.extra.method = c() #taxa.levels
       
@@ -382,8 +384,8 @@ gen.tasks.choc <- function() {
         do.plot.profiles = F
         genesel.param = within(genesel.param, {
           block.attr = "SubjectID"
-          type="unpaired"
-          replicates=400
+          type="paired"
+          #replicates=0
         })
       })
       
