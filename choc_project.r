@@ -103,7 +103,7 @@ summary.meta.choc <- function(m_a) {
 
   report$add(summary(meta),caption="Summary of metadata variables")
   
-  xtabs.formulas = list("~Sample.type+TherapyStatus","~Antibiotic + Sample.type",
+  xtabs.formulas = list("~Sample.type+TherapyStatus","~Antibiotic.Before.Therapy + Sample.type",
                         "~Fever + Sample.type",
                         "~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
   for(xtabs.formula in xtabs.formulas) {
@@ -179,6 +179,16 @@ gen.tasks.choc <- function() {
                             match="first")
       stopifnot(!any(is.na(meta.aggr$visit.max)) && 
                   nrow(meta.aggr)==nrow(meta))
+      
+      meta = meta.aggr
+      meta.aggr = join(meta,
+                       ddply(meta,"FamilyID",summarise,
+                             has.sibling=("patient" %in% Sample.type) && ("sibling" %in% Sample.type)),
+                       by="FamilyID",
+                       match="first")
+      stopifnot(!any(is.na(meta.aggr$has.sibling)) && 
+                  nrow(meta.aggr)==nrow(meta))
+            
       m_a$attr = meta.aggr
       
       ##As of 2014-11-05, there are only 6 samples at visit 5, and less in higher visits
@@ -235,7 +245,7 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c("Sample.type","visit"))
+        id.vars.list = list(c("Sample.type","visit"),c("Antibiotic.Before.Therapy","Sample.type.1"))
         clade.meta.x.vars=c("visit")
         do.profile=T
         do.clade.meta=F
@@ -307,9 +317,6 @@ gen.tasks.choc <- function() {
           list(formula.rhs=main.meta.var,
                strata=NULL,
                descr="Association with the patient/control status unpaired"),
-          list(formula.rhs=main.meta.var,
-               strata="FamilyID",
-               descr="Association with the patient/control status paired by family"),
           list(formula.rhs=paste("age.quant *", main.meta.var),
                strata=NULL,
                descr="Association with the age quartiles and patient/control status")
@@ -318,22 +325,88 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic.Before.Therapy"))
+        id.vars.list = list(c(main.meta.var),c(main.meta.var,"age.quant"))
         do.profile=T
         do.clade.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
+        attr.annot.names=c(main.meta.var,age)
       })
       
     })
     
   })
 
-  task3 = within( task0, {
+  
+  task2.1 = within( task2, {
     
-    taxa.levels = c(6)
+    descr = paste(descr,"Additional tests")
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = task2$get.taxa.meta.aggr(m_a)
+      m_a = subset.m_a(m_a,subset=(m_a$attr$has.sibling)) 
+      return(m_a)
+    }    
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = F
+      do.glmer = F
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      do.extra.method = taxa.levels
+
+      genesel.task = within(genesel.task, {
+        genesel.param = within(genesel.param, {
+          block.attr = "FamilyID"
+          type="paired"
+          #replicates=0
+        })
+      })
+
+      adonis.task = within(adonis.task, {
+        
+        tasks = list(
+          list(formula.rhs=main.meta.var,
+               strata="FamilyID",
+               descr="Association with the patient/control status paired by family")
+        )
+        
+      })
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          test.dist.matr.within.between(m_a=m_a,
+                                        group.attr="Sample.type",
+                                        block.attr="FamilyID",
+                                        n.perm=4000,
+                                        norm.count.task=norm.count.task.extra
+          )
+        }
+        norm.count.task.extra = within(norm.count.task, {
+          method="norm.prop"
+          #drop.features = list()
+        })
+        
+      })
+      
+      
+    })
+    
+  })
+  
+  
+  task3 = within( task0, {
     
     main.meta.var = "TherapyStatus"
     
@@ -357,15 +430,15 @@ gen.tasks.choc <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.divrich = c(6)
-      do.deseq2 = F
-      do.adonis = F
-      do.genesel = F
-      do.stabsel = F
+      #do.divrich = c()
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = T
       do.glmer = F
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
-      do.extra.method = c() #taxa.levels
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+      do.extra.method = taxa.levels
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
@@ -381,7 +454,7 @@ gen.tasks.choc <- function() {
       
       genesel.task = within(genesel.task, {
         group.attr = main.meta.var
-        do.plot.profiles = F
+        do.plot.profiles = T
         genesel.param = within(genesel.param, {
           block.attr = "SubjectID"
           type="paired"
@@ -403,8 +476,8 @@ gen.tasks.choc <- function() {
                strata="SubjectID",
                descr="Association with therapy status paired by subject"),
           list(formula.rhs=paste("Antibiotic.Before.Therapy * ", main.meta.var),
-               strata="SubjectID",
-               descr="Association with Antibiotic use before therapy and therapy status paired by subject")
+               strata=NULL,
+               descr="Association with Antibiotic use before therapy and therapy status")
         )
         
         #dist.metr="euclidian"
@@ -449,6 +522,34 @@ gen.tasks.choc <- function() {
     })
     
   })
+
+  task3.1 = within( task3, {
+    
+    descr = paste(descr,"Additional tests")
+    
+    do.summary.meta = F
+    
+    do.tests = T
+        
+    test.counts.task = within(test.counts.task, {
+      
+      do.divrich = c()
+      do.deseq2 = T
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      do.extra.method = c()
+            
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = sprintf("Antibiotic.Before.Therapy+%s",main.meta.var)
+      })
+    })
+    
+  })
+  
   
   task4 = within( task0, {
     
@@ -527,7 +628,7 @@ gen.tasks.choc <- function() {
   })
   
   
-  return (list(task3))
+  return (list(task2.1))
 }
 
 

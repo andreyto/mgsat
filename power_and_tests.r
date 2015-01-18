@@ -2410,9 +2410,14 @@ mgsat.16s.task.template = within(list(), {
     
     deseq2.task = within(list(), {
       formula.rhs=main.meta.var
+      ##parameters of DESeq call
       test.task=list(
         fitType="local"
       )
+      ##list of parameter sets for DESeq2::result calls
+      ##can leave empty, in which case one call to result()
+      ##with default contrast will be made
+      result.tasks=list(list())
     })
     
     stabsel.task = list(
