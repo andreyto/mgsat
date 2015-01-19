@@ -81,9 +81,47 @@ mget.stack<-function(x,ifnotfound) {
   return (ifnotfound)
 }
 
+new_section_path_el <- function(num=0,sub=F,has.header=F) {
+  list(num=num,sub=sub,has.header=has.header)
+}
+
+extract.path.nums.section.path <- function(x) {
+  sapply(x,function(y) y$num)
+}
+
+extract.path.nums.report.section <- function(x) {
+  extract.path.nums.section.path(x$path)
+}
+
+extract.path.subs.section.path <- function(x) {
+  sapply(x,function(y) y$sub)
+}
+
+extract.path.subs.report.section <- function(x) {
+  extract.path.subs.section.path(x$path)
+}
+
+get.sub.level.section.path <- function(x) {
+  sum(extract.path.subs.section.path(x))
+}
+
+cut.to.bottom.sub.section.path <- function(x) {
+  subs = extract.path.subs.section.path(x)
+  pos = length(subs) - match(T,rev(subs)) + 1
+  if(is.na(pos)) {
+    return (list())
+  }
+  else {
+    if(pos>1)
+      return (x[1:pos-1])
+    else
+      return (list())
+  }
+}
+
 get.default.section<-function() {
   x = new.env(parent=emptyenv())
-  x$path = list(0)
+  x$path = list(new_section_path_el())
   return (x)
 }
 
@@ -97,7 +135,7 @@ get.report.section<-function(default=get.default.section()) {
   return (default)
 }
 
-push.report.section<-function(x=NULL) {
+push.report.section<-function(x=NULL,sub=F,has.header=F) {
   if(is.null(x)) {
     x = get.report.section(default=NULL)
     if(is.null(x)) {
@@ -107,7 +145,7 @@ push.report.section<-function(x=NULL) {
       x = clone.report.section(x)
     }
   }
-  x$path[[length(x$path)+1]] = 0
+  x$path[[length(x$path)+1]] = new_section_path_el(num=0,sub=sub,has.header=has.header)
   return (x)
 }
 
@@ -132,23 +170,48 @@ incr.report.section<-function(x=NULL) {
     }
   }
   last = length(x$path)
-  if(last>0) {x$path[[last]] = x$path[[last]] + 1}
-  else {x$path[[1]] = 1}
+  if(last>0) {x$path[[last]]$num = x$path[[last]]$num + 1}
+  else {x$path[[1]]$num = 1}
   return (x)
+}
+
+incr.report.section.if.zero <- function(x=NULL) {
+  if(is.null(x)) {
+    x = get.report.section()
+  }
+  last = length(x$path)
+  if(last>0 && x$path[[last]]$num == 0) {x$path[[last]]$num = x$path[[last]]$num + 1}
+  return (x)
+}
+
+format.section.path<-function(x=NULL) {
+  if(is.null(x)) {
+    x = get.report.section()$path
+  }
+  num = extract.path.nums.section.path(x)
+  return (paste("\\(",paste(num,sep="",collapse="."),"\\)",sep=""))
 }
 
 format.report.section<-function(x=NULL) {
   if(is.null(x)) {
     x = get.report.section()
   }
-  return (paste("\\(",paste(x$path,sep="",collapse="."),"\\)",sep=""))
+  format.section.path(x$path)
+}
+
+format.section.path.as.file<-function(x=NULL) {
+  if(is.null(x)) {
+    x = get.report.section()$path
+  }
+  num = extract.path.nums.section.path(x)
+  return (paste(num,sep="",collapse="."))
 }
 
 format.report.section.as.file<-function(x=NULL) {
   if(is.null(x)) {
     x = get.report.section()
   }
-  return (paste(x$path,sep="",collapse="."))
+  format.section.path.as.file(x$path)
 }
 
 
@@ -197,7 +260,7 @@ PandocAT <- setRefClass('PandocAT', contains = "Pandoc",
                         fields = list(
                           'sections' = 'list',
                           'incremental.save' = 'logical',
-                          'out.file.md' = 'character',
+                          'out.file' = 'character',
                           'out.formats' = 'character',
                           'portable.html' = 'logical',
                           'object.index' = 'list',
@@ -208,7 +271,7 @@ PandocAT <- setRefClass('PandocAT', contains = "Pandoc",
 PandocAT$methods(initialize = function(
   author = "Anonymous",
   title = "Analysis",
-  out.file.md = "report.md",
+  out.file = "report",
   out.formats = c("html"),
   incremental.save = F,
   portable.html=T,
@@ -216,12 +279,12 @@ PandocAT$methods(initialize = function(
 ) {
   #.self$author=author
   #.self$title=title
-  .self$out.file.md=out.file.md
+  .self$out.file=out.file
   .self$out.formats=out.formats
   .self$incremental.save=incremental.save
   .self$portable.html=portable.html
   .self$object.index=list(table=1,figure=1)
-  .self$data.dir = "output"
+  .self$data.dir = "data"
   unlink(.self$data.dir,recursive=T,force=T)
   dir.create(.self$data.dir, showWarnings = FALSE, recursive = TRUE)
   
@@ -235,6 +298,7 @@ PandocAT$methods(initialize = function(
 ## private service method - should be called whenever an element is
 ## appended to the .self$body
 PandocAT$methods(priv.append.section = function() {
+  incr.report.section.if.zero()
   .self$sections[[length(.self$sections)+1]] = get.report.section()$path
 })
 
@@ -493,14 +557,15 @@ PandocAT$methods(add.printed = function(x,caption=NULL,echo=T,...) {
   return(.self$add.p(pandoc.as.printed.return(x,...),echo=echo))
 })
 
-PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T,...) {
+PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T,sub=F,...) {
   report.section = switch(section.action,
                           incr=incr.report.section(),
                           push=incr.report.section(),
                           keep=get.report.section())
+  num = extract.path.nums.report.section(report.section)
   if (is.null(level)) {
     ##headers will shift to the left above level 5 in HTML output
-    level = min(5,length(report.section$path))
+    level = min(5,length(num))
   }
   x = paste(format.report.section(report.section),x)
   ##newlines currently break header formatting, remove them
@@ -509,7 +574,7 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
   
   if(section.action=="push") {
     #w/o argument it clones
-    report.section = push.report.section()
+    report.section = push.report.section(sub=sub,has.header=T)
   }
   
   if(.self$incremental.save) {
@@ -520,19 +585,25 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
   
 })
 
-PandocAT$methods(make.file.name = function(name.base="",make.unique=T) {
+PandocAT$methods(make.file.name = function(name.base="",
+                                           make.unique=T,
+                                           dir=NULL,
+                                           section.path=NULL) {
+  if(is.null(dir)) {
+    dir = .self$data.dir
+  }
   if(length(name.base)==0) {
     name.base = ""
   }
   if(name.base=="" && !make.unique) {
     stop("Need either non-empty name.base or make.unique=T")
   }
-  fn.start = format.report.section.as.file()
+  fn.start = format.section.path.as.file(section.path)
   if(make.unique) {
-    fn = tempfile(paste(fn.start,"-",sep=""),tmpdir=.self$data.dir,fileext=name.base)
+    fn = tempfile(paste(fn.start,"-",sep=""),tmpdir=dir,fileext=name.base)
   }
   else {
-    fn = file.path(.self$data.dir,paste(fn.start,name.base,sep="-"))
+    fn = file.path(dir,paste(fn.start,name.base,sep="-"))
   }
   return(fn)
 })
@@ -560,12 +631,12 @@ PandocAT$methods(write.table.file = function(data,
   return(fn)
 })
 
-PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.loc,sort.by.sections=F) {
+PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,sort.by.sections=F) {
   
-  if (missing(out.file.md.loc)) {
-    out.file.md.loc = .self$out.file.md
-    if(missing(out.file.md.loc)) {
-      out.file.md.loc = "report.md"
+  if (missing(out.file.loc)) {
+    out.file.loc = .self$out.file
+    if(missing(out.file.loc)) {
+      out.file.loc = "report"
     }
   }
   
@@ -583,30 +654,79 @@ PandocAT$methods(save = function(out.file.md.loc,out.formats.loc,portable.html.l
     }
   }
   
-  fp    <- out.file.md.loc
+  fp    <- out.file.loc
   timer <- proc.time()
   
-  ## create pandoc file
-  cat(pandoc.title.return(.self$title, .self$author, .self$date), file = fp)
+  fp.all = list()
+  
   f_sections = .self$sections
   f_body = .self$body
+  
   if(sort.by.sections) {
     ##sort by section lexicographically, using a stable sort
     sect_ord = sort.list(
-      unlist(lapply(.self$sections,function(x) paste(x,sep="",collapse="."))),
+      unlist(lapply(.self$sections,format.section.path)),
       method="shell")
     f_body = f_body[sect_ord]
   }
-  lapply(f_body, function(x) cat(paste(pander.return(x$result), collapse = '\n'), 
-                                 file = fp, append = TRUE))
+  
+  write.el <- function(el,fp) {
+    cat(paste(pander.return(el$result), collapse = '\n'), 
+        file = fp, append = TRUE)    
+  }
+  
+  for(i.el in seq_along(f_body)) {
+    section = f_sections[[i.el]]
+    el = f_body[[i.el]]
+    
+    section.par = cut.to.bottom.sub.section.path(section)
+    
+    #print(paste("Full section:",paste(section,collapse=" ")))
+    #print(paste("Par section:",paste(section.par,collapse=" ")))
+          
+    if(length(section.par) > 0) {
+      sub.path = section.par
+    }
+    else {
+      sub.path = NULL
+    }
+    fp.sub = make.file.name(name.base=fp,
+                              make.unique=F,
+                              dir=".",
+                              section.path=sub.path)
+    fp.sub.md = paste(fp.sub,".md",sep="")
+    #print(paste("fp.sub=",fp.sub))
+
+    if(is.null(fp.all[[fp.sub.md]])) {
+      cat(pandoc.title.return(.self$title, .self$author, .self$date), file = fp.sub.md)
+    }    
+    
+    if(i.el>1) {
+      sub.level.prev = get.sub.level.section.path(f_sections[[i.el-1]])
+      sub.level = get.sub.level.section.path(section)
+      if(sub.level > sub.level.prev) {
+        cat(pandoc.link.verbatim.return(paste(fp.sub,".html",sep=""),"Subreport"), 
+            file = fp.sub.md.prev, append = TRUE)
+        if(section[[length(section)]]$has.header) {
+          write.el(f_body[[i.el-1]],fp.sub.md)
+        }
+      }
+    }    
+    
+    write.el(el,fp.sub.md)
+    fp.all[[fp.sub.md]] = 1
+    fp.sub.md.prev = fp.sub.md
+  }
   
   for(out.format in out.formats.loc) {
+    for(fp.sub.md in names(fp.all)) {
     ## It would be nice to add `options="-s -S"` to support
     ## Pandoc's subscript and suprscript extensions, but
     ## this will entirely replace internal default options and
     ## break TOC etc
-    Pandoc.convert(fp,format=out.format,open=F,footer=F,
+    Pandoc.convert(fp.sub.md,format=out.format,open=F,footer=F,
                    portable.html=portable.html.loc)
+    }
   }
   
 })
@@ -618,7 +738,12 @@ test_report.sections<-function() {
   get.pandoc.section.3<-function() {
     print("get.pandoc.section.3")
     #print(incr.report.section())
-    report.section = report$add.header("get.pandoc.section.3",section.action="push")
+    report.section = report$add.header("get.pandoc.section.3",section.action="push",sub=T)
+    report$add.descr("Plots are shown with relation to various combinations of meta 
+                   data variables and in different graphical representations. Lots of plots here.")
+    
+    #report$add.header("Iterating over all combinations of grouping variables")
+    
     report.section = report$add.header("get.pandoc.section.3.1")
     report$add.table(data.frame(A=c("a","b"),B=c(1,2)),caption="Table")
     report$add.descr(paste("File name with extra output is ",report$make.file.name("data.csv")))
@@ -655,7 +780,6 @@ test_report.sections<-function() {
   get.pandoc.section.1()
   
   report$save("test_sections")
-  Pandoc.convert("test_sections.md",format="html",open=F)
   
 }
 

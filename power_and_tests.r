@@ -1859,7 +1859,8 @@ mgsat.divrich.report <- function(m_a,
                                  plot.profiles.task=list(),
                                  do.plot.profiles=T) {
   
-  report.section = report$add.header("Abundance and diversity estimates",section.action="push")
+  report.section = report$add.header("Abundance and diversity estimates",
+                                     section.action="push", sub=T)
   group.descr = ""
   group.descr.short = ""
   if(!is.null(group.descr)) {
@@ -1975,7 +1976,8 @@ plot.profiles <- function(m_a,
                           feature.descr="Abundance.",
                           sqrt.scale=F) {
   
-  report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),section.action="push")
+  report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),
+                                     section.action="push", sub=T)
   report$add.descr("Plots are shown with relation to various combinations of meta 
                    data variables and in different graphical representations. Lots of plots here.")
   

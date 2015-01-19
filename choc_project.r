@@ -149,8 +149,9 @@ gen.tasks.choc <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     
-    taxa.levels = c(2,6,"otu")
-    #taxa.levels = c(2)
+    #DEBUG:
+    #taxa.levels = c(2,6,"otu")
+    taxa.levels = c(2)
     
     descr = "All samples, no aggregation"
     
@@ -331,7 +332,7 @@ gen.tasks.choc <- function() {
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c(main.meta.var,age)
+        attr.annot.names=c(main.meta.var,"age.quant")
       })
       
     })
@@ -697,8 +698,7 @@ set_trace_options(try.debug=T)
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of CHOC ALL 16S data",
-                       out.file.md="report.md",
-                       incremental.save=T)
+                       incremental.save=F)
 
 
 res = proc.project(

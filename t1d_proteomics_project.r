@@ -294,7 +294,6 @@ set_trace_options(try.debug=T)
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of T1D proteomics data",
-                       out.file.md="report.md",
                        incremental.save=T)
 
 
