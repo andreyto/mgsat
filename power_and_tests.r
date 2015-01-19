@@ -2365,7 +2365,7 @@ mgsat.16s.task.template = within(list(), {
   
   summary.meta.task = list(
     meta.x.vars = c(),
-    group.var = c(main.meta.var)
+    group.vars = c(main.meta.var)
   )
   
   test.counts.task = within(list(), {
@@ -2626,8 +2626,8 @@ proc.project <- function(
   
   res.tasks = lapply(tasks,function(task) {
     
-    report$add.header(paste("Subset:",task$descr))
-    report$push.section(report.section) #2 {
+    report$add.header(paste("Subset:",task$descr),
+                      report.section=report.section,sub=T) #2 {
     
     res.task = new_mgsatres(task=task)
     
@@ -2643,8 +2643,8 @@ proc.project <- function(
         res.level = new_mgsatres(taxa.level=taxa.level)
         
         label = paste(label.base,"l",taxa.level,sep=".",collapse=".")
-        report$add.header(paste("Taxonomic level:",taxa.level))
-        report$push.section(report.section) #4 {
+        report$add.header(sprintf("Taxonomic level: %s of Subset: %s",taxa.level, descr),
+                          report.section=report.section,sub=T) #4 {
         
         m_a = do.call(read.data.method,
                       c(
@@ -5311,14 +5311,15 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   return (list(m_a.contr=m_a.contr,m_a.groups=m_a.groups,contrasts=contrasts.ret))
 }
 
-report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
-  report.section = report$get.section()
+report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL) {
+  report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=T)
   
   m_a.summ=make.sample.summaries(m_a)
   
   report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of total counts per sample")
   
-  if(!is.null(group.var)) {
+  if(!is.null(group.vars)) {
+    for(group.var in group.vars) {
     report$add(kruskal.test(m_a.summ$count[,"count.sum"],m_a.summ$attr[,group.var]),
                caption=paste("Test for difference of total counts per sample across groups defined by",
                              group.var)
@@ -5330,6 +5331,7 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
     report$add.vector(rowMeans(group.mean),
                       caption=paste("Mean values of group means across all features, where groups
                are defined by",group.var))
+    }
   }
   
   if(!(is.null(meta.x.vars) & is.null(group.var))) {
@@ -5339,10 +5341,15 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.var=NULL) {
     
     for(x.var in meta.x.vars) {
       
+      report$add.header("Iterating over group variables")
+      report$push.section(report.section)
+      
+      for(group.var in group.vars) {
       show.sample.summaries.meta(m_a=m_a.summ,
                                  x.var=x.var,
                                  group.var=group.var)
-      
+      }
+      report$pop.section()
     }
     
     report$pop.section()
@@ -5429,138 +5436,6 @@ proc.t1d.mg <- function() {
 }
 
 
-test.counts.mr_oralc <- function(data,attr.names,label,alpha=0.05,
-                                 do.tests=T,do.stability=T,
-                                 stability.transform.counts="ihs") {
-  
-  n.adonis.perm = 4000
-  res = list()
-  #data = data[data$Batch %in% c(1,2,3),]
-  
-  ##only families with 1 sibling and 1 patient
-  #tbl = with(data,table(Family,T1D))
-  #fams = unique(row.names(tbl[(tbl[,"T1D"]>0 & tbl[,"Control"]>0),]))
-  #data = data[data$Family %in% fams,]
-  
-  m_a.abs = split_count_df(data,col_ignore=attr.names)
-  
-  data.norm = norm.prop(data,col_ignore=attr.names)
-  
-  #make.global(tbl)
-  #make.global(fams)
-  #make.global(data.norm)
-  
-  
-  all.clades = get.clade.names(data,attr.names)
-  m_a = split_count_df(data.norm,col_ignore=attr.names)
-  make.global(m_a)
-  
-  m = m_a$count
-  
-  #m = (m_a.abs$count > 0)
-  #storage.mode(m) = "integer"
-  
-  count = switch(stability.transform.counts,
-                 boxcox=norm.boxcox(m),
-                 ihs=ihs(m,1),
-                 ident=m,
-                 binary=(m_a.abs$count > 0))
-  make.global(count)
-  
-  if (do.stability) {
-    
-    standardize.glm = T
-    
-    cl<-makeCluster(getOption("mc.cores", 2L)) #number of CPU cores
-    registerDoSNOW(cl)  
-    print(levels(m_a$attr$sample.type))
-    cv.res = cv.glmnet.alpha(m_a$attr$sample.type,count,family="binomial",standardize=standardize.glm)
-    stopCluster(cl)
-    
-    make.global(cv.res)
-    penalty.alpha = cv.res$alpha
-    #alpha = 0.8
-    stab.res.c060 = stabpath(m_a$attr$sample.type,count,weakness=0.9,
-                             family="binomial",steps=600,
-                             alpha=penalty.alpha,standardize=standardize.glm)
-    make.global(stab.res.c060)
-    fwer = alpha
-    pi_thr = 0.6
-    stab.feat.c060 = stability.selection.c060.at(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
-    #stab.feat.c060 = stability.selection(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
-    make.global(stab.feat.c060)
-    print ("Features that meet FWER cutoff in stability analysis:")
-    print (names(stab.feat.c060$stable))
-    
-    stab.path.file = paste("stability.path",label,"png",sep=".")
-    
-    #p = plot.stability.selection.c060.at(stab.feat.c060,rank="mean")
-    p = plot.stability.selection.c060.at(stab.feat.c060,xvar="fraction",rank="lpos")
-    ggsave(stab.path.file)
-    #png(stab.path.file)
-    #plot(stab.res.c060,fwer=fwer,pi_thr=pi_thr)
-    #dev.off()
-    res$glmnet.stability=stab.feat.c060
-  }
-  
-  if (do.tests) {
-    ##Negative values break bray-curtis and jaccarda= distances; we standardize to "range" to reduce
-    ##the influence of very abundant species
-    count = decostand(m_a$count,method="range",MARGIN=2)
-    adonis.dist = "bray"
-    #ad.res = adonis(count~sample.type + Batch,data=m_a$attr,permutations=n.adonis.perm,method=adonis.dist)
-    #print(ad.res)
-    ad.res.sample.type = adonis(count~sample.type,data=m_a$attr,permutations=n.adonis.perm,method=adonis.dist)
-    print(ad.res.sample.type)
-    ad.res.paired = adonis(count~sample.type,data=m_a$attr,strata=m_a$attr$Subject,permutations=n.adonis.perm,method=adonis.dist)  
-    print (ad.res.paired)
-    #make.global(ad.res)
-    
-    #print (ad.res)
-    #test.ad.res = ad.res$aov.tab$"Pr(>F)"[1]
-    #r2.ad = ad.res$aov.tab$R2[1]
-    
-    gr.abs = m_a.abs$attr$sample.type
-    gr.abs.cnt = list(x=m_a.abs$count[gr.abs=="Tumor Tissue",],y=m_a.abs$count[gr.abs=="Healthy Tissue",])
-    print(Xdc.sevsample(gr.abs.cnt))
-    K = dim(gr.abs.cnt[[1]])[2]-1
-    print (K)
-    #make.global(gr.abs.cnt)
-    print(Xmcupo.sevsample(gr.abs.cnt,K))
-    
-    ##this is a rank based pairwise test; column-wise standartization does not
-    ##affect it, but row-wise - does
-    gr = m_a$attr$sample.type
-    gr.cnt = list(x=m_a$count[gr=="Tumor Tissue",],y=m_a$count[gr=="Healthy Tissue",])
-    
-    test.wil.res = list()
-    
-    for (clade in all.clades) {
-      test.wil.res[[clade]] = wilcox.test(gr.cnt[[1]][,clade],gr.cnt[[2]][,clade],paired=FALSE,exact=F)$p.value
-    }
-    test.wil.res = unlist(test.wil.res)
-    make.global(test.wil.res)    
-    names(test.wil.res) = all.clades
-    test.wil.res.adj = p.adjust(test.wil.res,method="BH")
-    #does not make sense on so few samples, exits with errors:
-    if(F) {
-      fdr.res = fdrtool(test.wil.res,"pvalue")
-      test.wil.res.adj.q = fdr.res$qval
-      names(test.wil.res.adj.q) = names(test.wil.res)
-      print(test.wil.res.adj.q[test.wil.res.adj.q<=alpha])
-      make.global(test.wil.res.adj.q)
-    }
-    names(test.wil.res.adj) = names(test.wil.res)
-    print("Significant unadjusted p-values:")
-    print(test.wil.res[test.wil.res<=alpha])
-    print("Significant BH adjusted p-values:")    
-    print(test.wil.res.adj[test.wil.res.adj<=alpha])
-    make.global(test.wil.res.adj)
-    
-  }
-  return (res)
-}
-
 
 load.meta.mr_oralc <- function(file_name) {
   
@@ -5583,49 +5458,6 @@ read.mr_oralc <- function(taxa.level=3) {
   return (merge.counts.with.meta(taxa.lev,meta))
 }
 
-
-proc.mr_oralc <- function() {
-  taxa.levels = c(2,3,4,5,6)
-  #taxa.levels = c(6)
-  do.std.plots = T
-  do.tests = T
-  for (taxa.level in taxa.levels) {
-    taxa.meta = read.mr_oralc(taxa.level)
-    make.global(taxa.meta)
-    taxa.meta.data = taxa.meta$data[taxa.meta$data$sample.type %in% c("Tumor Tissue","Healthy Tissue"),]
-    taxa.meta.data$sample.type = as.factor(as.character(taxa.meta.data$sample.type))
-    print(levels(taxa.meta.data$sample.type))
-    print(sort(unique(as.character(taxa.meta.data$sample.type))))
-    make.global(taxa.meta.data)    
-    taxa.meta.attr.names = taxa.meta$attr.names
-    label = paste("16s",taxa.level,sep=".")
-    
-    print (paste("Working on",label))
-    
-    if (do.tests) {
-      res.tests = tryCatchAndWarn({
-        test.counts.mr_oralc(taxa.meta.data,taxa.meta.attr.names,
-                             label=label,
-                             stability.transform.counts="ihs",
-                             do.stability=T,
-                             do.tests=T)
-      })
-    }
-    if (do.std.plots) {
-      tryCatchAndWarn({
-        std.plots(taxa.meta.data,taxa.meta.attr.names,id.vars.list=
-                    list(
-                      c("Subject","sample.type"),
-                      c("sample.type"),
-                      c("Subject")
-                    ),
-                  label=label,
-                  res.tests=res.tests
-        )
-      })
-    }
-  }
-}
 
 
 count.summary <- function(count,fun,group,format="data.frame",group.prefix=NULL) {

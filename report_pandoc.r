@@ -135,6 +135,7 @@ get.report.section<-function(default=get.default.section()) {
   return (default)
 }
 
+## when x is NULL, this function creates a clone
 push.report.section<-function(x=NULL,sub=F,has.header=F) {
   if(is.null(x)) {
     x = get.report.section(default=NULL)
@@ -557,11 +558,15 @@ PandocAT$methods(add.printed = function(x,caption=NULL,echo=T,...) {
   return(.self$add.p(pandoc.as.printed.return(x,...),echo=echo))
 })
 
-PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T,sub=F,...) {
+PandocAT$methods(add.header = function(x,level=NULL,report.section=NULL,section.action="incr",echo=T,sub=F,...) {
+  if(sub) {
+    section.action = "push"
+  }
+  do.clone = is.null(report.section)
   report.section = switch(section.action,
-                          incr=incr.report.section(),
-                          push=incr.report.section(),
-                          keep=get.report.section())
+                          incr=incr.report.section(report.section),
+                          push=incr.report.section(report.section),
+                          keep=get.report.section(report.section))
   num = extract.path.nums.report.section(report.section)
   if (is.null(level)) {
     ##headers will shift to the left above level 5 in HTML output
@@ -573,8 +578,10 @@ PandocAT$methods(add.header = function(x,level=NULL,section.action="incr",echo=T
   .self$add.p(pandoc.header.return(x,level=level,...),echo=echo)
   
   if(section.action=="push") {
+    rep.sec.push = NULL
+    if(!do.clone) rep.sec.push = report.section
     #w/o argument it clones
-    report.section = push.report.section(sub=sub,has.header=T)
+    report.section = push.report.section(rep.sec.push,sub=sub,has.header=T)
   }
   
   if(.self$incremental.save) {

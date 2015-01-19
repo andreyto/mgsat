@@ -264,7 +264,7 @@ gen.tasks.t1d <- function() {
 
   summary.meta.task = within(summary.meta.task, {
     meta.x.vars = c("Timestamp")
-    group.var = c(main.meta.var)
+    group.vars = c(main.meta.var)
   })
 
   test.counts.task = within(test.counts.task, {

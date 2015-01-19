@@ -166,7 +166,7 @@ gen.tasks.t1d.prot <- function() {
     
     summary.meta.task = within(summary.meta.task, {
       meta.x.vars = NULL
-      group.var = main.meta.var
+      group.vars = main.meta.var
     })    
     
     test.counts.task = within(test.counts.task, {

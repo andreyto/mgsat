@@ -150,8 +150,8 @@ gen.tasks.choc <- function() {
   task0 = within( mgsat.16s.task.template, {
     
     #DEBUG:
-    #taxa.levels = c(2,6,"otu")
-    taxa.levels = c(2)
+    taxa.levels = c(2,3,4,5,6,"otu")
+    #taxa.levels = c(2)
     
     descr = "All samples, no aggregation"
     
@@ -226,7 +226,7 @@ gen.tasks.choc <- function() {
     
     summary.meta.task = within(summary.meta.task, {
       meta.x.vars = c("visit")
-      group.var = c("Sample.type","visit")
+      group.vars = c("Sample.type","visit")
     })
     
     test.counts.task = within(test.counts.task, {
@@ -279,7 +279,7 @@ gen.tasks.choc <- function() {
     }
 
     summary.meta.task = within(summary.meta.task, {
-      group.var = c(main.meta.var)
+      group.vars = c(main.meta.var)
     })
     
     test.counts.task = within(test.counts.task, {
@@ -628,8 +628,8 @@ gen.tasks.choc <- function() {
     
   })
   
-  
-  return (list(task2.1))
+  #return (list(task2.1))
+  return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
 
@@ -690,7 +690,7 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
