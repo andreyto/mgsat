@@ -1855,6 +1855,7 @@ mgsat.divrich.report <- function(m_a,
                                  is.raw.count.data=T,
                                  group.attr=NULL,
                                  counts.glm.task=NULL,
+                                 counts.genesel.task=NULL,
                                  beta.task=NULL,
                                  plot.profiles.task=list(),
                                  do.plot.profiles=T) {
@@ -1937,6 +1938,17 @@ mgsat.divrich.report <- function(m_a,
     
   }
   
+  if(!is.null(counts.genesel.task)) {
+
+    ## note that while group.attr above may have any number of
+    ## levels, the counts.genesel.task$group.attr must be two-level
+      tryCatchAndWarn({ 
+        res$genesel.res = do.call(genesel.stability.report,
+                              c(list(m_a.dr),
+                                counts.genesel.task))
+      })
+    
+  }
   
   report$push.section(report.section)
   mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data)
@@ -2397,6 +2409,9 @@ mgsat.16s.task.template = within(list(), {
         betadisper.task=list()
         adonis.task=NULL #will be replaced by global adonis.task
       })
+      ## Same structure as the task-wide genesel.task; if NULL,
+      ## this will be taken from task-wide structure
+      counts.genesel.task = NULL
       do.plot.profiles = T
     })
     
@@ -2470,7 +2485,7 @@ mgsat.16s.task.template = within(list(), {
       
       n.perm=4000
       dist.metr="bray"
-      col.trans="range"
+      col.trans="ident"
       norm.count.task = within(norm.count.task, {
         method = "norm.prop"
       })      
@@ -3727,6 +3742,12 @@ test.counts.project <- function(m_a,
   make.global(m_a)
   
   res = new_mgsatres()
+
+  if(!is.null(genesel.task)) {
+    if(is.null(genesel.task$plot.profiles.task)) {
+      genesel.task$plot.profiles.task=plot.profiles.task
+    }
+  }
   
   if(do.divrich) {
     if(is.null(divrich.task$beta.task$adonis.task)) {
@@ -3736,6 +3757,13 @@ test.counts.project <- function(m_a,
         divrich.task$beta.task$adonis.task = NULL
       }
     }
+    if(is.null(divrich.task$counts.genesel.task)) {
+      divrich.task$counts.genesel.task=genesel.task
+    }
+    if(!do.genesel) {
+      divrich.task$counts.genesel.task = NULL
+    }
+    
     tryCatchAndWarn({ 
       res$divrich <- do.call(mgsat.divrich.report,
                              c(list(m_a,
@@ -3770,9 +3798,6 @@ test.counts.project <- function(m_a,
   make.global(m_a.norm)
   
   if(do.genesel) {
-    if(is.null(genesel.task$plot.profiles.task)) {
-      genesel.task$plot.profiles.task=plot.profiles.task
-    }
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
                                           task=genesel.task,res.tests=res)
     tryCatchAndWarn({ 
@@ -4194,7 +4219,8 @@ plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.sample
   if(show.samples) {
     site.sc <- scores(sol, display = "sites")
     plot(site.sc)
-    unique_sample.group = unique(sample.group)
+    sample.group = factor(sample.group)
+    unique_sample.group = levels(sample.group)
     points(sol,display="sites",col=sample.group)
     if(!is.null(unique_sample.group)) {
       legend(-0.5,1,unique_sample.group,col=1:length(sample.group),pch=1)  
@@ -4214,7 +4240,7 @@ plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.sample
   #points(site.sc,col=m_a$attr$T1D)
   #points(species.sc)
   #points(species.sc["Streptococcus_0.1.11.1.2.6.2",1:2,drop=F],pch="+")
-  
+  sol
 }
 
 cut.top.predictions<-function(scores,labels,sample.ids,n.cut,filter.by.label=F) {

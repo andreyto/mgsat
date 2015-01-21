@@ -84,6 +84,23 @@ load.meta.choc <- function(file.name) {
   meta$Sample.type.1 = relevel(meta$Sample.type.1,"sibling")
   meta$Sample.type = relevel(meta$Sample.type,"sibling")
   meta$TherapyStatus = relevel(meta$TherapyStatus,"before.chemo")
+  
+  meta.aggr = join(meta,
+                   ddply(meta,"SubjectID",summarise,
+                         Antibiotic.Before.Therapy=any(ifelse(visit==1,as.logical(Antibiotic),F))),
+                   by="SubjectID",
+                   match="first")
+  stopifnot(nrow(meta.aggr)==nrow(meta))
+
+  meta = meta.aggr
+
+  ## ignore antibiotic status in siblings - this field is for faceted plots
+  meta$Sample.type.Antibio.Before = factor(with(meta,
+                                     ifelse(Sample.type=="patient",
+                                            paste(Sample.type,Antibiotic.Before.Therapy,"."),
+                                            as.character(Sample.type))
+  ))
+  
   make.global(meta)
   return (meta)
 }
@@ -174,8 +191,7 @@ gen.tasks.choc <- function() {
                                   visit.max=max(visit),
                                   visit.min=min(visit),
                                   visit.1=any(visit==1),
-                                  visit.2=any(visit==2),
-                                  Antibiotic.Before.Therapy=any(ifelse(visit==1,as.logical(Antibiotic),F))),
+                                  visit.2=any(visit==2)),
                             by="SubjectID",
                             match="first")
       stopifnot(!any(is.na(meta.aggr$visit.max)) && 
@@ -242,11 +258,13 @@ gen.tasks.choc <- function() {
       divrich.task = within(divrich.task,{
         group.attr = NULL
         counts.glm.task = NULL
-        do.plot.profiles = F
+        do.plot.profiles = T
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c("Sample.type","visit"),c("Antibiotic.Before.Therapy","Sample.type.1"))
+        id.vars.list = list(c("Sample.type","visit"),
+                            c("Sample.type.Antibio.Before","visit"),
+                            c("Antibiotic.Before.Therapy","Sample.type.1"))
         clade.meta.x.vars=c("visit")
         do.profile=T
         do.clade.meta=F
@@ -255,6 +273,58 @@ gen.tasks.choc <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c("Sample.type","visit","Antibiotic.Before.Therapy")
       })
+      
+    })
+    
+  })
+
+  task1.1 = within( task1, {
+    
+    descr = paste(descr,"Additional tests")
+    
+    taxa.levels = c(2)
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      do.extra.method = taxa.levels
+      
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,norm.count.task) {
+          require(vegan)
+          
+          report$add.header('Testing that patients move closer to sibling profiles over time')
+          
+          if(!is.null(norm.count.task)) {
+            m_a <- norm.count.report(m_a,
+                                     descr="Profile time trend",
+                                     norm.count.task=norm.count.task)
+          }
+          
+          make.global(m_a)
+          
+        }
+        norm.count.task = within(norm.count.task, {
+          method="norm.prop"
+          #drop.features = list()
+        })
+        
+      })
+      
       
     })
     
@@ -507,9 +577,9 @@ gen.tasks.choc <- function() {
           test.dist.matr.within.between(m_a=m_a,
                                         group.attr="TherapyStatus",
                                         block.attr="SubjectID",
-                                        n.perm=4000,
+                                        n.perm=8000,
                                         #dist.metr="euclidian",
-                                        #col.trans="standardize",
+                                        col.trans="ident",
                                         norm.count.task=norm.count.task.extra
                                         )
         }
@@ -615,7 +685,7 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c(main.meta.var))
+        id.vars.list = list(c(main.meta.var,"Antibiotic.Before.Therapy"))
         do.profile=T
         do.clade.meta=T
       })
@@ -628,7 +698,7 @@ gen.tasks.choc <- function() {
     
   })
   
-  #return (list(task2.1))
+  #return (list(task1.1))
   return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
