@@ -1131,10 +1131,11 @@ read.mgrast.summary<-function(file_name,file_name.id.map=NULL) {
 }
 
 read.mothur.otu.shared <- function(file_name) {
-  data = read.delim(file_name, header=T,stringsAsFactors=T)
-  #where this X == NA column comes from, I have no idea. I do not see
-  #it in the text file. Maybe R bug?
-  data$X = NULL
+  require(data.table)
+  data = fread(file_name, header=T, sep="\t", stringsAsFactors=T, data.table=F)
+  #data = read.delim(file_name, header=T,stringsAsFactors=T)
+  #when read.delim is used, X == NA column comes because there is an extra delimiter at the end of line
+  #data$X = NULL
   
   data$label = NULL
   data$numOtus = NULL
@@ -1182,8 +1183,7 @@ make.mothur.taxa.summary.clade.names <- function(taxa.summary) {
 
 read.mothur.taxa.summary <- function(file_name) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
-  #where this X == NA column comes from, I have no idea. I do not see
-  #it in the text file. Maybe R bug?
+  #X == NA column comes because there is an extra delimiter at the end of line
   data$X = NULL
   data$clade = as.factor(make.mothur.taxa.summary.clade.names(data))
   return (data)
@@ -1284,6 +1284,10 @@ aggregate.by.meta.data <- function(meta_data,
 
 melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
   clade.names = get.clade.names(data,attr.names)
+  data$.record.id=rownames(data)
+  if(!is.null(data$.record.id)) {
+    id.vars = c(".record.id",id.vars)
+  }
   return (melt(data,id.vars=id.vars,measure.vars=clade.names,variable.name="clade",value.name=value.name))
 }
 
@@ -1344,9 +1348,11 @@ plot.abund.meta <- function(m_a,
         positive.ratio = mean(%s>0)
         )',value.name,value.name,value.name,value.name)
   ))
+  dat.melt = dat
   }
   else {
     dat.summary = NULL
+    dat.melt = NULL
   }
 
   ##show only n.top
@@ -1467,7 +1473,7 @@ plot.abund.meta <- function(m_a,
     ggsave(file_name)
   }
   
-  return (new_mgsatres(plot=gp,dat.summary=dat.summary))
+  return (new_mgsatres(plot=gp,dat.summary=dat.summary,dat.melt=dat.melt))
 }
 
 read.table.m_a <- function(file.base) {
@@ -2136,7 +2142,12 @@ plot.profiles <- function(m_a,
                                        show.profile.task$stat_summary.fun.y
                   )
                 }
-
+                
+                dat.melt = pl.abu$dat.melt
+                if(!is.null(dat.melt)) {
+                  report$add.table(dat.melt,caption=paste("Data table used for plots.",gr.by.msg))
+                }
+                
                 dat.summary = pl.abu$dat.summary
                 if(!is.null(dat.summary)) {
                   report$add.table(dat.summary,caption=paste("Summary table.",gr.by.msg))
@@ -2281,7 +2292,7 @@ read.choc <- function(taxa.level=3) {
 ## the values of that field.
 
 load.meta.default <- function(file.name) {
-  meta = read.delim(file_name,header=T,stringsAsFactors=T)
+  meta = read.delim(file.name,header=T,stringsAsFactors=T)
   meta$SampleID = as.factor(meta$SampleID)
   row.names(meta) = meta$SampleID
   return (meta)
@@ -2627,8 +2638,16 @@ proc.project <- function(
                    in nested loops over combinations of defined subsets of samples (if any) and 
                    taxonomic levels. For each output, look for the nearest
                    headers to figure out its place in the report hierarchy.
+                   The entire analysis is typically split into sub-reports linked
+                   from higher-level pages. Follow links called 'Subreport'.
                    If viewing HTML formatted report, you can click on the
-                   images to view the hi-resolution picture.")
+                   images to view the hi-resolution picture. To make it easier to
+                   extract pictures for downstream use, picture files are also
+                   reported as direct links in the legends.
+                   Various intermediate datasets are also saved as delimited files and reported as 
+                   direct links.
+                   The HTML report is viewed best with modern versions of Chrome or Firefox browsers.
+                   Internet Explorer might fail to show left-pane contents menu.")
   
   report.section = report$get.section()
   
