@@ -69,7 +69,10 @@ load.meta.choc <- function(file.name) {
       as.date(paste(meta$YearOfBirth,"-06-01",sep=""),order="ymd")
   )/365
   
-  meta$age.quant = quantcut(meta$age)
+  ## we need to create this as ordered quantile to show
+  ## in the right order on plots (and possible used
+  ## in models that care about ordered factors)
+  meta$age.quant = quantcut.ordered(meta$age)
   
   meta$Specimen.Collection.Date = Specimen.Collection.Date
   
@@ -229,7 +232,7 @@ gen.tasks.choc <- function() {
   
   task1 = within( task0, {
 
-    descr = "All samples, no aggregation"    
+    descr = "All samples (up to visit 4), no aggregation"    
     
     do.summary.meta = T
     
