@@ -1,5 +1,7 @@
 # MGSAT semi-automated differential abundance analysis of omics datasets #
 
+![Within-between dissimilarity plot example](http://andreyto.bitbucket.org/mgsat/example_project_01/plots/10584217153b.png "Within-between dissimilarity plot example")
+
 ##Overview##
 MGSAT is written in R. It applies several types of statistical tests, normalizations and plotting routines to the abundance count matrices that are typically the output of annotating (meta)omics datasets, and generates a [structured HTML report](http://andreyto.bitbucket.org/mgsat/example_project_01/0-report.html) that, in addition to results, shows method parameters and versions of the external packages. 
 
@@ -33,3 +35,5 @@ Andrey Tovchigrechko `<andreyto AT gmail.com>`
 
 ##License##
 GPLv3. See also COPYING file that accompanies the source code.
+
+![Abundance profile patients across visits with and without drug treatment before dieting](http://andreyto.bitbucket.org/mgsat/example_project_01/plots/105879431cf3.png "Abundance profile patients across visits with and without drug treatment before dieting")
