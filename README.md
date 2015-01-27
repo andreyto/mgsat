@@ -26,6 +26,8 @@ The header section briefly describes how to navigate the report and subreports l
 
 The user has analyzed data in subsets, such as controls vs patients before diet or patients before and after the start of the diet regimen. MGSAT placed the results for each subset into a separate subreport, linked from the top level page.
 
+The example also shows how custom user analysis code `extra.method.task` can be injected into the pipeline and executed along with the already available methods. 
+
 ##Author##
 Andrey Tovchigrechko `<andreyto AT gmail.com>`
 
