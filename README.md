@@ -1,7 +1,7 @@
 # MGSAT semi-automated differential abundance analysis of omics datasets #
 
 ##Overview##
-MGSAT is written in R. It applies several types of statistical tests, normalizations and plotting routines to the abundance count matrices that are typically the output of annotating (meta)omics datasets, and generates a structured HTML report that, in addition to results, shows method parameters and versions of the external packages. 
+MGSAT is written in R. It applies several types of statistical tests, normalizations and plotting routines to the abundance count matrices that are typically the output of annotating (meta)omics datasets, and generates a [structured HTML report](http://andreyto.bitbucket.org/mgsat/example_project_01/0-report.html) that, in addition to results, shows method parameters and versions of the external packages. 
 
 The user has fine-grained control over types of tests, parameters, and a description of a study design through a named list data structure that is provided as input to the top-level routine of the package.
 
