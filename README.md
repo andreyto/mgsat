@@ -7,7 +7,7 @@ MGSAT is written in R. It applies several types of statistical tests, normalizat
 
 The user has fine-grained control over types of tests, parameters, and a description of a study design through a named list data structure that is provided as input to the top-level routine of the package.
 
-MGSAT has being used to analyse datasets from 16S gene environmental sequencing surveys, meta-proteomics mass spectrometry and meta-genomics whole-genome shotgun functional annotation in several studies where the goal was to associate the state of the human microbiome with a specific disease condition such as leukemia, diabetes or Respiratory syncytial virus (RSV).
+MGSAT has being used to analyse datasets from 16S gene environmental sequencing surveys, proteomics mass spectrometry and meta-genomics whole-genome shotgun functional annotation in several studies where the goal was to associate the state of the human microbiome or human proteome with a specific disease condition such as leukemia, diabetes or Respiratory syncytial virus (RSV).
 
 For 16S surveys, MGSAT has routines that load output count matrices generated through [Mothur-based Standard Operating Procedure](http://www.mothur.org/wiki/MiSeq_SOP) or compatible automation wrappers such as [YAP](https://github.com/andreyto/YAP). The analysis can be done at all levels of annotated taxonomy or for the operational taxonomic units (OTU).
 
