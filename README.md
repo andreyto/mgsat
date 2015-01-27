@@ -13,7 +13,7 @@ MGSAT targets study designs where the goal is to associate annotated omics data 
 
 Plots include abundance profile plots in different representations split by grouping variables or shown as trends along continuous metadata variables, as well as clustered heatmaps with overlayed panels showing metadata variables.
 
-#Sample Analysis Code and Output#
+##Sample Analysis Code and Output##
 The easiest way to start using this package is to study the inputs and outputs of an example analysis project.
 
 The project is a made-up 16S sequencing study that looked at the association of a gut microbiome with some diet regimen. Samples were taken at several longitudinal points (called "visits" here), each visit coming after the next phase of diet regimen. Visit 1 was before the start of treatment. At Visit 1 (and a few at Visit 2), samples were also taken from healthy control individuals, each of which was matched with a corresponding patient. Some patients received a separate incidental drug treatment before coming for visit 1, which was reflected in a corresponding metadata variable. Note that because the enrollment was ongoing throughout  the study period, and the treatment was taking more than a year, there are progressively fewer samples at the higher visit numbers. There were no study drop-outs.
@@ -26,8 +26,8 @@ The header section briefly describes how to navigate the report and subreports l
 
 The user has analyzed data in subsets, such as controls vs patients before diet or patients before and after the start of the diet regimen. MGSAT placed the results for each subset into a separate subreport, linked from the top level page.
 
-#Author#
+##Author##
 Andrey Tovchigrechko `<andreyto AT gmail.com>`
 
-#License#
+##License##
 GPLv3. See also COPYING file that accompanies the source code.
