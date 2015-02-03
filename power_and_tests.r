@@ -414,11 +414,14 @@ norm.count.m_a <- function(m_a,...) {
 }
 
 ## subset method that will use the same subset argument on all data objects in m_a
-subset.m_a <- function(m_a,subset,select.count=NULL,select.attr=NULL) {
+subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL) {
   if(is.null(select.count)) select.count = T
   if(is.null(select.attr)) select.attr = T
+  if(is.null(subset)) subset = T
+  
   m_a$count = m_a$count[subset,select.count,drop=F]
   m_a$attr = m_a$attr[subset,select.attr,drop=F]
+  
   return(m_a)
 }
 
@@ -5537,6 +5540,59 @@ group.log.fold.change <- function(count,group,base=2) {
   row.names.pref = sprintf("l%sfc",base)
   return (log(group.mean.ratio(count=count,group=group,row.names.pref=row.names.pref)
               +.Machine$double.eps,base=base))
+}
+
+counts.distro.report <- function(m_a,group.attr,descr) {
+  report.section = report$add.header(sprintf("Emprical distributions of individual features %s",
+                                             descr),
+                                     section.action="push", sub=T)
+  for(feat.name in colnames(m_a$count)) {
+    report$push.section(report.section)
+    report$add.header(paste("Feature name",feat.name))
+    x = m_a$count[,feat.name]
+    g = factor(m_a$attr[,group.attr])
+    report$add(show.distr.group(x,g),
+               caption=sprintf("Empirical distribution of %s grouped by %s",
+                               feat.name,group.attr))
+    for(lev in levels(g)) {
+      xl = x[g==lev]
+      lev.descr = sprintf("level %s of %s",lev,group.attr)
+    report$add.printed(summary(xl),
+                       caption=sprintf("Summary of %s for %s",feat.name,lev.descr))
+    report$add.printed(format(descdist(xl,graph=F)),
+                       caption=sprintf("Additional descriptive parameters of %s for %s",
+                                       feat.name,lev.descr))
+    for(discrete in c(F,T)) {
+      report$add(descdist(xl,boot=1000,discrete=discrete),
+                 caption=sprintf("Skewness-kurtosis of %s for %s",
+                                 feat.name,lev.descr))
+    }
+    }
+    report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
+               caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
+    report$pop.section()
+  }
+}
+
+## power analysis of biomarker verification study
+verification.power <- function(m_a,
+                   group.attr,
+                   id.markers=NULL) {
+  report.section = report$add.header("Power analysis of a verification study",
+                                     section.action="push", sub=F)
+  
+  if(!is.null(id.markers)) {
+    m_a = subset.m_a(m_a,select.count=id.markers)
+  }
+  make.global(m_a)
+  report$add.header("Empirical distributions of individual features")
+  report$push.section(report.section)  
+  for(norm.method in c("ident","ihs")) {
+    m_a.norm = norm.count.report(m_a,norm.count.task=list(method=norm.method))
+    counts.distro.report(m_a.norm,group.attr=group.attr,
+                         descr=sprintf("transformation method %s",norm.method))
+  }
+  report$pop.section()
 }
 
 power.pieper.t1d <- function(

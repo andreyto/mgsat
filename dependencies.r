@@ -42,7 +42,9 @@ vanilla_packages = c(
   ##correct treatment of zeros in signed-rank Wilcoxon test
   ##with an interface compatible with base::wilcox.test while
   ##being relatively fast
-  "exactRankTests"
+  "exactRankTests",
+  ##ROC curve power analysis for biomarker verification
+  "pROC"
 )
 
 bio_packages = c(
