@@ -5542,6 +5542,117 @@ group.log.fold.change <- function(count,group,base=2) {
               +.Machine$double.eps,base=base))
 }
 
+n.cases.pepe.cont <- function(tpr1,tpr0,r,fpr0,alpha,beta,eps,k=NULL) {
+  theta = (qnorm(1-alpha) + qnorm(1-beta))**2
+  k.opt = 1/r*sqrt((tpr1*(1-tpr1))/(fpr0*(1-fpr0)))
+  if(is.null(k)) {
+    k = k.opt
+  }
+  n.cases = theta * ( tpr1*(1-tpr1) + k*(r**2)*fpr0*(1-fpr0)) / ((tpr1 - tpr0)**2)
+  n.controls.k = ceil(n.cases/k)
+  n.controls.eps = ceil((qnorm(1-beta)/eps)**2 * fpr0 * (1-fpr0))
+  n.controls = max(n.controls.k,n.controls.eps)
+  n.total = n.cases + n.controls
+  return(list(n.total=n.total,
+              n.cases=n.cases,
+              k.opt=k.opt,
+              n.controls=n.controls,
+              n.controls.eps=n.controls.eps,
+              n.controls.k=n.controls.k,
+              k=k,
+              tpr1=tpr1,
+              tpr0=tpr0,
+              fpr0=fpr0,
+              alpha=alpha,
+              beta=beta,
+              eps=eps))
+}
+
+deriv.ser <- function(x,y,x0) {
+  library(pspline)
+  predict(sm.spline(x, y), x0, 1)
+}
+
+marker.ver.power <- function(sm.df,tpr0,fpr0) {
+  alpha=0.005
+  beta=0.2
+  eps=0.03
+  k=0.28
+  spe0=1-fpr0
+  ss0 = sm.df[which(sm.df$specificities>=spe0)[1],]
+  tpr1=ss0$sensitivities
+  r = as.numeric(-deriv.ser(sm.df$specificities,sm.df$sensitivities,spe0))
+  res = list(tpr1=tpr1,tpr0=tpr0,r=r,fpr0=fpr0,alpha=alpha,beta=beta,eps=eps,k=k)
+  if(tpr1>tpr0) {
+    res = n.cases.pepe.cont(tpr1=tpr1,tpr0=tpr0,r=r,fpr0=fpr0,alpha=alpha,beta=beta,eps=eps,k=k)
+  }
+  return(res)
+}
+
+show.partial.auc.roc <- function(response,predictor,predictor.descr) {
+  tpr0=0.25
+  fpr0=0.10
+  spe.range=c(1,1-fpr0)
+  se.range=NULL
+  ro = roc(response, predictor, 
+           percent=F,
+           auc=F)
+  smooth.bi = smooth(ro,method="bi")
+  sm.df = with(smooth.bi,data.frame(specificities,sensitivities))
+  pwr = marker.ver.power(sm.df,tpr0=tpr0,fpr0=fpr0)
+  
+  report$add({
+  plot.roc(ro, 
+           partial.auc=spe.range, 
+           partial.auc.correct=TRUE, 
+           # define a partial AUC (pAUC)  
+           print.auc=TRUE, 
+           #display pAUC value on the plot with following options:  
+           print.auc.pattern=sprintf("Normalized partial AUC (%s-%s SP): %%.2f\n\
+FPR cutoff: %.2f\n\
+Smoothed TPR(FPR cutoff): %.2f",
+                                     spe.range[1],spe.range[2],
+                                     fpr0,
+                                     pwr$tpr1
+                                     ),
+           print.auc.col="#1c61b6",  
+           auc.polygon=TRUE, 
+           auc.polygon.col="#1c61b6", 
+           # show pAUC as a polygon  
+           max.auc.polygon=TRUE, 
+           max.auc.polygon.col="#1c61b622", 
+           # also show the 100% polygon  
+           main=NULL,
+           grid.h=pwr$tpr1
+           )
+  #ro.si.se = ci.se(ro,specificities=spe.range[2])
+  #plot(ro.si.se,col="green")
+  plot.roc(smooth.bi,add=T,col="red")
+  #plot.roc(smooth(ro,method="de",bw="SJ"),add=T,col="yellow")
+  if(!is.null(se.range)) {
+  plot(ro,
+           add=TRUE, type="n", 
+           # add to plot, but don't re-add the ROC itself (useless)  
+           partial.auc=se.range, 
+           partial.auc.correct=TRUE,  
+           partial.auc.focus="se", 
+           # focus pAUC on the sensitivity  
+           print.auc=TRUE, 
+           print.auc.pattern=sprintf("Corrected pAUC (%s-%s SE):\n%%.1f%%",
+                                     se.range[1],se.range[2]),
+           print.auc.col="#008600",  
+           print.auc.y=40, 
+           # do not print auc over the previous one  
+           auc.polygon=TRUE, 
+           auc.polygon.col="#008600",  
+           max.auc.polygon=TRUE, 
+           max.auc.polygon.col="#00860022"
+           )   
+  }
+  },caption=sprintf("ROC curve for %s",predictor.descr))
+  return (list(power=pwr,roc=roc,smooth.bi=smooth.bi))
+}
+
 counts.distro.report <- function(m_a,group.attr,descr) {
   report.section = report$add.header(sprintf("Emprical distributions of individual features %s",
                                              descr),
@@ -5551,6 +5662,7 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     report$add.header(paste("Feature name",feat.name))
     x = m_a$count[,feat.name]
     g = factor(m_a$attr[,group.attr])
+    if(F) {
     report$add(show.distr.group(x,g),
                caption=sprintf("Empirical distribution of %s grouped by %s",
                                feat.name,group.attr))
@@ -5568,8 +5680,13 @@ counts.distro.report <- function(m_a,group.attr,descr) {
                                  feat.name,lev.descr))
     }
     }
-    report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
-               caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
+    }
+    #report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
+    #           caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
+    pwr.res = show.partial.auc.roc(g,x,predictor.descr=feat.name)
+    report$add.table(as.data.frame(pwr.res$power),
+                     caption=sprintf("Power analysis for %s",feat.name)
+    )
     report$pop.section()
   }
 }
@@ -5584,15 +5701,20 @@ verification.power <- function(m_a,
   if(!is.null(id.markers)) {
     m_a = subset.m_a(m_a,select.count=id.markers)
   }
-  make.global(m_a)
   report$add.header("Empirical distributions of individual features")
   report$push.section(report.section)  
-  for(norm.method in c("ident","ihs")) {
+  for(norm.method in c("ident")) {
     m_a.norm = norm.count.report(m_a,norm.count.task=list(method=norm.method))
     counts.distro.report(m_a.norm,group.attr=group.attr,
                          descr=sprintf("transformation method %s",norm.method))
   }
   report$pop.section()
+}
+
+test.run.verification.power <- function() {
+  report <- PandocAT$new()
+  verification.power(m_a,group.attr="Group",id.markers= c("P17050","Q9BTY2","P04066"))
+  report$save()
 }
 
 power.pieper.t1d <- function(
