@@ -44,7 +44,9 @@ vanilla_packages = c(
   ##being relatively fast
   "exactRankTests",
   ##ROC curve power analysis for biomarker verification
-  "pROC"
+  "pROC",
+  ##interpolation and numerical derivatives (including for ROC analysis)
+  "pspline"
 )
 
 bio_packages = c(

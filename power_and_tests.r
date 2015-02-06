@@ -402,7 +402,7 @@ norm.count.matrix <- function(count,method,drop.features=c("other"),method.args=
     )
   }
   if(!is.null(drop.features)) {
-    count = count[,!colnames(count) %in% drop.features]
+    count = count[,!colnames(count) %in% drop.features,drop=F]
   }
   return (count)
 }
@@ -5586,6 +5586,9 @@ marker.ver.power <- function(sm.df,tpr0,fpr0) {
   if(tpr1>tpr0) {
     res = n.cases.pepe.cont(tpr1=tpr1,tpr0=tpr0,r=r,fpr0=fpr0,alpha=alpha,beta=beta,eps=eps,k=k)
   }
+  else {
+    res$k = NULL #this actually deletes k, but res$k = k does not even if k is NULL
+  }
   return(res)
 }
 
@@ -5654,12 +5657,12 @@ Smoothed TPR(FPR cutoff): %.2f",
 }
 
 counts.distro.report <- function(m_a,group.attr,descr) {
-  report.section = report$add.header(sprintf("Emprical distributions of individual features %s",
+  report.section = report$add.header(sprintf("Empirical distributions of individual features %s",
                                              descr),
                                      section.action="push", sub=T)
   for(feat.name in colnames(m_a$count)) {
-    report$push.section(report.section)
     report$add.header(paste("Feature name",feat.name))
+    report$push.section(report.section)
     x = m_a$count[,feat.name]
     g = factor(m_a$attr[,group.attr])
     if(F) {
@@ -5684,6 +5687,7 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     #report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
     #           caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
     pwr.res = show.partial.auc.roc(g,x,predictor.descr=feat.name)
+    make.global(pwr.res)
     report$add.table(as.data.frame(pwr.res$power),
                      caption=sprintf("Power analysis for %s",feat.name)
     )
@@ -5712,7 +5716,7 @@ verification.power <- function(m_a,
 }
 
 test.run.verification.power <- function() {
-  report <- PandocAT$new()
+  report <<- PandocAT$new()
   verification.power(m_a,group.attr="Group",id.markers= c("P17050","Q9BTY2","P04066"))
   report$save()
 }
