@@ -42,7 +42,8 @@ vanilla_packages = c(
   ##correct treatment of zeros in signed-rank Wilcoxon test
   ##with an interface compatible with base::wilcox.test while
   ##being relatively fast
-  "exactRankTests"
+  "exactRankTests",
+  "data.table"
 )
 
 bio_packages = c(
