@@ -1135,11 +1135,14 @@ read.mgrast.summary<-function(file_name,file_name.id.map=NULL) {
 
 read.mothur.otu.shared <- function(file_name) {
   require(data.table)
-  data = fread(file_name, header=T, sep="\t", stringsAsFactors=T, data.table=F)
   #data = read.delim(file_name, header=T,stringsAsFactors=T)
   #when read.delim is used, X == NA column comes because there is an extra delimiter at the end of line
   #data$X = NULL
-  
+  data = fread(file_name, header=T, sep="\t", stringsAsFactors=T, data.table=F)
+  last.col = ncol(data)
+  if(all(is.na(data[,last.col]))) {
+    data[,last.col] = NULL
+  }
   data$label = NULL
   data$numOtus = NULL
   row.names(data) = data$Group
@@ -1157,6 +1160,9 @@ read.mothur.cons.taxonomy <- function(file_name) {
 read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file) {
   otu.df = read.mothur.otu.shared(otu.shared.file)
   taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file)
+  #DEBUG:
+  make.global(otu.df)
+  make.global(taxa.df)
   stopifnot(all(names(otu.df) == taxa.df$OTU))
   names(otu.df) = paste(taxa.df$Taxa,taxa.df$OTU,sep=".")
   ## Order columns by taxa name

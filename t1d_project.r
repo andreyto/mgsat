@@ -46,7 +46,7 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
       meta$Date.of.Diagnosis
   )/365
   
-  meta$YearsSinceDiagnosis.quant = quantcut(meta$YearsSinceDiagnosis)
+  meta$YearsSinceDiagnosis.quant = quantcut.ordered(meta$YearsSinceDiagnosis)
   
   meta$T1D[meta$T1D=="Unknown"] = "Control"
   
@@ -57,7 +57,7 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   
   make.global(meta)
   
-  meta$age.quant = quantcut(meta$age)
+  meta$age.quant = quantcut.ordered(meta$age)
   meta$A1C = as.double(as.character(meta$A1C))
   #meta$A1C[is.na(meta$A1C)] = 6.2
   meta$A1C.quant = quantcut(as.double(as.character(meta$A1C)))
@@ -226,7 +226,7 @@ gen.tasks.t1d <- function() {
 
   task0 = within( mgsat.16s.task.template, {
     
-  taxa.levels = c(2,6,"otu")
+  taxa.levels = c(2,3,4,5,6,"otu")
   
   descr = "All samples, aggregated by AliquotID"
   
@@ -755,8 +755,7 @@ extra.tasks = foreach(task=list(task5.1,task5.2)) %do% {
 })
 }
 
-return (list(task4.1))
-return (list(task1,task2,task3,task3.1,task4))
+return (list(task1,task2,task3,task3.1,task4,task4.1))
 }
 
 
@@ -799,7 +798,7 @@ set_trace_options(try.debug=F)
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of T1D 16S data",
-                       incremental.save=T)
+                       incremental.save=F)
 
 
 res = proc.project(
