@@ -36,6 +36,11 @@ arg.list.as.str<-function(x,collapse=",") {
   )
 }
 
+tempfile.unix <- function(...) {
+  x = tempfile(...)
+  gsub("\\","/",x,fixed=T)
+}
+
 #' Write citations for a vector of package names into file in BibTex format
 #' TODO can just use bibtex::write.bib
 #' TODO after writing (or before if BibTex allows that type), optionally replace 
@@ -607,10 +612,10 @@ PandocAT$methods(make.file.name = function(name.base="",
   }
   fn.start = format.section.path.as.file(section.path)
   if(make.unique) {
-    fn = tempfile(paste(fn.start,"-",sep=""),tmpdir=dir,fileext=name.base)
+    fn = tempfile.unix(paste(fn.start,"-",sep=""),tmpdir=dir,fileext=name.base)
   }
   else {
-    fn = file.path(dir,paste(fn.start,name.base,sep="-"))
+    fn = file.path(dir,paste(fn.start,name.base,sep="-"),fsep="/")
   }
   return(fn)
 })

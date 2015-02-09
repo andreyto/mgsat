@@ -43,7 +43,11 @@ vanilla_packages = c(
   ##with an interface compatible with base::wilcox.test while
   ##being relatively fast
   "exactRankTests",
-  "data.table"
+  "data.table",
+  ##ROC curve power analysis for biomarker verification
+  "pROC",
+  ##interpolation and numerical derivatives (including for ROC analysis)
+  "pspline"
 )
 
 bio_packages = c(

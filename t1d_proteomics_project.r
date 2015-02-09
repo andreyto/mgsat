@@ -250,7 +250,48 @@ gen.tasks.t1d.prot <- function() {
     })
     
   })
+
+  task.verify.biomarkers.power = within( task1, {
+    
+    descr = "All samples, aggregated by UnitID (family/condition), power analysis for biomarker verification study"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    test.counts.task = within(test.counts.task, {  
+      
+      do.genesel=F
+      do.stabsel=F
+      do.adonis=F
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      do.extra.method = taxa.levels
+            
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,id.markers) {
+          verification.power(m_a=m_a.norm,
+                                        group.attr="Group",
+                                        id.markers=id.markers)
+        }
+        
+        id.markers = c("P17050","O00754","P53634",
+                       "P20774","Q9BTY2","P02750",
+                       "Q14393","P40197","Q96HD9",
+                       "P14151","Q13421","Q6UXB8",
+                       "P19320","Q9BYF1","P08195",
+                       "Q13740","P33151","P04066",
+                       "P13473","Q9H0E2")
+        
+      })
+    })
+    
+  })
   
+  return (list(task.verify.biomarkers.power))
   return (list(task1,task2))
 }
 
@@ -294,7 +335,7 @@ set_trace_options(try.debug=T)
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of T1D proteomics data",
-                       incremental.save=T)
+                       incremental.save=F)
 
 
 res = proc.project(
