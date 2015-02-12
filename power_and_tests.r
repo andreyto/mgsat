@@ -114,16 +114,16 @@ drop_columns <- function(df,drop_names=c()) {
   return ( df[,!mask_col_ignore] )
 }
 
-## Return row names as orderd factor (in the original order of rows)
-rownames.ordered <- function(x) {
+## Return row names as factor with levels sorted in the original order of rows
+rownames.as.factor <- function(x,ordered=F) {
   rn = rownames(x)
-  ordered(rn,levels=rn)
+  factor(rn,levels=rn,ordered=ordered)
 }
 
-## Return column names as orderd factor (in the original order of columns)
-colnames.ordered <- function(x) {
+## Return column names as factor with levels sorted in the original order of columns
+colnames.as.factor <- function(x,ordered=F) {
   rn = colnames(x)
-  ordered(rn,levels=rn)
+  factor(rn,levels=rn,ordered=ordered)
 }
 
 ## Call quantcut and return its result as ordered factor
@@ -1300,11 +1300,11 @@ melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
   return (melt(data,id.vars=id.vars,measure.vars=clade.names,variable.name="clade",value.name=value.name))
 }
 
-order.factor.by.total <- function(factor.val,sort.val) {
+sort.factor.by.total <- function(factor.val,sort.val,ordered=F) {
   o = aggregate(sort.val, list(factor.val), sum)
   o = o[order(o$x, decreasing=TRUE),1]  
   
-  return (factor(factor.val, levels = o, ordered = T))
+  return (factor(factor.val, levels = o, ordered = ordered))
 }
 
 order.levels <- function(lev,keys) {
@@ -1325,6 +1325,7 @@ plot.abund.meta <- function(m_a,
                             sqrt.scale=F,
                             stat_summary.fun.y="mean",
                             make.summary.table=T) {
+  require(RColorBrewer)
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -1342,28 +1343,34 @@ plot.abund.meta <- function(m_a,
   
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
   if (is.null(clades.order)) {
-    dat$clade = order.factor.by.total(dat$clade,dat[[value.name]])
+    dat$clade = sort.factor.by.total(dat$clade,dat[[value.name]])
   }
   else {
-    dat$clade = factor(dat$clade,levels=clades.order,ordered=T)
+    dat$clade = factor(dat$clade,levels=clades.order,ordered=F)
   }
   
+  rownames.sorted = rownames(m_a$count)[
+    do.call(order, -as.data.frame(m_a$count)[,levels(dat$clade)])
+    ]
+  
+  dat$.record.id = factor(dat$.record.id,levels=rownames.sorted)
+  
   if(make.summary.table) {
-  dat.summary = eval(parse(text=sprintf('ddply(dat, c("clade",id.vars),
+    dat.summary = eval(parse(text=sprintf('ddply(dat, c("clade",id.vars),
         summarise,
         mean = mean(%s),
         sd = sd(%s),
         median = median(%s),
         positive.ratio = mean(%s>0)
         )',value.name,value.name,value.name,value.name)
-  ))
-  dat.melt = dat
+    ))
+    dat.melt = dat
   }
   else {
     dat.summary = NULL
     dat.melt = NULL
   }
-
+  
   ##show only n.top
   clades = levels(dat$clade)
   clades = clades[1:min(length(clades),n.top)]
@@ -1385,84 +1392,148 @@ plot.abund.meta <- function(m_a,
     fill=id.var.dodge
     color=id.var.dodge
   }
-  ## here is what is going on with scale transformations in ggplot2 (v.1.0.0):
-  ## scale_y_sqrt() - transforms data points before anything else is done like
-  ## stats calculation or range detection; scale ticks are distributed quadratically
-  ## (unevenly); this one can be combined with coord_flip().
-  ## A (serious) downside of this method is that it can change relative magnitude
-  ## of clade mean values as computed and shown by stat_summary(fun.y=mean) because large
-  ## outliers will be compressed stronger.
-  ## coord_trans(y = "sqrt") transforms only final geometric representation (including
-  ## all glyphs) and creates a non-linear tick marks as well; it cannot be combined with
-  ## coord_flip().
-  ## Because of the above, we switch between two representations: vertical with
-  ## coord_trans(y = "sqrt") and horizontal (flipped) with original linear coords
-  aes_s = aes_string(x="clade",y=value.name,
-                     fill = fill,color = color)
-  gp = ggplot(dat, aes_s)
   
-  if(geom == "bar") {
-    gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
-                           position=position_dodge(width=0.9))
-    #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
-    #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
-  }
-  else if(geom == "violin") {
-    gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
-  }
-  else if(geom == "boxplot") {
-    gp = gp + geom_boxplot(fill=NA,na.value=NA,notch=F)
-  }
-  else {
-    stop(paste("Unexpected parameter value: geom = ",geom))
-  }
-  
-  #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
-  #coord_flip()+
-  #geom_boxplot(color="black")+
-  #geom_point(position = "jitter")+
-  #stat_identity(geom="bar")+
-  #geom_bar(stat="identity")
-  #scale_fill_brewer(type = "seq", palette = 1)
-  #labels facet with number of cases
-  if(flip.coords) {
-    gp = gp + coord_flip()
-  }
-  if(sqrt.scale) {
-    gp = gp + coord_trans(y = "sqrt")
-  }
-  if(length(id.vars.facet) == 0) {
-    wr = facet_null()
-  }
-  else if (length(id.vars.facet) == 1) {
-    wr = facet_wrap(as.formula(paste("~",id.vars.facet[1],sep="")))
-  }
-  else {
-    wr = facet_grid(as.formula(paste(id.vars.facet[2],id.vars.facet[1],sep="~")),
-                    drop=T,margins=facet_grid.margins)
-  }
-  gp = gp + wr
-  
-  if(!is.null(id.var.dodge)) {
+  if(geom == "bar_stacked") {
+    aes_s = aes_string(x=".record.id",y=value.name,
+                       fill = fill,color = color)
+    gp = ggplot(dat, aes_s)
+    
+    gp = gp + geom_bar(position="stack",stat="identity") 
+    
+    if(length(id.vars.facet) == 0) {
+      wr = facet_null()
+    }
+    else if (length(id.vars.facet) == 1) {
+      wr = facet_grid(as.formula(paste("~",id.vars.facet[1],sep="")),
+                      drop=T,
+                      scale="free_x", space = "free_x")
+    }
+    else {
+      wr = facet_grid(as.formula(paste(id.vars.facet[2],id.vars.facet[1],sep="~")),
+                      drop=T,margins=facet_grid.margins,
+                      scale="free_x", space = "free_x")
+    }
+    gp = gp + wr
     legend.position = "right"
   }
   else {
-    legend.position = "none"
-  }
-  
+    ## here is what is going on with scale transformations in ggplot2 (v.1.0.0):
+    ## scale_y_sqrt() - transforms data points before anything else is done like
+    ## stats calculation or range detection; scale ticks are distributed quadratically
+    ## (unevenly); this one can be combined with coord_flip().
+    ## A (serious) downside of this method is that it can change relative magnitude
+    ## of clade mean values as computed and shown by stat_summary(fun.y=mean) because large
+    ## outliers will be compressed stronger.
+    ## coord_trans(y = "sqrt") transforms only final geometric representation (including
+    ## all glyphs) and creates a non-linear tick marks as well; it cannot be combined with
+    ## coord_flip().
+    ## Because of the above, we switch between two representations: vertical with
+    ## coord_trans(y = "sqrt") and horizontal (flipped) with original linear coords
+    aes_s = aes_string(x="clade",y=value.name,
+                       fill = fill,color = color)
+    gp = ggplot(dat, aes_s)
+    
+    if(geom == "bar") {
+      gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
+                             position=position_dodge(width=0.9))
+      #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
+      #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
+    }
+    else if(geom == "violin") {
+      gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
+    }
+    else if(geom == "boxplot") {
+      gp = gp + geom_boxplot(fill=NA,na.value=NA,notch=F)
+    }
+    else {
+      stop(paste("Unexpected parameter value: geom = ",geom))
+    }
+    
+    #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
+    #coord_flip()+
+    #geom_boxplot(color="black")+
+    #geom_point(position = "jitter")+
+    #stat_identity(geom="bar")+
+    #geom_bar(stat="identity")
+    #scale_fill_brewer(type = "seq", palette = 1)
+    #labels facet with number of cases
+    if(flip.coords) {
+      gp = gp + coord_flip()
+    }
+    if(sqrt.scale) {
+      gp = gp + coord_trans(y = "sqrt")
+    }
+    if(length(id.vars.facet) == 0) {
+      wr = facet_null()
+    }
+    else if (length(id.vars.facet) == 1) {
+      wr = facet_wrap(as.formula(paste("~",id.vars.facet[1],sep="")))
+    }
+    else {
+      wr = facet_grid(as.formula(paste(id.vars.facet[2],id.vars.facet[1],sep="~")),
+                      drop=T,margins=facet_grid.margins)
+    }
+    gp = gp + wr
+    
+    if(!is.null(id.var.dodge)) {
+      legend.position = "right"
+    }
+    else {
+      legend.position = "none"
+    }
+  }  
   if(length(id.vars.facet) > 0) {
     clade.names = as.character(clades)
     #this will be used to label each facet with number of cases in it
     facet.cnt <- ddply(.data=data, id.vars.facet, function(x,clade.names) 
     { c(.n=nrow(x),
         .y=mean(colMeans(as.matrix(x[,clade.names]),na.rm=T),
-                names=F,na.rm=T)) },
+                names=F,na.rm=T),
+        .x=max(length(clade.names)/3,1)) },
     clade.names)
+    if(geom=="bar_stacked") {
+      facet.cnt$.x = max(facet.cnt$.n/3,1)
+      max.x.val = max(facet.cnt$.n)
+    }
     facet.cnt$.n = paste("n =", facet.cnt$.n)
     #facet.cnt$y = facet.cnt$V2
     
     gp = gp +
-      geom_text(data=facet.cnt, aes(x=2.5, y=.y, label=.n, size=2), colour="black", inherit.aes=FALSE, parse=FALSE)
+      geom_text(aes(x=.x, y=.y, label=.n), data=facet.cnt, size=rel(4), colour="black", inherit.aes=F, parse=FALSE)
+  }
+  else {
+    if(geom=="bar_stacked") {
+      max.x.val = nrow(data)
+    }
+  }
+  
+  if(geom=="bar_stacked") {
+    if(max.x.val > 40) {
+      gp = gp + 
+        scale_x_discrete(breaks=NULL) +
+        scale_y_continuous(expand = c(0,0))
+    }
+  }
+  
+  #gp = gp + guides(colour = NULL, fill = guide_legend("XXX"))
+
+  color.palette="brew"
+  
+  if(color.palette=="brew") {
+  n.color.orig = 8
+  palette = brewer.pal(n.color.orig, "Accent")
+  #get.palette = colorRampPalette(palette)
+  #palette = get.palette(max(length(clades),n.color.orig))
+  palette = rep_len(palette,max(length(clades),1000))
+  
+  gp = gp + 
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette)
+  }
+  else if(color.palette=="hue") {
+    gp = gp +     
+      scale_fill_hue(c = 50, l = 70, h=c(0, 360)) +
+      scale_color_hue(c = 50, l = 70, h=c(0, 360))
   }
   
   gp = gp + 
@@ -1845,10 +1916,10 @@ mgsat.plot.richness.samples <- function(rich) {
   var.names = c("chao","jack1","boot")
   var.names.se = var.names
   e = rich$e[,var.names]
-  e$Group = rownames.ordered(e)
+  e$Group = rownames.as.factor(e)
   
   se = rich$se[,var.names.se]
-  se$Group = rownames.ordered(se)
+  se$Group = rownames.as.factor(se)
   
   e.m = melt(e,"Group",var.names,variable.name="Index",value.name="e")
   se.m = melt(se,"Group",var.names.se,variable.name="Index",value.name="se")
@@ -1898,13 +1969,13 @@ mgsat.divrich.report <- function(m_a,
   
   res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep)
   caption.inc.rich=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
-                  group.descr.short)
+                           group.descr.short)
   report$add.table(res$rich.samples$e.se,
                    caption=caption.inc.rich
-                   )
+  )
   report$add(mgsat.plot.richness.samples(res$rich.samples),
              caption=caption.inc.rich
-             )
+  )
   
   if(is.raw.count.data) {
     res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep)
@@ -1920,7 +1991,7 @@ mgsat.divrich.report <- function(m_a,
   }
   
   res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,is.raw.count.data=is.raw.count.data)
-
+  
   if(do.plot.profiles) {
     do.call(plot.profiles,
             c(list(m_a=list(count=as.matrix(res$div.counts$e[,c("N1","N2")]),attr=m_a$attr),
@@ -1954,14 +2025,14 @@ mgsat.divrich.report <- function(m_a,
   }
   
   if(!is.null(counts.genesel.task)) {
-
+    
     ## note that while group.attr above may have any number of
     ## levels, the counts.genesel.task$group.attr must be two-level
-      tryCatchAndWarn({ 
-        res$genesel.res = do.call(genesel.stability.report,
-                              c(list(m_a.dr),
-                                counts.genesel.task))
-      })
+    tryCatchAndWarn({ 
+      res$genesel.res = do.call(genesel.stability.report,
+                                c(list(m_a.dr),
+                                  counts.genesel.task))
+    })
     
   }
   
@@ -1994,7 +2065,7 @@ plot.profiles <- function(m_a,
                           do.clade.meta=T,
                           value.name="abundance",
                           show.profile.task=list(
-                            geoms=c("bar","violin","boxplot"),
+                            geoms=c("bar","violin","boxplot","bar_stacked"),
                             dodged=T,
                             faceted=T,
                             stat_summary.fun.y="mean"
@@ -2112,6 +2183,10 @@ plot.profiles <- function(m_a,
             report$push.section(report.section)
             
             for(geom in show.profile.task$geoms) {
+              ## "bar_stacked" is only compatible with some combinations of other
+              ## parameters, skip otherwise
+              if(!(geom == "bar_stacked" && (other.params$flip.coords || !is.null(id.var.dodge$dodge)))) {
+                
               tryCatchAndWarn({
                 id.vars.key = paste(id.vars,collapse="#")
                 if(!id.vars.key %in% dat.summary.done) {
@@ -2121,16 +2196,17 @@ plot.profiles <- function(m_a,
                 else {
                   make.summary.table = F
                 }
+                
                 pl.abu = plot.abund.meta(m_a=m_a,
-                                          id.vars=id.vars,
-                                          clades.order=pl.par$ord,
-                                          geom=geom,
-                                          file_name=NULL,
-                                          id.var.dodge=id.var.dodge$dodge,
-                                          flip.coords=other.params$flip.coords,
-                                          sqrt.scale=other.params$sqrt.scale,
-                                          value.name=value.name,
-                                          stat_summary.fun.y=show.profile.task$stat_summary.fun.y,
+                                         id.vars=id.vars,
+                                         clades.order=pl.par$ord,
+                                         geom=geom,
+                                         file_name=NULL,
+                                         id.var.dodge=id.var.dodge$dodge,
+                                         flip.coords=other.params$flip.coords,
+                                         sqrt.scale=other.params$sqrt.scale,
+                                         value.name=value.name,
+                                         stat_summary.fun.y=show.profile.task$stat_summary.fun.y,
                                          make.summary.table = make.summary.table
                 )
                 
@@ -2169,8 +2245,8 @@ plot.profiles <- function(m_a,
                                          else {""},
                                          geom.descr,"plot.")
                 )
-                  
               })
+              }              
             }
             report$pop.section()
           }
@@ -2385,7 +2461,7 @@ mgsat.16s.task.template = within(list(), {
   
   get.taxa.meta.aggr<-function(m_a) { return (m_a) }
   
-  count.filter.sample.options=list(min_row_sum=400,max_row_sum=400000)
+  count.filter.sample.options=list(min_row_sum=1000,max_row_sum=400000)
   
   summary.meta.method=summary.meta.method.default
   
@@ -2527,7 +2603,7 @@ mgsat.16s.task.template = within(list(), {
       do.profile=T
       do.clade.meta=F
       show.profile.task=list(
-        geoms=c("bar","violin","boxplot"),
+        geoms=c("bar_stacked","bar","violin","boxplot"),
         dodged=T,
         faceted=T,
         stat_summary.fun.y="mean"
@@ -2613,12 +2689,12 @@ get.feature.ranking.mgsatres <- function(x.f,method="stabsel") {
     res = NULL
   }
   else {
-  if(method %in% c("stabsel","genesel")) {
-    res = get.feature.ranking(meth.res)
-  }
-  else {
-    stop(paste("I do not know what to do for method",method))
-  }
+    if(method %in% c("stabsel","genesel")) {
+      res = get.feature.ranking(meth.res)
+    }
+    else {
+      stop(paste("I do not know what to do for method",method))
+    }
   }
   return (res)
 }
@@ -3770,7 +3846,7 @@ test.counts.project <- function(m_a,
   make.global(m_a)
   
   res = new_mgsatres()
-
+  
   if(!is.null(genesel.task)) {
     if(is.null(genesel.task$plot.profiles.task)) {
       genesel.task$plot.profiles.task=plot.profiles.task
@@ -5233,7 +5309,7 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
     data.frame(x=as.numeric(dd[mask.within]),
                group="Within")
   )
-
+  
   g = show.distr.group(dd.pl$x,dd.pl$group)
   g = g + 
     #geom_vline(xintercept=st.obs,color="blue",size=rel(1.5),linetype="dashed") +
@@ -5374,16 +5450,16 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL) {
   
   if(!is.null(group.vars)) {
     for(group.var in group.vars) {
-    report$add(kruskal.test(m_a.summ$count[,"count.sum"],m_a.summ$attr[,group.var]),
-               caption=paste("Test for difference of total counts per sample across groups defined by",
-                             group.var)
-    )
-    group.mean = count.summary(m_a$count,mean,m_a$attr[,group.var],format="matrix")
-    report$add(friedman.test(t(group.mean)),
-               caption=paste("Test for difference in group means across all features, where groups
+      report$add(kruskal.test(m_a.summ$count[,"count.sum"],m_a.summ$attr[,group.var]),
+                 caption=paste("Test for difference of total counts per sample across groups defined by",
+                               group.var)
+      )
+      group.mean = count.summary(m_a$count,mean,m_a$attr[,group.var],format="matrix")
+      report$add(friedman.test(t(group.mean)),
+                 caption=paste("Test for difference in group means across all features, where groups
                are defined by",group.var))
-    report$add.vector(rowMeans(group.mean),
-                      caption=paste("Mean values of group means across all features, where groups
+      report$add.vector(rowMeans(group.mean),
+                        caption=paste("Mean values of group means across all features, where groups
                are defined by",group.var))
     }
   }
@@ -5399,9 +5475,9 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL) {
       report$push.section(report.section)
       
       for(group.var in group.vars) {
-      show.sample.summaries.meta(m_a=m_a.summ,
-                                 x.var=x.var,
-                                 group.var=group.var)
+        show.sample.summaries.meta(m_a=m_a.summ,
+                                   x.var=x.var,
+                                   group.var=group.var)
       }
       report$pop.section()
     }
@@ -5611,35 +5687,35 @@ show.partial.auc.roc <- function(response,predictor,predictor.descr) {
   pwr = marker.ver.power(sm.df,tpr0=tpr0,fpr0=fpr0)
   
   report$add({
-  plot.roc(ro, 
-           partial.auc=spe.range, 
-           partial.auc.correct=TRUE, 
-           # define a partial AUC (pAUC)  
-           print.auc=TRUE, 
-           #display pAUC value on the plot with following options:  
-           print.auc.pattern=sprintf("Normalized partial AUC (%s-%s SP): %%.2f\n\
+    plot.roc(ro, 
+             partial.auc=spe.range, 
+             partial.auc.correct=TRUE, 
+             # define a partial AUC (pAUC)  
+             print.auc=TRUE, 
+             #display pAUC value on the plot with following options:  
+             print.auc.pattern=sprintf("Normalized partial AUC (%s-%s SP): %%.2f\n\
 FPR cutoff: %.2f\n\
 Smoothed TPR(FPR cutoff): %.2f",
-                                     spe.range[1],spe.range[2],
-                                     fpr0,
-                                     pwr$tpr1
-                                     ),
-           print.auc.col="#1c61b6",  
-           auc.polygon=TRUE, 
-           auc.polygon.col="#1c61b6", 
-           # show pAUC as a polygon  
-           max.auc.polygon=TRUE, 
-           max.auc.polygon.col="#1c61b622", 
-           # also show the 100% polygon  
-           main=NULL,
-           grid.h=pwr$tpr1
-           )
-  #ro.si.se = ci.se(ro,specificities=spe.range[2])
-  #plot(ro.si.se,col="green")
-  plot.roc(smooth.bi,add=T,col="red")
-  #plot.roc(smooth(ro,method="de",bw="SJ"),add=T,col="yellow")
-  if(!is.null(se.range)) {
-  plot(ro,
+                                       spe.range[1],spe.range[2],
+                                       fpr0,
+                                       pwr$tpr1
+             ),
+             print.auc.col="#1c61b6",  
+             auc.polygon=TRUE, 
+             auc.polygon.col="#1c61b6", 
+             # show pAUC as a polygon  
+             max.auc.polygon=TRUE, 
+             max.auc.polygon.col="#1c61b622", 
+             # also show the 100% polygon  
+             main=NULL,
+             grid.h=pwr$tpr1
+    )
+    #ro.si.se = ci.se(ro,specificities=spe.range[2])
+    #plot(ro.si.se,col="green")
+    plot.roc(smooth.bi,add=T,col="red")
+    #plot.roc(smooth(ro,method="de",bw="SJ"),add=T,col="yellow")
+    if(!is.null(se.range)) {
+      plot(ro,
            add=TRUE, type="n", 
            # add to plot, but don't re-add the ROC itself (useless)  
            partial.auc=se.range, 
@@ -5656,8 +5732,8 @@ Smoothed TPR(FPR cutoff): %.2f",
            auc.polygon.col="#008600",  
            max.auc.polygon=TRUE, 
            max.auc.polygon.col="#00860022"
-           )   
-  }
+      )   
+    }
   },caption=sprintf("ROC curve for %s",predictor.descr))
   return (list(power=pwr,roc=roc,smooth.bi=smooth.bi))
 }
@@ -5672,23 +5748,23 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     x = m_a$count[,feat.name]
     g = factor(m_a$attr[,group.attr])
     if(F) {
-    report$add(show.distr.group(x,g),
-               caption=sprintf("Empirical distribution of %s grouped by %s",
-                               feat.name,group.attr))
-    for(lev in levels(g)) {
-      xl = x[g==lev]
-      lev.descr = sprintf("level %s of %s",lev,group.attr)
-    report$add.printed(summary(xl),
-                       caption=sprintf("Summary of %s for %s",feat.name,lev.descr))
-    report$add.printed(format(descdist(xl,graph=F)),
-                       caption=sprintf("Additional descriptive parameters of %s for %s",
-                                       feat.name,lev.descr))
-    for(discrete in c(F,T)) {
-      report$add(descdist(xl,boot=1000,discrete=discrete),
-                 caption=sprintf("Skewness-kurtosis of %s for %s",
-                                 feat.name,lev.descr))
-    }
-    }
+      report$add(show.distr.group(x,g),
+                 caption=sprintf("Empirical distribution of %s grouped by %s",
+                                 feat.name,group.attr))
+      for(lev in levels(g)) {
+        xl = x[g==lev]
+        lev.descr = sprintf("level %s of %s",lev,group.attr)
+        report$add.printed(summary(xl),
+                           caption=sprintf("Summary of %s for %s",feat.name,lev.descr))
+        report$add.printed(format(descdist(xl,graph=F)),
+                           caption=sprintf("Additional descriptive parameters of %s for %s",
+                                           feat.name,lev.descr))
+        for(discrete in c(F,T)) {
+          report$add(descdist(xl,boot=1000,discrete=discrete),
+                     caption=sprintf("Skewness-kurtosis of %s for %s",
+                                     feat.name,lev.descr))
+        }
+      }
     }
     #report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
     #           caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
@@ -5703,8 +5779,8 @@ counts.distro.report <- function(m_a,group.attr,descr) {
 
 ## power analysis of biomarker verification study
 verification.power <- function(m_a,
-                   group.attr,
-                   id.markers=NULL) {
+                               group.attr,
+                               id.markers=NULL) {
   report.section = report$add.header("Power analysis of a verification study",
                                      section.action="push", sub=F)
   

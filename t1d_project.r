@@ -755,6 +755,47 @@ extra.tasks = foreach(task=list(task5.1,task5.2)) %do% {
 })
 }
 
+
+task.test = within( task0, {
+  
+  taxa.levels = c(2,"otu")
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  test.counts.task = within(test.counts.task, {
+    
+    norm.count.task = within(norm.count.task, {
+      method="norm.ihs.prop"
+    })
+    
+    do.deseq2 = F
+    do.adonis = F
+    do.genesel = F
+    do.stabsel = F
+    do.glmer = F
+    do.divrich = c()
+    
+    do.plot.profiles.abund=T
+    do.heatmap.abund=F
+    
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+      clade.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
+      do.profile=T
+      do.clade.meta=F
+      show.profile.task=within(show.profile.task, {
+        geoms=c("bar_stacked","bar")
+      })
+    })
+    
+  })
+  
+})
+
+#return (list(task.test))
 return (list(task1,task2,task3,task3.1,task4,task4.1))
 }
 
