@@ -65,8 +65,8 @@ summary.meta.rsv <- function(m_a) {
 gen.tasks.rsv <- function() {
   
   task0 = within( mgsat.16s.task.template, {
-    
-  taxa.levels = c(2,6,"otu")
+  
+  taxa.levels = c(2,3,4,5,6,"otu")
   
   descr = "All Samples"
   
@@ -86,7 +86,7 @@ gen.tasks.rsv <- function() {
   
   summary.meta.task = within(summary.meta.task, {
     meta.x.vars = c()
-    group.var = c(main.meta.var)
+    group.vars = c(main.meta.var)
   })  
   
   })
@@ -119,7 +119,7 @@ task1 = within( task0, {
       #n.rar.rep=4
       is.raw.count.data=T
       group.attr = main.meta.var
-      counts.glm.task = within(list(),{
+      counts.glm.task = within(counts.glm.task,{
         formula.rhs = main.meta.var.cont
       })      
     })
@@ -197,7 +197,7 @@ tasks = foreach(main.meta.var.loop = c("Breastfed","Delivery.Type","Has.Pets","A
       #n.rar.rep=4
       is.raw.count.data=T
       group.attr = main.meta.var
-      counts.glm.task = within(list(),{
+      counts.glm.task = within(counts.glm.task,{
         formula.rhs = main.meta.var
       })      
     })
@@ -242,6 +242,7 @@ tasks = foreach(main.meta.var.loop = c("Breastfed","Delivery.Type","Has.Pets","A
 })
 
 }
+
 return (c(list(task1),tasks))
 }
 
@@ -285,7 +286,6 @@ set_trace_options(try.debug=F)
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of RSV Healthy Controls 16S data",
-                       out.file.md="report.md",
                        incremental.save=F)
 
 
