@@ -256,6 +256,9 @@ norm.clr <- function(x, ...) {
 #' @method clr default
 #' @export
 norm.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
+  ## this is invariant to a constant multiplier (well, not quite becase of the
+  ## offset), so there is no need to combine it with normalization to simple
+  ## proportions
   x.f = x.f + offset
   nzero <- (x.f >= tol)
   LOG <- log(ifelse(nzero, x.f, 1), base)
@@ -386,6 +389,11 @@ norm.ihs.prop <- function(x,theta=1,mar=1) {
   norm.ihs(norm.prop(x,mar=mar),theta=theta)
 }
 
+norm.boxcox.prop <- function(x,mar.prop=1,mar.boxcox=2) {
+  norm.boxcox(norm.prop(x,mar=mar.prop),mar=mar.boxcox)
+}
+
+
 ## normalize raw count data according to one of the
 ## methods defined above.
 
@@ -438,7 +446,8 @@ count.filter.m_a<-function(m_a,
                            min_incidence_frac=0.0,
                            min_row_sum=0,
                            max_row_sum=.Machine$integer.max,
-                           other_cnt="other") {
+                           other_cnt="other",
+                           drop.zero=T) {
   ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
   ##unbalanced dataset where one group is 60% of samples and has zero presence in some column,
   ##and another group is 40% and has a large presence, then median filter will always throw this
@@ -461,7 +470,10 @@ count.filter.m_a<-function(m_a,
   cnt_norm = cnt_norm[,ind_col_sel]
   ind_col_sel = apply(cnt_norm,2,mean) >= min_mean_frac
   cnt = cnt[,ind_col_sel]
-  cnt_norm = cnt_norm[,ind_col_sel]  
+  cnt_norm = cnt_norm[,ind_col_sel]
+  if(drop.zero) {
+    cnt = cnt[,!apply(cnt==0,2,all)]
+  }
   cnt = cnt[,apply(cnt,2,max) >= min_max]
   cnt = cnt[,apply(cnt,2,mean) >= min_mean]
   cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac]
@@ -3438,6 +3450,9 @@ stabsel.report <- function(m_a,
   return (stab.res)
 }
 
+num.levels <- function(x) {
+  length(levels(factor(x)))
+}
 
 genesel.stability.report <- function(m_a,group.attr,
                                      genesel.param=list(),
@@ -3450,6 +3465,12 @@ genesel.stability.report <- function(m_a,group.attr,
   ## inside, and could find false significance due to different depth of sequencing
   
   report$add.header("GeneSelector stability ranking")
+  if(genesel.param$type %in% c("unpaired","paired") &&
+       num.levels(m_a$attr[,group.attr]) != 2) {
+    report$add.descr(sprintf("GeneSelector analysis is skipped 
+                             because grouping factor %s does not have two levels",group.attr))
+    return(NULL)
+  }
   report$add.package.citation("GeneSelector")
   if(!is.null(norm.count.task)) {
     m_a <- norm.count.report(m_a,
