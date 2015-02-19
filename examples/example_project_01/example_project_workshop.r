@@ -262,8 +262,8 @@ source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
 ## loads dependency packages (which already must be installed)
 load_required_packages()
 
-library("BiocParallel")
-register(SnowParam(4))
+#library("BiocParallel")
+#register(SnowParam(4))
 
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
