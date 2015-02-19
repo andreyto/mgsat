@@ -246,9 +246,6 @@ options(mc.cores=4)
 options(boot.ncpus=4)
 ## parallel backend
 options(boot.parallel="snow")
-library("BiocParallel")
-register(SnowParam(4))
-
 
 ## location of MGSAT code
 MGSAT_SRC = "~/work/mgsat"
@@ -264,6 +261,9 @@ source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
 
 ## loads dependency packages (which already must be installed)
 load_required_packages()
+
+library("BiocParallel")
+register(SnowParam(4))
 
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
