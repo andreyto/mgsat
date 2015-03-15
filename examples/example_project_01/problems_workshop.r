@@ -1,4 +1,4 @@
-if(F) {
+
 ## location of MGSAT code
 MGSAT_SRC = "~/work/mgsat"
 source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
@@ -10,7 +10,6 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 library(fitdistrplus)
-}
 
 m_a = read.table.m_a("data/1.1.1.1.1-13d859a75539samples.raw.16s.l.2")
 

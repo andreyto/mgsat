@@ -821,8 +821,8 @@ power.koren<-function() {
 }
 
 ## compute Cramer V (also known as Cramer Phi)
-## see also function vcd::assocstats
-cramer.v <- function(x,y) {
+## see also function vcd::assocstats or lsr::cramersV
+cramers.v <- function(x,y) {
   cv = sqrt(chisq.test(x, y, correct=FALSE)$statistic /
               (length(x) * (min(length(unique(x)),length(unique(y))) - 1)))
   return(as.numeric(cv))
