@@ -15,7 +15,6 @@ cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
     cols.map[] = names(cols.map)
     cols = cols.map
   }
-  make.global(cols.map)
   m_a = foreach(m_a=m_a.list,
           .final=function(m_a.list) {
             m_a = list()
@@ -109,7 +108,7 @@ report <- PandocAT$new(author="atovtchi@jcvi.org",
                        incremental.save=F)
 
 meta.file.samples = "refdata/bench_bei_meta.txt"
-ground.truth.bio.file = "refdata/sarah.2015-03-08/derived/bei_abund_v.5.txt"
+ground.truth.WGS.file = "refdata/sarah.2015-03-08/derived/bei_abund_v.5.txt"
 
 with(mgsat.16s.task.template,{
 runs.files = list(
@@ -136,6 +135,10 @@ runs.files = list(
 taxa.level = 6
 aggr.type = "genus.abund"
 col.match = T
+ProfileID = "HM782D"
+drop.taxa = c("Nothing") #c("Clostridium_sensu_stricto") #c("Helicobacter") #c("Streptococcus")
+vegdist.method = "manhattan"
+
 runs.data = lapply(runs.files,
                    function(run.files) {
                      with(run.files,{
@@ -154,10 +157,10 @@ runs.data = lapply(runs.files,
 
 m_a = cbind.m_a(runs.data,batch.attr="RunID",col.match=col.match)
 make.global(m_a)
-m_a.gt = load.ground.thruth.m_a(ground.truth.bio.file,aggr.type=aggr.type)
+m_a.gt = load.ground.thruth.m_a(ground.truth.WGS.file,aggr.type=aggr.type)
 make.global(m_a.gt)
 m_a.gt$attr$SampleID = m_a.gt$attr$ProfileID
-m_a.gt$attr$RunID = "Ground.Truth.Bio"
+m_a.gt$attr$RunID = "Ground.Truth.WGS"
 m_a.gt$attr$IdSfx = m_a.gt$attr$RunID
 make.global(m_a.gt)
 m_a$attr$IdSfx = ""
@@ -165,7 +168,38 @@ m_a.prop = norm.count.m_a(m_a,method="norm.prop")
 make.global(m_a.prop)
 m_a.prop = cbind.m_a(list(m_a.prop,m_a.gt),batch.attr="IdSfx",col.match=col.match)
 m_a.prop$attr$IdSfx = NULL
+m_a.prop = subset.m_a(m_a.prop,subset=(m_a.prop$attr$ProfileID==ProfileID))
+m_a.prop = count.filter.m_a(m_a.prop,drop.zero=T)
+m_a.prop = subset.m_a(m_a.prop,select.count=!(colnames(m_a.prop$count) %in% drop.taxa))
+#m_a.prop = subset.m_a(m_a.prop,select.count=seq(9))
+m_a.prop = norm.count.m_a(m_a.prop,method="norm.prop")
+#m_a.prop = norm.count.m_a(m_a.prop,method="norm.clr",method.args=list(offset=0,tol=0.005))
+#m_a.prop = subset.m_a(m_a.prop,select.count=colSums(abs(m_a.prop$count))>0)
 make.global(m_a.prop)
+
+plot.profiles.task = within(test.counts.task$plot.profiles.task, {
+  id.vars.list = list(c("RunID"))
+  clade.meta.x.vars=NULL
+  do.profile=T
+  do.clade.meta=F
+  show.profile.task=within(show.profile.task, {
+    geoms=c("bar_stacked","bar")
+  })
+})
+do.call(plot.profiles,
+        c(list(m_a=m_a.prop,
+               feature.order=NULL),
+          plot.profiles.task
+        )
+)
+
+report$add.table(as.matrix(vegdist(m_a.prop$count,method = vegdist.method)),show.row.names=T,
+                 caption=sprintf("%s distance",vegdist.method))
+report$add.table(as.matrix(vegdist(sqrt(m_a.prop$count),method = "euclidian")/sqrt(2)),show.row.names=T,
+                 caption="Hellinger distance")
+report$add.table(as.matrix(dist.js(m_a.prop$count)),show.row.names=T,
+                 caption="Jensen-Shannon distance")
+
 })
 
 report$save()

@@ -232,7 +232,7 @@ norm.meta.data<-function(dat,col_ignore=c(),norm.func=NULL,...) {
   cbind(x$attr,datnorm)
 }
 
-# CLR transform is copied from SpiecEasi package
+# CLR and ALR transforms are copied from SpiecEasi package
 # https://github.com/zdk123/SpiecEasi
 # If data is non-normalized count OTU/data table with samples on rows
 # and features/OTUs in columns, then the transform is applied as
@@ -246,6 +246,12 @@ norm.meta.data<-function(dat,col_ignore=c(),norm.func=NULL,...) {
 # t(clr(data+1, 1, base=2))
 # because it uses apply(mar=1) which transposes the result, and default base=exp(1)
 # See `compositions` package for other Aitchison transforms
+# Note: CLR as implemented here might be quite sensitive to the "depth of sequencing" 
+# ("collection effort"). At larger depth and uneven abundance distribution, you get 
+# much longer tail with small but non-zero values. Depending on the domain of you data
+# (e.g. integer counts or already proportions) and your offset and tol values, samples
+# with higher depth of sequencing may get very negative mean(log), dominated by the long tail with
+# low values
 
 #' Centered log-ratio functions
 #' @export
@@ -419,6 +425,31 @@ norm.count.m_a <- function(m_a,...) {
   m_a.norm = m_a
   m_a.norm$count = norm.count(m_a.norm$count,...)
   return(m_a.norm)
+}
+
+## Jensen-Shannon distance
+## Adapted from http://enterotype.embl.de/enterotypes.html
+dist.js <- function(x, offset=1e-6, ...) {
+  x=t(x)
+  KLD <- function(x,y) sum(x *log(x/y))
+  JSD<- function(x,y) sqrt(0.5 * KLD(x, (x+y)/2) + 0.5 * KLD(y, (x+y)/2))
+  matrixColSize <- length(colnames(x))
+  matrixRowSize <- length(rownames(x))
+  colnames <- colnames(x)
+  resultsMatrix <- matrix(0, matrixColSize, matrixColSize)
+  
+  x = ifelse(x==0,offset,x)
+  
+  for(i in 1:matrixColSize) {
+    for(j in 1:matrixColSize) { 
+      resultsMatrix[i,j]=JSD(as.vector(x[,i]),
+                             as.vector(x[,j]))
+    }
+  }
+  colnames -> colnames(resultsMatrix) -> rownames(resultsMatrix)
+  as.dist(resultsMatrix)->resultsMatrix
+  attr(resultsMatrix, "method") <- "dist"
+  return(resultsMatrix) 
 }
 
 ## subset method that will use the same subset argument on all data objects in m_a
