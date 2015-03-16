@@ -265,7 +265,7 @@ norm.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
   ## this is invariant to a constant multiplier (well, not quite becase of the
   ## offset), so there is no need to combine it with normalization to simple
   ## proportions
-  x.f = x.f + offset
+  x.f = ifelse(x.f>0,x.f,offset)
   nzero <- (x.f >= tol)
   LOG <- log(ifelse(nzero, x.f, 1), base)
   ifelse(nzero, LOG - mean(LOG)/mean(nzero), 0.0)
@@ -283,8 +283,47 @@ norm.clr.matrix <- function(x.f, mar=1, ...) {
 
 #' @method clr data.frame
 #' @export
-norm.clr.data.frame <- function(x.f, mar=1, ...) {
-  as.data.frame(norm.clr(as.matrix(x.f), mar, ...))
+norm.clr.data.frame <- function(x.f, ...) {
+  as.data.frame(norm.clr(as.matrix(x.f), ...))
+}
+
+#' Additive log-ratio functions
+#' @export
+norm.alr <- function(x, ...) {
+  UseMethod('norm.alr', x)
+}
+
+
+norm.alr.default <- function(x.f, divcomp=1, offset=1, base=2, remove.divcomp=TRUE,
+                        tol=.Machine$double.eps) {
+  if(is.character(divcomp)) {
+    divcomp = match(divcomp,names(x.f))
+  }
+  x.f = ifelse(x.f>0,x.f,offset)
+  nzero <- (x.f >= tol)
+  LOG <- log(ifelse(nzero, x.f, 1), base)
+  x.alr <- ifelse(nzero, LOG - LOG[divcomp], 0.0)
+  if (remove.divcomp) x.alr[-divcomp]
+  else x.alr
+}
+
+norm.alr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
+  ##TODO: optimize by doing matrix operations here instead of aaply
+  if(is.character(divcomp)) {
+    divcomp = match(divcomp,names(x.f))
+  }
+  y = aaply(x.f, mar, norm.alr, divcomp=divcomp, remove.divcomp=F, ...)
+  if(mar==2) {
+    y = t(y)
+  }
+  if(remove.divcomp) {
+    y = y[,-divcomp]
+  }
+  return(y)
+}
+
+norm.alr.data.frame <- function(x.f, ...) {
+  as.data.frame(norm.alr(as.matrix(x.f), ...))
 }
 
 #' @method clr on results of DESeq2 Rlog transform. x.f is not used

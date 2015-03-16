@@ -49,7 +49,7 @@ load.ground.thruth.m_a <- function(abund.file,aggr.type=c("genus.abund","genus.o
   x = x[,c("Organism","Genus","Profile","WGS.Proportion.16S.Gene","ProfileID")]
   names(x)[4] = "Prop"
   if(aggr.type %in% c("genus.abund","genus.otus")) {
-  aggr = ddply(x,c("Profile","ProfileID","Genus"),summarise,Abund=sum(Prop),Count=length(Prop))
+  aggr = ddply(x,c("Profile","ProfileID","Genus"),summarise,Abund=sum(Prop),Count=sum(Prop>0))
   if(aggr.type=="genus.abund") {
     value.var = "Abund"
   }
@@ -66,6 +66,37 @@ load.ground.thruth.m_a <- function(abund.file,aggr.type=c("genus.abund","genus.o
   attr = attr[rownames(count),]
   m_a = list(count=count,attr=attr)
   m_a
+}
+
+
+load.wl.cdhit.m_a <- function(data.file,meta.file=NULL,aggr.type=c("genus.abund","genus.otus","otu")) {
+  x = read.delim(data.file,header=T,sep="\t")
+  ## extract all fields up to total field plus genus
+  x = x[,c(names(x)[seq(match("total",names(x))-1)],"genus")]
+  x$genus = gsub("\\s","\\.",x$genus)
+  x$OTU = paste(x$OTU,x$genus,sep=".")
+  rownames(x) = x$OTU
+  x$OTU = NULL
+  
+  if(aggr.type=="otu") {
+    x$genus = NULL
+    x = t(x)
+  }
+  else {
+    aggr.func = switch(aggr.type,
+      genus.abund = sum,
+      genus.otus = function(y) sum(y>0)
+    )
+    x = aggregate(x[,!("genus" == names(x))],list(genus = x$genus),aggr.func)
+    unk.mask = grepl("uncultured.*",x$genus,ignore.case=T) | (!grepl("\\S+",x$genus))
+    x = x[!unk.mask,]
+    rownames(x) = x$genus
+    x$genus = NULL
+    x = t(x)
+  }
+  
+  meta = load.meta.default(meta.file)
+  return (merge.counts.with.meta(x,meta))
 }
 
 ## number of cores to use on multicore machines
@@ -163,17 +194,31 @@ m_a.gt$attr$SampleID = m_a.gt$attr$ProfileID
 m_a.gt$attr$RunID = "Ground.Truth.WGS"
 m_a.gt$attr$IdSfx = m_a.gt$attr$RunID
 make.global(m_a.gt)
+
+m_a.wl = load.wl.cdhit.m_a(data.file="wl-cdhit/bei/v13/wl-cdhit.bei.v13.0.00005.txt",
+                           meta.file=meta.file.samples,
+                           aggr.type=aggr.type)
+m_a.wl$attr$RunID = "WL.00005"
+m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
+m_a.wl.1 = m_a.wl
+m_a.wl = load.wl.cdhit.m_a(data.file="wl-cdhit/bei/v13/wl-cdhit.bei.v13.0.0001.txt",
+                       meta.file=meta.file.samples,
+                       aggr.type=aggr.type)
+m_a.wl$attr$RunID = "WL.0001"
+m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
+m_a.wl.2 = m_a.wl
+
 m_a$attr$IdSfx = ""
 m_a.prop = norm.count.m_a(m_a,method="norm.prop")
 make.global(m_a.prop)
-m_a.prop = cbind.m_a(list(m_a.prop,m_a.gt),batch.attr="IdSfx",col.match=col.match)
+m_a.prop = cbind.m_a(list(m_a.prop,m_a.gt,m_a.wl.1,m_a.wl.2),batch.attr="IdSfx",col.match=col.match)
 m_a.prop$attr$IdSfx = NULL
 m_a.prop = subset.m_a(m_a.prop,subset=(m_a.prop$attr$ProfileID==ProfileID))
 m_a.prop = count.filter.m_a(m_a.prop,drop.zero=T)
 m_a.prop = subset.m_a(m_a.prop,select.count=!(colnames(m_a.prop$count) %in% drop.taxa))
 #m_a.prop = subset.m_a(m_a.prop,select.count=seq(9))
 m_a.prop = norm.count.m_a(m_a.prop,method="norm.prop")
-#m_a.prop = norm.count.m_a(m_a.prop,method="norm.clr",method.args=list(offset=0,tol=0.005))
+#m_a.prop = norm.count.m_a(m_a.prop,method="norm.alr",method.args=list(offset=0,tol=0.005,divcomp=2))
 #m_a.prop = subset.m_a(m_a.prop,select.count=colSums(abs(m_a.prop$count))>0)
 make.global(m_a.prop)
 
