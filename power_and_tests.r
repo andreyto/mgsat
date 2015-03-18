@@ -508,7 +508,7 @@ subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL) {
 ## created.
 ## Count columns will be sorted in decreasing order of the column mean frequencies, so that
 ## you can easily subset the count matrix later to only keep N most abundant columns.
-count.filter.m_a<-function(m_a,
+count.filter.m_a <- function(m_a,
                            min_max_frac=0.0,
                            min_max=0,
                            min_mean=0,
@@ -528,32 +528,32 @@ count.filter.m_a<-function(m_a,
   x = m_a
   row_cnt = rowSums(x$count)
   row_sel = row_cnt >= min_row_sum & row_cnt < max_row_sum
-  cnt = x$count[row_sel,]
-  row_cnt = row_cnt[row_sel]
-  attr = x$attr[row_sel,]
+  cnt = x$count[row_sel,,drop=F]
+  row_cnt = row_cnt[row_sel,drop=F]
+  attr = x$attr[row_sel,,drop=F]
   cnt_norm = norm.prop(cnt)
   ind_col_ord = order(colSums(cnt_norm),decreasing=T)
-  cnt = cnt[,ind_col_ord]
-  cnt_norm = cnt_norm[,ind_col_ord]
+  cnt = cnt[,ind_col_ord,drop=F]
+  cnt_norm = cnt_norm[,ind_col_ord,drop=F]
   ind_col_sel = apply(cnt_norm,2,max) >= min_max_frac
-  cnt = cnt[,ind_col_sel]
-  cnt_norm = cnt_norm[,ind_col_sel]
+  cnt = cnt[,ind_col_sel,drop=F]
+  cnt_norm = cnt_norm[,ind_col_sel,drop=F]
   ind_col_sel = apply(cnt_norm,2,mean) >= min_mean_frac
-  cnt = cnt[,ind_col_sel]
-  cnt_norm = cnt_norm[,ind_col_sel]
+  cnt = cnt[,ind_col_sel,drop=F]
+  cnt_norm = cnt_norm[,ind_col_sel,drop=F]
   if(drop.zero) {
-    cnt = cnt[,!apply(cnt==0,2,all)]
+    cnt = cnt[,!apply(cnt==0,2,all),drop=F]
   }
-  cnt = cnt[,apply(cnt,2,max) >= min_max]
-  cnt = cnt[,apply(cnt,2,mean) >= min_mean]
-  cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac]
+  cnt = cnt[,apply(cnt,2,max) >= min_max,drop=F]
+  cnt = cnt[,apply(cnt,2,mean) >= min_mean,drop=F]
+  cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac,drop=F]
   
   cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
   
-  if (!all(abs(cnt_col_other[,1])<=sqrt(.Machine$double.eps)) && !is.null(other_cnt)) {
+  if (!all(abs(cnt_col_other[,1,drop=F])<=sqrt(.Machine$double.eps)) && !is.null(other_cnt)) {
     colnames(cnt_col_other) = c(other_cnt)
     if (other_cnt %in% colnames(cnt)) {
-      cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[,other_cnt]
+      cnt[,other_cnt,drop=F] = cnt[,other_cnt,drop=F] + cnt_col_other[,other_cnt,drop=F]
     }
     else {
       cnt = cbind(cnt,cnt_col_other)
@@ -1223,7 +1223,16 @@ read.mgrast.summary<-function(file_name,file_name.id.map=NULL) {
   return (merge(data,id.map,by.x="metagenome",by.y="row.names"))
 }
 
-read.mothur.otu.shared <- function(file_name) {
+## Somehow ggplot silently drops labels that have "/" in them; spaces get converted to dots
+## in other situations. This replaces problematic symbols. This has to be applied uniformly
+## to all files that are loaded and contain taxonomy names. Of course, if you write it out,
+## you will get a mismatch in any downstream analysis by other tools. This is therefore a hack.
+## Use with care!
+sanitize.taxa.names <- function(x) {
+  gsub("[/ ]","_",x)
+}
+
+read.mothur.otu.shared <- function(file_name,sanitize=T) {
   require(data.table)
   #data = read.delim(file_name, header=T,stringsAsFactors=T)
   #when read.delim is used, X == NA column comes because there is an extra delimiter at the end of line
@@ -1237,22 +1246,25 @@ read.mothur.otu.shared <- function(file_name) {
   data$numOtus = NULL
   row.names(data) = data$Group
   data$Group = NULL
+  if(sanitize) {
+    names(data) = sanitize.taxa.names(names(data))
+  }
   return (data)
 }
 
-read.mothur.cons.taxonomy <- function(file_name) {
+read.mothur.cons.taxonomy <- function(file_name,sanitize=T) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   row.names(data) = data$OTU
   data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),function(x) x[[pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]])
+  if(sanitize) {
+    data$Taxa = sanitize.taxa.names(data$Taxa)
+  }
   return (data)
 }
 
-read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file) {
-  otu.df = read.mothur.otu.shared(otu.shared.file)
-  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file)
-  #DEBUG:
-  make.global(otu.df)
-  make.global(taxa.df)
+read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T) {
+  otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
+  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize)
   stopifnot(all(names(otu.df) == taxa.df$OTU))
   names(otu.df) = paste(taxa.df$Taxa,taxa.df$OTU,sep=".")
   ## Order columns by taxa name
@@ -1280,21 +1292,26 @@ make.mothur.taxa.summary.clade.names <- function(taxa.summary) {
   return(taxon)
 }
 
-read.mothur.taxa.summary <- function(file_name) {
+read.mothur.taxa.summary <- function(file_name,sanitize=T) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   #X == NA column comes because there is an extra delimiter at the end of line
   data$X = NULL
+  if(sanitize) {
+    data$taxon = sanitize.taxa.names(data$taxon)
+  }
   data$clade = as.factor(make.mothur.taxa.summary.clade.names(data))
   return (data)
 }
 
 
 multi.mothur.to.abund.m_a <- function(data,level) {
-  data.level = data[data$taxlevel==level,]
+  data.level = data[data$taxlevel==level,,drop=F]
   attr = c("taxlevel","rankID","taxon","daughterlevels","total","clade")
   x = split_count_df(data.level,col_ignore=attr)
   row.names(x$count) = x$attr$clade
   x$count = t(x$count)
+  x$attr.feat = x$attr
+  x$attr = data.frame(SampleID=rownames(x$count))
   return (x)
 }
 
@@ -1525,7 +1542,7 @@ plot.abund.meta <- function(m_a,
     
     if(geom == "bar") {
       gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
-                             position=position_dodge(width=0.9))
+                             position=position_dodge(width=0.7)) #0.9
       #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
       #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
     }
@@ -2158,11 +2175,11 @@ plot.profiles <- function(m_a,
                             geoms=c("bar","violin","boxplot","bar_stacked"),
                             dodged=T,
                             faceted=T,
-                            stat_summary.fun.y="mean"
+                            stat_summary.fun.y="mean",
+                            sqrt.scale=F
                           ),
                           show.clade.meta.task=list(),
-                          feature.descr="Abundance.",
-                          sqrt.scale=F) {
+                          feature.descr="Abundance.") {
   
   report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),
                                      section.action="push", sub=T)
@@ -2258,7 +2275,7 @@ plot.profiles <- function(m_a,
           
           report$add.header(paste(id.var.dodge$descr,"bars. Iterating over orientation and, optionally, scaling"))
           report$push.section(report.section)
-          
+          sqrt.scale = show.profile.task$sqrt.scale
           for(other.params in list(
             list(flip.coords=T,
                  sqrt.scale=F,
@@ -2477,28 +2494,40 @@ load.meta.default <- function(file.name) {
 read.data.project.yap <- function(taxa.summary.file,
                                   otu.shared.file,
                                   cons.taxonomy.file,
+                                  taxa.summary.file.otu,
                                   meta.file,
                                   load.meta.method,
                                   load.meta.options=list(),
                                   count.filter.options=NULL,
+                                  count.basis="seq",
+                                  sanitize=T,
                                   taxa.level=3) {
   if (taxa.level == "otu") {
-    taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,cons.taxonomy.file=cons.taxonomy.file)
+    taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,
+                                                 cons.taxonomy.file=cons.taxonomy.file,
+                                                 sanitize=sanitize)
     report$add.p(sprintf("Loaded OTU taxonomy file %s.",
                          pandoc.link.verbatim.return(cons.taxonomy.file)
     ))
     count.file = otu.shared.file
+    count.basis.descr = ""
   }
   else {
-    moth.taxa <- read.mothur.taxa.summary(taxa.summary.file)
+    count.file = switch(count.basis,
+           seq=taxa.summary.file,
+           otu=taxa.summary.file.otu
+    )
+    moth.taxa <- read.mothur.taxa.summary(count.file,sanitize=sanitize)
     taxa.lev.all = multi.mothur.to.abund.m_a(moth.taxa,taxa.level)
-    count.file = taxa.summary.file
+    count.basis.descr = sprintf(" with count basis %s",count.basis)
   }  
-  report$add.p(sprintf("Loaded %i records for %i clades from count file %s for taxonomic level %s",
+  report$add.p(sprintf("Loaded %i records for %i clades from count file %s for taxonomic level %s 
+                       with taxa name sanitize setting %s%s",
                        nrow(taxa.lev.all$count),ncol(taxa.lev.all$count),
                        pandoc.link.verbatim.return(count.file),
-                       taxa.level))
-  
+                       taxa.level,
+                       sanitize,
+                       count.basis.descr))
   if(!is.null(count.filter.options)) {
     report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
     report$add.p("Note that many community richness estimators will not work correctly 
@@ -2542,6 +2571,8 @@ mgsat.16s.task.template = within(list(), {
     taxa.summary.file=NULL,
     otu.shared.file=NULL,
     cons.taxonomy.file=NULL,
+    count.basis="seq",
+    sanitize=T,
     meta.file=NULL,
     load.meta.method=load.meta.default,
     load.meta.options=list()
@@ -2696,9 +2727,10 @@ mgsat.16s.task.template = within(list(), {
         geoms=c("bar_stacked","bar","violin","boxplot"),
         dodged=T,
         faceted=T,
-        stat_summary.fun.y="mean"
+        stat_summary.fun.y="mean",
+        sqrt.scale=F
       )
-      show.clade.meta.task=list()      
+      show.clade.meta.task=list()
     })
     
     plot.profiles.abund.task = within(list(), {
