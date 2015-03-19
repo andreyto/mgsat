@@ -41,13 +41,17 @@ cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
             rownames(m_a$attr) = rows
             m_a
   }
+  m_a$attr$SampleID = rownames(m_a$attr)
   m_a
 }
 
-load.ground.thruth.m_a <- function(abund.file,aggr.type=c("genus.abund","genus.otus","otu")) {
+load.ground.thruth.m_a <- function(abund.file,
+                                   aggr.type=c("genus.abund","genus.otus","otu"),
+                                   fake.sum=50000) {
   x = read.delim(abund.file,header=T,sep="\t")
   x = x[,c("Organism","Genus","Profile","WGS.Proportion.16S.Gene","ProfileID")]
   names(x)[4] = "Prop"
+  x$Prop = round(x$Prop * fake.sum)
   x$Organism = sanitize.taxa.names(x$Organism)
   x$Genus = sanitize.taxa.names(x$Genus)
   if(aggr.type %in% c("genus.abund","genus.otus")) {
@@ -150,6 +154,8 @@ report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Report on benchmarking of 16S annotation pipelines",
                        incremental.save=F)
 
+cl = start.cluster.project()
+
 meta.file.samples = "refdata/bench_bei_meta.txt"
 ground.truth.WGS.file = "refdata/sarah.2015-03-08/derived/bei_abund_v.5.txt"
 
@@ -204,26 +210,27 @@ runs.files = list(
       taxa.summary.file.otu = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
       meta.file=meta.file.samples
     })
-  ),
-  list(
-  RunID="Mothur.Sarah.01",
-  read.data.task=within(read.data.task, {
-    taxa.summary.file = "sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
-    otu.shared.file="sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
-    cons.taxonomy.file="sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
-    taxa.summary.file.otu = "sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
-    meta.file=meta.file.samples
-  })
-)
+  )
+#   list(
+#   RunID="Mothur.Sarah.01",
+#   read.data.task=within(read.data.task, {
+#     taxa.summary.file = "sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
+#     otu.shared.file="sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
+#     cons.taxonomy.file="sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
+#     taxa.summary.file.otu = "sarah/mothur.even.2015-03-17/HM782D.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
+#     meta.file=meta.file.samples
+#   })
+#  )
 
 )
 
-taxa.level = 6
+ground.truth.run.id = "Ground.Truth.WGS"
 #aggr.type = "genus.abund"
-aggr.type = "genus.otus"
-col.match = T
+#aggr.type = "genus.otus"
+aggr.type = "otu"
 ProfileID = "HM782D"
 drop.taxa = c("Nothing") #c("Clostridium_sensu_stricto") #c("Helicobacter") #c("Streptococcus")
+do.summary.meta = T
 
 norm.method.basic = "norm.prop"
 true.taxa.only = F
@@ -237,16 +244,53 @@ norm.count.task = within(test.counts.task$norm.count.task, {
 })
 
 count.basis = "seq"
+col.match = T
+do.divrich = T
 
 if(aggr.type == "genus.otus") {
   count.basis = "otu"
   compositional.transform = F
+  taxa.level = 6
+  do.divrich = F
+}
+else if(aggr.type == "otu") {
+  taxa.level = "otu"
+  col.match = F
 }
 
 if(!compositional.transform) {
   vegdist.method = "manhattan"
   norm.count.task$method = "ident"
 }
+
+
+test.counts.task = within(test.counts.task, {
+  divrich.task = within(list(),{
+    n.rar.rep=100
+    is.raw.count.data=T
+    group.attr = "SampleID"
+    counts.glm.task = NULL
+    beta.task = NULL
+    counts.genesel.task = NULL
+    do.plot.profiles = T
+    do.incidence=F
+    do.abundance=T
+    do.rarefy=F
+    do.accum=F
+  })
+
+  plot.profiles.task = within(plot.profiles.task, {
+    id.vars.list = list(c("SampleID"))
+    feature.meta.x.vars=NULL
+    do.profile=T
+    do.feature.meta=F
+    show.profile.task=within(show.profile.task, {
+      geoms=c("bar")
+      sqrt.scale=T
+    })
+  })
+  
+})
 
 runs.data = lapply(runs.files,
                    function(run.files) {
@@ -269,7 +313,7 @@ make.global(m_a)
 m_a.gt = load.ground.thruth.m_a(ground.truth.WGS.file,aggr.type=aggr.type)
 make.global(m_a.gt)
 m_a.gt$attr$SampleID = m_a.gt$attr$ProfileID
-m_a.gt$attr$RunID = "Ground.Truth.WGS"
+m_a.gt$attr$RunID = ground.truth.run.id
 m_a.gt$attr$IdSfx = m_a.gt$attr$RunID
 make.global(m_a.gt)
 
@@ -287,19 +331,60 @@ m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
 m_a.wl.2 = m_a.wl
 
 m_a$attr$IdSfx = ""
-m_a.prop = norm.count.m_a(m_a,method=norm.method.basic)
-make.global(m_a.prop)
-m_a.prop = cbind.m_a(list(m_a.gt,m_a.prop,m_a.wl.1,m_a.wl.2),batch.attr="IdSfx",col.match=col.match)
-m_a.prop$attr$IdSfx = NULL
-m_a.prop = subset.m_a(m_a.prop,subset=(m_a.prop$attr$ProfileID==ProfileID))
-m_a.prop = subset.m_a(m_a.prop,select.count=!(colnames(m_a.prop$count) %in% drop.taxa))
-if(true.taxa.only) {
-  m_a.prop = subset.m_a(m_a.prop,
-                        select.count=colnames(m_a.gt$count))
+#m_a.prop = norm.count.m_a(m_a,method=norm.method.basic)
+#make.global(m_a.prop)
+m_a.abs = cbind.m_a(list(m_a.gt,m_a,m_a.wl.1,m_a.wl.2),batch.attr="IdSfx",col.match=col.match)
+m_a.abs$attr$IdSfx = NULL
+
+m_a.abs = subset.m_a(m_a.abs,subset=(m_a.abs$attr$ProfileID==ProfileID))
+
+#if(aggr.type == "otu") {
+#  m_a.abs = subset.m_a(m_a.abs,subset=!(m_a.abs$attr$RunID==ground.truth.run.id))
+#}
+
+m_a.abs = count.filter.m_a(m_a.abs,drop.zero=T)
+
+make.global(m_a.abs)
+
+if(do.summary.meta) {
+  
+  summary.meta.task = within(summary.meta.task, {
+    group.vars = NULL
+    show.sample.totals=T
+    show.sample.means=F
+  })
+  
+  do.call(report.sample.count.summary,c(
+    list(m_a.abs),
+    summary.meta.task
+  )
+  )
 }
-m_a.prop = count.filter.m_a(m_a.prop,drop.zero=T)
+
+
+if(do.divrich) {  
+  tryCatchAndWarn({ 
+    do.call(mgsat.divrich.report,
+                           c(list(m_a.abs,
+                                  plot.profiles.task=test.counts.task$plot.profiles.task),
+                             test.counts.task$divrich.task)
+    )
+  })
+}
+
+
+report$save()
+stop("DEBUG")
+
+
+m_a.abs = subset.m_a(m_a.abs,select.count=!(colnames(m_a.prop$count) %in% drop.taxa))
+if(true.taxa.only) {
+  m_a.abs = subset.m_a(m_a.abs,
+                        select.count=colnames(m_a.abs) %in% colnames(m_a.gt$count))
+}
+m_a.abs = count.filter.m_a(m_a.abs,drop.zero=T)
 #m_a.prop = subset.m_a(m_a.prop,select.count=seq(9))
-m_a.prop = norm.count.m_a(m_a.prop,method=norm.method.basic)
+m_a.prop = norm.count.m_a(m_a.abs,method=norm.method.basic)
 
 m_a.prop <- norm.count.report(m_a.prop,
                               res.tests=NULL,
@@ -313,23 +398,19 @@ if(compositional.transform) {
   geoms.profiles=c("bar")
 }
 else {
-  geoms=c("bar_stacked","bar")
+  geoms.profiles=c("bar_stacked","bar")
 }
 
 plot.profiles.task = within(test.counts.task$plot.profiles.task, {
-  id.vars.list = list(c("RunID"))
-  clade.meta.x.vars=NULL
-  do.profile=T
-  do.clade.meta=F
   show.profile.task=within(show.profile.task, {
-    geoms=c("bar_stacked","bar")
-    sqrt.scale=T
+    geoms=geoms.profiles
   })
 })
+
 do.call(plot.profiles,
         c(list(m_a=m_a.prop,
                feature.order=NULL),
-          plot.profiles.task
+          test.counts.task$plot.profiles.task
         )
 )
 
@@ -343,5 +424,7 @@ report$add.table(as.matrix(vegdist(m_a.prop$count,method = vegdist.method)),show
                  caption=sprintf("%s distance",vegdist.method))
 
 })
+
+stop.cluster.project(cl)
 
 report$save()
