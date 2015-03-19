@@ -2078,9 +2078,10 @@ mgsat.divrich.report <- function(m_a,
                                  do.incidence=T,
                                  do.abundance=T,
                                  do.rarefy=T,
-                                 do.accum=T) {
+                                 do.accum=T,
+                                 extra.header="") {
   
-  report.section = report$add.header("Abundance and diversity estimates",
+  report.section = report$add.header(sprintf("Abundance and diversity estimates %s",extra.header),
                                      section.action="push", sub=T)
   group.descr = " Samples are not grouped."
   group.descr.short = " for all samples"
@@ -5630,8 +5631,9 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
-                                        show.sample.totals=F, show.sample.means=T ) {
-  report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=T)
+                                        show.sample.totals=F, show.sample.means=T,
+                                        sub.report=T) {
+  report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=sub.report)
   
   m_a.summ=make.sample.summaries(m_a)
 
