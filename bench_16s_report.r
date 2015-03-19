@@ -207,7 +207,7 @@ with(mgsat.16s.task.template,{
     ),    
     list(
       RunID="Mothur.01",
-      run.descr="Latest version of Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Andrey",
+      run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Andrey (reference-based chimera removal)",
       read.data.task=within(read.data.task, {
         taxa.summary.file = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
         otu.shared.file="bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
@@ -215,7 +215,7 @@ with(mgsat.16s.task.template,{
         taxa.summary.file.otu = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
         meta.file=meta.file.samples
       })
-    )
+    ),
     #   list(
     #   RunID="Mothur.Sarah.01",
     #   read.data.task=within(read.data.task, {
@@ -226,6 +226,17 @@ with(mgsat.16s.task.template,{
     #     meta.file=meta.file.samples
     #   })
     #  )
+      list(
+      RunID="Mothur.Sarah.02",
+      run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Sarah (dataset-based chimera removal)",
+      read.data.task=within(read.data.task, {
+        taxa.summary.file = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
+        otu.shared.file="sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
+        cons.taxonomy.file="sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
+        taxa.summary.file.otu = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
+        meta.file=meta.file.samples
+      })
+     )
     
   )
   
