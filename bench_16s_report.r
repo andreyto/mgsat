@@ -1,57 +1,91 @@
+##For different runs of pipelines , we could use
+##McNemar's test because the reads are the same - we are putting them
+##into bins in each run. Then, we need to get the initial number of read pairs,
+##and create a (giant) bin for all rejected reads. But then, this would
+##be a useless test, because the difference will be always significant due to
+##a different ratio of reads rejected at each run.
 
-cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
-  cols.map = unlist(lapply(m_a.list,function(x) colnames(x$count)))
-  batch.id.rows = unlist(lapply(m_a.list,function(x) (x$attr[,batch.attr])))
-  batch.id.cols = unlist(lapply(m_a.list,function(x) {
-    b.attr = unique(x$attr[,batch.attr])
-    stopifnot(length(b.attr)<=1)
-    rep(b.attr,ncol(x$count))
-  }))
-  names(cols.map) = paste(cols.map,ifelse(batch.id.cols!="",".",""),batch.id.cols,sep="")
-  if(col.match) {
-    cols = unique(cols.map)
+drop.zero.columns <- function(x) {
+  x[,colSums(x)!=0]
+}
+
+g.test.pairwise <- function(x,p=NULL,p.adjust.method="BY") {
+  if(!is.matrix(x)) {
+    stop("x must be a matrix")
+  }
+  if(nrow(x)<2) {
+    stop("x must have at least two rows")
+  }
+  method = NA
+  n.row = nrow(x)
+  if(is.null(p)) {
+    p.val = matrix(nrow=n.row,ncol=n.row,dimnames=list(rownames(x),rownames(x)))
+    cram.v = p.val
+    ## we do diagonal as a sanity check - should ge pval 1 and effect size 0
+    for(i in seq(n.row)) for(j in seq(i,n.row)) {
+      t.res = g.test(drop.zero.columns(x[c(i,j),]))
+      p.val[i,j] = p.val[j,i] = t.res$p.value
+      cram.v[i,j] = cram.v[j,i] = cramers.v(t.res)
+      method = t.res$method
+    }
+    ## we temporarily set diagonal as NA to exclude it from multiple testing adjustment because
+    ## it is deterministically fixed
+    diag(p.val) = NA
+    p.val.adj = matrix(p.adjust(p.val,method=p.adjust.method),nrow=n.row,ncol=n.row)
+    dimnames(p.val.adj) = dimnames(p.val)
+    diag(p.val.adj) = 1
+    diag(p.val) = 1
   }
   else {
-    cols.map[] = names(cols.map)
-    cols = cols.map
+    p.val = rep(NA,n.row)
+    names(p.val) = rownames(x)
+    cram.v = p.val
+    for(i in seq(n.row)) {
+      t.res = g.test(x[i,],p=p)
+      make.global(t.res)
+      p.val[i] = t.res$p.value
+      cram.v[i] = cramers.v(t.res)
+      p.val.adj = p.adjust(p.val,method=p.adjust.method)
+      names(p.val.adj) = names(p.val)
+      method = t.res$method
+    }
   }
-  m_a = foreach(m_a=m_a.list,
-                .final=function(m_a.list) {
-                  m_a = list()
-                  m_a$count = do.call(rbind,lapply(m_a.list,function(x) {x$count}))
-                  m_a$attr = do.call(rbind,lapply(m_a.list,function(x) {x$attr}))
-                  m_a
-                }) %do% {
-                  batch.attr.val = unique(m_a$attr[,batch.attr])
-                  stopifnot(length(batch.attr.val) <= 1)
-                  if(batch.attr.val != "") {
-                    sep="."
-                  }
-                  else {
-                    sep=""
-                  }
-                  cols.keys = paste(colnames(m_a$count),batch.attr.val,sep=sep)
-                  rows = paste(rownames(m_a$count),batch.attr.val,sep=sep)
-                  count = matrix(0.,
-                                 nrow=nrow(m_a$count),
-                                 ncol=length(cols),
-                                 dimnames=list(rows,cols))
-                  count[,cols.map[cols.keys]] = m_a$count
-                  m_a$count = count
-                  rownames(m_a$attr) = rows
-                  m_a
-                }
-  m_a$attr$SampleID = rownames(m_a$attr)
-  m_a
+  return (structure(list(p.value=p.val,p.value.adj=p.val.adj,cramers.v=cram.v,method=method),
+                    class="htest"))
+}
+
+test.multinom.counts <- function(m_a,
+                                 ground.truth.sample.id,
+                                 p.adjust.method="BY") {
+  gt.ind = which(rownames(m_a$count) == ground.truth.sample.id)
+  all.cnt = m_a$count
+  cnt = all.cnt[-gt.ind,]
+  ## test is undefined when column has no information
+  cnt = drop.zero.columns(cnt)
+  ## We use all non-zero columns to pairwise compare samples excluding the ground truth samples.
+  ## Thus, this comparison includes Unexpected.Taxa column
+  pair.indep = g.test.pairwise(cnt,p.adjust.method=p.adjust.method)
+  ## Goodness of fit test va ground truth proportions does not make sense for zero probability cells, 
+  ## so we have to drop Unexpected.Taxa column. Thus, we can get good fit even if a lot of sequences
+  ## were put into unexpected taxa. Assigning some arbitrary small value to p[Unexpected.Taxa] would not help
+  ## because it would mean that we know a prior on this type of misclassification. If it is too small,
+  ## even a few misclassified sequences can cause significant test results.
+  all.cnt = all.cnt[,all.cnt[gt.ind,]>0]
+  gt.p = norm.prop(all.cnt[gt.ind,])
+  cnt = all.cnt[-gt.ind,]
+  make.global(cnt)
+  make.global(gt.p)
+  good.of.fit = g.test.pairwise(cnt,p=gt.p,p.adjust.method=p.adjust.method)
+  return (list(pair.indep=pair.indep,good.of.fit=good.of.fit))
 }
 
 load.ground.thruth.m_a <- function(abund.file,
                                    aggr.type=c("genus.abund","genus.otus","otu"),
-                                   fake.sum=50000) {
+                                   pseudo.sum=50000) {
   x = read.delim(abund.file,header=T,sep="\t")
   x = x[,c("Organism","Genus","Profile","WGS.Proportion.16S.Gene","ProfileID")]
   names(x)[4] = "Prop"
-  x$Prop = round(x$Prop * fake.sum)
+  x$Prop = round(x$Prop * pseudo.sum)
   x$Organism = sanitize.taxa.names(x$Organism)
   x$Genus = sanitize.taxa.names(x$Genus)
   if(aggr.type %in% c("genus.abund","genus.otus")) {
@@ -128,6 +162,7 @@ register(SnowParam(4))
 MGSAT_SRC = "~/work/mgsat"
 
 source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
+source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## Uncomment next line to install packages needed by MGSAT (!!!comment it out
 ## in all subsequent runs once the packages have been installed!!!).
@@ -206,6 +241,17 @@ with(mgsat.16s.task.template,{
       })
     ),    
     list(
+      RunID="YAP.upd.prefilt",
+      run.descr="YAP updated to use Mothur make.contigs, Mothur reference DB v.10 and drop singletons after pre-clustering step",    
+      read.data.task=within(read.data.task, {
+        taxa.summary.file = "yap/bei/v13/min_precluster_size//3b8c4c926594400416e38756cd299875.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+        otu.shared.file="yap/bei/v13/min_precluster_size//f6e65ff8146987bcfacb533a2e2a95c9.files_x1.sorted.0.03.shared"
+        cons.taxonomy.file="yap/bei/v13/min_precluster_size//3b8c4c926594400416e38756cd299875.files_x1.sorted.0.03.cons.taxonomy.seq.taxonomy"
+        taxa.summary.file.otu = "yap/bei/v13/min_precluster_size//4979c38da8610fd77c1ca50da226a859.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
+        meta.file=meta.file.samples
+      })
+    ),    
+    list(
       RunID="Mothur.01",
       run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Andrey (reference-based chimera removal)",
       read.data.task=within(read.data.task, {
@@ -215,7 +261,7 @@ with(mgsat.16s.task.template,{
         taxa.summary.file.otu = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
         meta.file=meta.file.samples
       })
-    ),
+    )
     #   list(
     #   RunID="Mothur.Sarah.01",
     #   read.data.task=within(read.data.task, {
@@ -226,7 +272,8 @@ with(mgsat.16s.task.template,{
     #     meta.file=meta.file.samples
     #   })
     #  )
-      list(
+    ,
+    list(
       RunID="Mothur.Sarah.02",
       run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Sarah (dataset-based chimera removal)",
       read.data.task=within(read.data.task, {
@@ -236,7 +283,7 @@ with(mgsat.16s.task.template,{
         taxa.summary.file.otu = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
         meta.file=meta.file.samples
       })
-     )
+    )
     
   )
   
@@ -248,15 +295,19 @@ abundance in the biological sample. Proportions multiplied by a large constant t
 so this dataset can be used in diversity and abundance estimates together with actual 16S annotation runs."
   ProfileID = "HM782D"
   drop.taxa = c("Nothing") #c("Clostridium_sensu_stricto") #c("Helicobacter") #c("Streptococcus")
+  other_cnt = "Unexpected_Taxa"
   
   norm.method.basic.default = "norm.prop"
-  true.taxa.only = F
+  true.taxa.only = T
   compositional.transform = F
+  otu.count.filter.options = read.data.task$otu.count.filter.options
+  otu.count.filter.options$min_max_frac = 0.0001
   
   vegdist.method = "euclidian"
   norm.count.task = within(test.counts.task$norm.count.task, {
     method = "norm.clr"
-    method.args = list(offset=0,tol=0.005)
+    ##offset 1 only makes sense if we create pseudocounts for ground truth
+    method.args = list(offset=1,tol=0.0000001)
     drop.features=list("other")
   })
   
@@ -265,17 +316,20 @@ so this dataset can be used in diversity and abundance estimates together with a
   for(task.aggr in list(
     list(aggr.type="genus.abund",
          aggr.descr="Genus relative abundance",
-         norm.method.basic = norm.method.basic.default),
-    list(aggr.type="genus.otus",
-         aggr.descr="OTU counts per genus",
-         norm.method.basic = "ident"),
-    list(aggr.type="genus.otus",
-         aggr.descr="OTU relative counts per genus",
-         norm.method.basic = norm.method.basic.default),    
-    list(aggr.type="otu",
-         aggr.descr="OTU abundance",
          norm.method.basic = norm.method.basic.default)
+    #    ,
+    #     list(aggr.type="genus.otus",
+    #          aggr.descr="OTU counts per genus",
+    #          norm.method.basic = "ident"),
+    #     list(aggr.type="genus.otus",
+    #          aggr.descr="OTU relative counts per genus",
+    #          norm.method.basic = norm.method.basic.default)
+    #     ,    
+    #     list(aggr.type="otu",
+    #          aggr.descr="OTU abundance",
+    #          norm.method.basic = norm.method.basic.default)
   )) {
+    
     
     with(task.aggr,{
       
@@ -292,7 +346,9 @@ so this dataset can be used in diversity and abundance estimates together with a
       
       if(aggr.type == "genus.otus") {
         count.basis = "otu"
-        compositional.transform = F
+        if(norm.method.basic == "ident") {
+          compositional.transform = F
+        }
         taxa.level = 6
         do.divrich = F
         do.summary.meta = T
@@ -307,7 +363,10 @@ so this dataset can be used in diversity and abundance estimates together with a
       
       if(!compositional.transform) {
         vegdist.method = "manhattan"
-        norm.count.task$method = "ident"
+        norm.count.task = within(norm.count.task, {
+          method = norm.method.basic
+          method.args = list()
+        })
       }
       
       
@@ -338,7 +397,7 @@ so this dataset can be used in diversity and abundance estimates together with a
         })
         
       })
-
+      
       report$add.header("Loading annotation files")
       report$push.section(report.section)
       
@@ -346,6 +405,7 @@ so this dataset can be used in diversity and abundance estimates together with a
                          function(run.files) {
                            with(run.files,{
                              read.data.task$count.basis = count.basis
+                             read.data.task$otu.count.filter.options = otu.count.filter.options
                              m_a = do.call(read.data.method,
                                            c(
                                              list(taxa.level=taxa.level),
@@ -389,7 +449,7 @@ so this dataset can be used in diversity and abundance estimates together with a
       #make.global(m_a.prop)
       m_a.abs = cbind.m_a(list(m_a.gt,m_a,m_a.wl.1,m_a.wl.2),batch.attr="IdSfx",col.match=col.match)
       m_a.abs$attr$IdSfx = NULL
-            
+      
       attr.rep = unique(m_a.abs$attr[,c("RunID","run.descr")])
       attr.rep$run.descr = gsub("\n"," ",attr.rep$run.descr)
       report$add.table(attr.rep,caption="Description of annotation runs")
@@ -398,7 +458,7 @@ so this dataset can be used in diversity and abundance estimates together with a
       
       report$add.header("Data analysis")
       report$push.section(report.section)
-        
+      
       m_a.abs = subset.m_a(m_a.abs,subset=(m_a.abs$attr$ProfileID==ProfileID))
       
       #if(aggr.type == "otu") {
@@ -444,21 +504,24 @@ so this dataset can be used in diversity and abundance estimates together with a
       }
       
       if(do.abund) {
+        
         m_a.abs = subset.m_a(m_a.abs,select.count=!(colnames(m_a.abs$count) %in% drop.taxa))
+        
         if(true.taxa.only) {
-          m_a.abs = subset.m_a(m_a.abs,
-                               select.count=colnames(m_a.abs) %in% colnames(m_a.gt$count))
+          m_a.abs = count.filter.m_a(m_a.abs,drop.zero=T,
+                                     keep.names=colnames(m_a.gt$count),
+                                     other_cnt=other_cnt)
         }
-        m_a.abs = count.filter.m_a(m_a.abs,drop.zero=T)
-        #m_a.prop = subset.m_a(m_a.prop,select.count=seq(9))
-        m_a.prop = norm.count.m_a(m_a.abs,method=norm.method.basic)
         
-        m_a.prop <- norm.count.report(m_a.prop,
-                                      res.tests=NULL,
-                                      descr="Extra normalization",
-                                      norm.count.task)
+        make.global(m_a.abs)
+        m_a.prop = norm.count.report(m_a.abs,
+                                     res.tests=NULL,
+                                     descr="Normalization",
+                                     norm.count.task)
         
-        m_a.prop = subset.m_a(m_a.prop,select.count=colSums(abs(m_a.prop$count))>0)
+        ## CLR transform can create all-zero columns from non-zero columns
+        #m_a.prop = subset.m_a(m_a.prop,select.count=colSums(abs(m_a.prop$count))>0)
+        
         make.global(m_a.prop)
         
         if(compositional.transform) {
@@ -477,7 +540,7 @@ so this dataset can be used in diversity and abundance estimates together with a
         do.call(plot.profiles,
                 c(list(m_a=m_a.prop,
                        feature.order=NULL,
-                       feature.descr=sprintf("Plots of %s",aggr.descr)),
+                       feature.descr=aggr.descr),
                   test.counts.task$plot.profiles.task
                 )
         )
@@ -485,12 +548,19 @@ so this dataset can be used in diversity and abundance estimates together with a
         report$add.header("Distance measures between samples")
         report$push.section(report.section)
         
-        if(norm.method.basic == "norm.prop" && norm.count.task$method == "ident") {
+        if(norm.count.task$method == "norm.prop") {
+          ## This adds a small offset to the matrix for zero elements, so that
+          ## the distance with self is defined (it has to compute x*log(x+y)).
           report$add.table(as.matrix(dist.js(m_a.prop$count)),show.row.names=T,
                            caption="Jensen-Shannon distance")
+          ## This dissimilarity is easier to understand in the continuous case,
+          ## where it is 1 minus an integral of a product of densities of two variables.
+          ## In the discreet case, the rational is that sqrt(p) is a unit vector in L2 norm,
+          ## and the distance is defined as Euclidian distance between sqrt(p).
           report$add.table(as.matrix(vegdist(sqrt(m_a.prop$count),method = "euclidian")/sqrt(2)),show.row.names=T,
                            caption="Hellinger distance")
         }
+        
         report$add.table(as.matrix(vegdist(m_a.prop$count,method = vegdist.method)),show.row.names=T,
                          caption=sprintf("%s distance",vegdist.method))
         report$pop.section()

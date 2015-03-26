@@ -10,9 +10,12 @@
 # V3.3 Pete Hurd Sept 29 2001. phurd@ualberta.ca
 
 g.test <- function(x, y = NULL, correct="williams",
-                   p = rep(1/length(x), length(x)), simulate.p.value = FALSE, B = 2000)
+                   p = rep(1/length(x), length(x)))
   #can also use correct="none" or correct="yates"
 {
+  ## C code for MC referenced here is not available
+  simulate.p.value = FALSE
+  B = 2000
   DNAME <- deparse(substitute(x))
   if (is.data.frame(x)) x <- as.matrix(x)
   if (is.matrix(x)) {
@@ -60,7 +63,11 @@ g.test <- function(x, y = NULL, correct="williams",
     
     sr <- apply(x,1,sum)
     sc <- apply(x,2,sum)
-    E <- outer(sr,sc, "*")/n
+    tot = outer(sr,sc, "*")
+    if(any(tot==0)) {
+      stop("Zero expected counts in at least one cell")
+    }
+    E <- tot/n
     # are we doing a monte-carlo?
     # no monte carlo GOF?
     if (simulate.p.value){
@@ -88,6 +95,7 @@ g.test <- function(x, y = NULL, correct="williams",
           if (x[i,j] != 0) g <- g + x[i,j] * log(x[i,j]/E[i,j])
         }
       }
+
       q <- 1
       if (correct=="williams"){ # Do Williams' correction
         row.tot <- col.tot <- 0    
@@ -113,8 +121,10 @@ g.test <- function(x, y = NULL, correct="williams",
       stop("x must at least have 2 elements")
     if (length(x) != length(p)) 
       stop("x and p must have the same number of elements")
+    if(any(p<=0)) {
+      stop("All p values must be strictly positive")
+    }
     E <- n * p
-    
     if (correct=="yates"){ # Do Yates' correction
       if(length(x)!=2)
         stop("Yates' correction requires 2 data values")

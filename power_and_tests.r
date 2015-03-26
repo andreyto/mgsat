@@ -88,8 +88,17 @@ set_trace_options<-function(try.debug=T) {
 
 ## bind variable to the global environment
 ## can be used in debugging
-make.global <- function(var) {
-  assign(deparse(substitute(var)),var,envir=globalenv()) 
+## if NULL is passed, the parents (calling) environment 
+## is cloned and assigned to a global variable passed in name
+make.global <- function(var=NULL,name=NULL) {
+  if(is.null(var)) {
+    stopifnot(!is.null(name))
+    var = as.environment(as.list(parent.frame(), all.names=TRUE))
+  }
+  if(is.null(name)) {
+    name = deparse(substitute(var))
+  }
+  assign(name,var,envir=globalenv()) 
 }
 
 
@@ -108,9 +117,9 @@ replace.col.names<-function(allnames,oldnames,newnames) {
   return(allnames)
 }
 
-## Return a copy of data frames with selected columns removed
-drop_columns <- function(df,drop_names=c()) {
-  mask_col_ignore = names(df) %in% drop_names
+## Return a copy of data frames or matrix with selected columns removed
+drop.columns <- function(df,drop_names=c()) {
+  mask_col_ignore = colnames(df) %in% drop_names
   return ( df[,!mask_col_ignore] )
 }
 
@@ -164,6 +173,13 @@ join_count_df<-function(m_a) {
     m_a$attr
   }
   
+}
+
+new.m_a <- function(count=NULL,attr=NULL) {
+  if(is.null(attr)) {
+    attr = data.frame(SampleID=rownames(count))
+  }
+  list(count=count,attr=attr)
 }
 
 as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
@@ -238,7 +254,8 @@ norm.meta.data<-function(dat,col_ignore=c(),norm.func=NULL,...) {
 # and features/OTUs in columns, then the transform is applied as
 # clr(data)
 # By default, it adds an offset of 1 before applying the transform, and acts
-# on rows, returning matrix in the same order as input. The defaul base=2 in
+# on rows, returning matrix in the same order as input. This offset is only
+# appropriate if you are transforming raw integer count data. The defaul base=2 in
 # order to produce fold change between columns:
 # (m[,k]/m[,l] == 2**(clr.mgsat(m)[,k]-clr.mgsat(m)[,l]))
 # Note that in the original SpiecEasi implementation the transform should
@@ -295,7 +312,7 @@ norm.alr <- function(x, ...) {
 
 
 norm.alr.default <- function(x.f, divcomp=1, offset=1, base=2, remove.divcomp=TRUE,
-                        tol=.Machine$double.eps) {
+                             tol=.Machine$double.eps) {
   if(is.character(divcomp)) {
     divcomp = match(divcomp,names(x.f))
   }
@@ -468,7 +485,7 @@ norm.count.m_a <- function(m_a,...) {
 
 ## Jensen-Shannon distance
 ## Adapted from http://enterotype.embl.de/enterotypes.html
-dist.js <- function(x, offset=1e-6, ...) {
+dist.js <- function(x, offset=.Machine$double.eps, ...) {
   x=t(x)
   KLD <- function(x,y) sum(x *log(x/y))
   JSD<- function(x,y) sqrt(0.5 * KLD(x, (x+y)/2) + 0.5 * KLD(y, (x+y)/2))
@@ -503,21 +520,77 @@ subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL) {
   return(m_a)
 }
 
+cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
+  cols.map = unlist(lapply(m_a.list,function(x) colnames(x$count)))
+  batch.id.rows = unlist(lapply(m_a.list,function(x) (x$attr[,batch.attr])))
+  batch.id.cols = unlist(lapply(m_a.list,function(x) {
+    b.attr = unique(x$attr[,batch.attr])
+    stopifnot(length(b.attr)<=1)
+    rep(b.attr,ncol(x$count))
+  }))
+  names(cols.map) = paste(cols.map,ifelse(batch.id.cols!="",".",""),batch.id.cols,sep="")
+  if(col.match) {
+    cols = unique(cols.map)
+  }
+  else {
+    cols.map[] = names(cols.map)
+    cols = cols.map
+  }
+  m_a = foreach(m_a=m_a.list,
+                .final=function(m_a.list) {
+                  m_a = list()
+                  m_a$count = do.call(rbind,lapply(m_a.list,function(x) {x$count}))
+                  m_a$attr = do.call(rbind,lapply(m_a.list,function(x) {x$attr}))
+                  m_a
+                }) %do% {
+                  batch.attr.val = unique(m_a$attr[,batch.attr])
+                  stopifnot(length(batch.attr.val) <= 1)
+                  if(batch.attr.val != "") {
+                    sep="."
+                  }
+                  else {
+                    sep=""
+                  }
+                  cols.keys = paste(colnames(m_a$count),batch.attr.val,sep=sep)
+                  rows = paste(rownames(m_a$count),batch.attr.val,sep=sep)
+                  count = matrix(0.,
+                                 nrow=nrow(m_a$count),
+                                 ncol=length(cols),
+                                 dimnames=list(rows,cols))
+                  count[,cols.map[cols.keys]] = m_a$count
+                  m_a$count = count
+                  rownames(m_a$attr) = rows
+                  m_a
+                }
+  m_a$attr$SampleID = rownames(m_a$attr)
+  m_a
+}
+
+
 ## If the other_cnt column is already present, it will be incremented with counts of features
 ## relegated to the "other" in this call; otherwise, the new column with this name will be
 ## created.
-## Count columns will be sorted in decreasing order of the column mean frequencies, so that
-## you can easily subset the count matrix later to only keep N most abundant columns.
+## Count columns will be sorted in decreasing order of the column mean frequencies.
+## Various column exclusion criteria are applied cumulatively. Row-wise fractions used by some of
+## the exclusion criteria are computed on the *original* set of columns.
+## All columns that are excluded are summed into the "other" category, which is placed last 
+## regardless of its counts.
+## drop.names can contain the name of the "other" category, in which case it will be dropped as well.
+## n.top (if > 0) will return only top (by mean frequency) features *after* other exclusions, and
+## not counting "other", which will be also returned.
 count.filter.m_a <- function(m_a,
-                           min_max_frac=0.0,
-                           min_max=0,
-                           min_mean=0,
-                           min_mean_frac=0.0,
-                           min_incidence_frac=0.0,
-                           min_row_sum=0,
-                           max_row_sum=.Machine$integer.max,
-                           other_cnt="other",
-                           drop.zero=T) {
+                             min_max_frac=0.0,
+                             min_max=0,
+                             min_mean=0,
+                             min_mean_frac=0.0,
+                             min_incidence_frac=0.0,
+                             min_row_sum=0,
+                             max_row_sum=.Machine$integer.max,
+                             other_cnt="other",
+                             keep.names=NULL,
+                             drop.names=NULL,
+                             n.top=0,
+                             drop.zero=T) {
   ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
   ##unbalanced dataset where one group is 60% of samples and has zero presence in some column,
   ##and another group is 40% and has a large presence, then median filter will always throw this
@@ -526,39 +599,83 @@ count.filter.m_a <- function(m_a,
   #make.global(m.call)
   #stop("DEBUG")
   x = m_a
+  
+  ## use this to drop rows and to find the count in "other" category at the end
   row_cnt = rowSums(x$count)
+  
+  ## index of rows to drop
   row_sel = row_cnt >= min_row_sum & row_cnt < max_row_sum
+  
+  ## drop rows from data and attribute matrices and derived matrices/vectors
   cnt = x$count[row_sel,,drop=F]
   row_cnt = row_cnt[row_sel,drop=F]
   attr = x$attr[row_sel,,drop=F]
+  
+  ## get proportions
   cnt_norm = norm.prop(cnt)
+  
+  ## reorder all columns
   ind_col_ord = order(colSums(cnt_norm),decreasing=T)
   cnt = cnt[,ind_col_ord,drop=F]
   cnt_norm = cnt_norm[,ind_col_ord,drop=F]
-  ind_col_sel = apply(cnt_norm,2,max) >= min_max_frac
-  cnt = cnt[,ind_col_sel,drop=F]
-  cnt_norm = cnt_norm[,ind_col_sel,drop=F]
-  ind_col_sel = apply(cnt_norm,2,mean) >= min_mean_frac
-  cnt = cnt[,ind_col_sel,drop=F]
-  cnt_norm = cnt_norm[,ind_col_sel,drop=F]
+  
+  ## bitmask of columns to keep; start with keep all
+  mask_col_sel = rep(T,ncol(cnt))
+  
+  ## if keep.names defined, only keep names provided where
+  if(!is.null(keep.names)) {
+    mask_col_sel = mask_col_sel & (colnames(cnt) %in% keep.names)
+  }
+  
+  ## if drop.names defined, drop all names from it; this means drop.names
+  ## overrides keep.names
+  if(!is.null(drop.names)) {
+    mask_col_sel = mask_col_sel & !(colnames(cnt) %in% drop.names)
+  }  
+  
+  ## dropping columns with various criteria, each criteria is applied column-wise
+  ## (does not depend on other columns). Building mask of columns to *keep*.
+  mask_col_sel = mask_col_sel & apply(cnt_norm,2,max) >= min_max_frac
+  #cnt = cnt[,ind_col_sel,drop=F]
+  #cnt_norm = cnt_norm[,ind_col_sel,drop=F]
+  mask_col_sel = mask_col_sel & (apply(cnt_norm,2,mean) >= min_mean_frac)
+  #cnt = cnt[,ind_col_sel,drop=F]
+  #cnt_norm = cnt_norm[,ind_col_sel,drop=F]
   if(drop.zero) {
-    cnt = cnt[,!apply(cnt==0,2,all),drop=F]
+    mask_col_sel = mask_col_sel & (!apply(cnt==0,2,all))
+    #cnt = cnt[,!apply(cnt==0,2,all),drop=F]
   }
-  cnt = cnt[,apply(cnt,2,max) >= min_max,drop=F]
-  cnt = cnt[,apply(cnt,2,mean) >= min_mean,drop=F]
-  cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac,drop=F]
+  mask_col_sel = mask_col_sel & (apply(cnt,2,max) >= min_max)
+  #cnt = cnt[,apply(cnt,2,max) >= min_max,drop=F]
+  mask_col_sel = mask_col_sel & (apply(cnt,2,mean) >= min_mean)
+  #cnt = cnt[,apply(cnt,2,mean) >= min_mean,drop=F]
+  mask_col_sel = mask_col_sel & (apply(cnt>0,2,mean) >= min_incidence_frac)
+  #cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac,drop=F]
   
-  cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
+  ## drop all columns accumulated so far; not updating cnt_norm because not needed anymore
+  cnt = cnt[,mask_col_sel,drop=F]
+  cnt_norm = NULL
   
-  if (!all(abs(cnt_col_other[,1,drop=F])<=sqrt(.Machine$double.eps)) && !is.null(other_cnt)) {
-    colnames(cnt_col_other) = c(other_cnt)
-    if (other_cnt %in% colnames(cnt)) {
-      cnt[,other_cnt,drop=F] = cnt[,other_cnt,drop=F] + cnt_col_other[,other_cnt,drop=F]
-    }
-    else {
-      cnt = cbind(cnt,cnt_col_other)
+  ## cut to top by abundance columns
+  if(n.top>0) {
+    cnt = cnt[,1:min(n.top,ncol(cnt)),drop=F]
+  }
+  
+  if(is.null(drop.names) || ! (other_cnt %in% drop.names)) {
+    
+    cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
+    
+    if (!all(abs(cnt_col_other[,1,drop=F])<=sqrt(.Machine$double.eps)) && !is.null(other_cnt)) {
+      colnames(cnt_col_other) = c(other_cnt)
+      if (other_cnt %in% colnames(cnt)) {
+        cnt[,other_cnt,drop=F] = cnt[,other_cnt,drop=F] + cnt_col_other[,other_cnt,drop=F]
+      }
+      else {
+        cnt = cbind(cnt,cnt_col_other)
+      }
     }
   }
+  
   x$attr = attr
   x$count = cnt
   return(x)
@@ -890,13 +1007,28 @@ power.koren<-function() {
   
 }
 
-## compute Cramer V (also known as Cramer Phi)
+## compute Cramer V (also known as Cramer Phi) from the
+## results of chisq.test or g.test of independence (on contingency table)
+## of goodness of fit test
 ## see also function vcd::assocstats or lsr::cramersV
-cramers.v <- function(x,y) {
-  cv = sqrt(chisq.test(x, y, correct=FALSE)$statistic /
-              (length(x) * (min(length(unique(x)),length(unique(y))) - 1)))
+## For test of independence:
+##V = sqrt(X^2 / [nobs * (min(ncols, nrows) - 1)])
+## For goodnes of fit:
+##V = sqrt(X^2 / [nobs * (nrows - 1)])
+cramers.v <- function(x) {
+  obs = x$observed
+  k = NA
+  if(length(dim(obs)) == 2 && all(dim(obs)>=2)) {
+    k = min(nrow(obs),ncol(obs))
+  }
+  else {
+    k = length(obs)
+  }
+  cv = sqrt(x$statistic /
+              (sum(obs) * (k - 1)))
   return(as.numeric(cv))
 }
+
 
 Xmcupo.effectsize.par <-
   function(par.groups,reads.groups){
@@ -1119,7 +1251,6 @@ power.dirmult.range<-function(
   all_features=all_features,
   alpha=alpha)
   )
-  make.global(res.all)
   res = ddply(res.all,c("eta"),
               function(x,alpha) { 
                 first = 
@@ -1249,32 +1380,65 @@ read.mothur.otu.shared <- function(file_name,sanitize=T) {
   if(sanitize) {
     names(data) = sanitize.taxa.names(names(data))
   }
-  return (data)
+  return (as.matrix(data))
 }
 
-read.mothur.cons.taxonomy <- function(file_name,sanitize=T) {
+read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu") {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   row.names(data) = data$OTU
-  data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),function(x) x[[pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]])
+  data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),
+                    function(x) {
+                      if(is.numeric(taxa.level)) {
+                        x = x[1:taxa.level]
+                      }
+                      no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
+                      last = no.tail[length(no.tail)]
+                      if(length(no.tail) < length(x)) {
+                        last = paste("Unclassified",last,sep="_")
+                      }
+                      last
+                    }
+  )
   if(sanitize) {
     data$Taxa = sanitize.taxa.names(data$Taxa)
   }
   return (data)
 }
 
-read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T) {
+read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T,taxa.level="otu",
+                                      count.basis="seq", otu.count.filter.options=NULL) {
   otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
-  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize)
-  stopifnot(all(names(otu.df) == taxa.df$OTU))
-  names(otu.df) = paste(taxa.df$Taxa,taxa.df$OTU,sep=".")
+  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level)
+  stopifnot(all(colnames(otu.df) == taxa.df$OTU))
+  otu.df = new.m_a(count=otu.df)
+  otu.df = report.count.filter.m_a(otu.df,count.filter.options=otu.count.filter.options)$count
+  otu.name.ind = match(colnames(otu.df),taxa.df$OTU)
+  ## this will drop "other" category
+  otu.name.mask = !is.na(otu.name.ind)
+  otu.name.ind = otu.name.ind[otu.name.mask]
+  taxa.df = taxa.df[otu.name.ind,]
+  otu.df = otu.df[,otu.name.mask]
+  stopifnot(all(colnames(otu.df) == taxa.df$OTU))
+  if(count.basis=="otu") {
+    otu.df = ifelse(otu.df > 0,1,0)
+  }
+  if(is.numeric(taxa.level)) {
+    x = aggregate(t(otu.df),list(row.ids=taxa.df$Taxa),sum)
+    rownames(x) = x$row.ids
+    x$row.ids = NULL
+    otu.df = t(x)
+  }
+  else {
+    colnames(otu.df) = paste(taxa.df$Taxa,taxa.df$OTU,sep=".")
+  }
   ## Order columns by taxa name
-  otu.df = otu.df[,order(names(otu.df))]
+  ##otu.df = otu.df[,order(colnames(otu.df))]
   return (otu.df)
 }
 
 read.mothur.otu.with.taxa.m_a <- function(...) {
-  count = as.matrix(read.mothur.otu.with.taxa(...))
-  return(list(count=count))
+  count = read.mothur.otu.with.taxa(...)
+  return(new.m_a(count=count))
 }
 
 make.mothur.taxa.summary.feature.names <- function(taxa.summary) {
@@ -1363,7 +1527,7 @@ aggregate.by.meta.data.m_a <- function(m_a,
   #The assumption here is that if such name is supplied for the grouping
   #output column, then the existing column with the same name is not needed.
   if(group_col_result_name %in% names(x$attr)) {
-    x$attr = drop_columns(x$attr,c(group_col_result_name))
+    x$attr = drop.columns(x$attr,c(group_col_result_name))
   }
   ##TODO: make the default attr_aggr to drop all columns
   ## with more that one value in any group. 
@@ -1377,7 +1541,7 @@ aggregate.by.meta.data.m_a <- function(m_a,
     count_names = names(x$count)
     x$count = aggregate(x$count,groups,count_aggr)  
     row.names(x$count) = x$count[,group_col_result_name]
-    x$count = drop_columns(x$count,c(group_col_result_name))
+    x$count = drop.columns(x$count,c(group_col_result_name))
     return (merge.counts.with.meta(x$count,x$attr))
   }
   else {
@@ -1417,6 +1581,9 @@ sort.factor.by.total <- function(factor.val,sort.val,ordered=F) {
 order.levels <- function(lev,keys) {
   lev[order(keys,decreasing=T)]
 }
+
+require(scales) # trans_new() is in the scales library
+signed_sqrt_trans = function() trans_new("signed_sqrt", function(x) sign(x)*sqrt(abs(x)), function(x) sign(x)*sqrt(abs(x)))
 
 plot.abund.meta <- function(m_a,
                             id.vars=c(),
@@ -1568,7 +1735,7 @@ plot.abund.meta <- function(m_a,
       gp = gp + coord_flip()
     }
     if(sqrt.scale) {
-      gp = gp + coord_trans(y = "sqrt")
+      gp = gp + coord_trans(y = "signed_sqrt")
     }
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
@@ -1623,19 +1790,19 @@ plot.abund.meta <- function(m_a,
   }
   
   #gp = gp + guides(colour = NULL, fill = guide_legend("XXX"))
-
+  
   color.palette="brew"
   
   if(color.palette=="brew") {
-  n.color.orig = 8
-  palette = brewer.pal(n.color.orig, "Accent")
-  #get.palette = colorRampPalette(palette)
-  #palette = get.palette(max(length(features),n.color.orig))
-  palette = rep_len(palette,max(length(features),1000))
-  
-  gp = gp + 
-    scale_fill_manual(values = palette) +
-    scale_color_manual(values = palette)
+    n.color.orig = 8
+    palette = brewer.pal(n.color.orig, "Accent")
+    #get.palette = colorRampPalette(palette)
+    #palette = get.palette(max(length(features),n.color.orig))
+    palette = rep_len(palette,max(length(features),1000))
+    
+    gp = gp + 
+      scale_fill_manual(values = palette) +
+      scale_color_manual(values = palette)
   }
   else if(color.palette=="hue") {
     gp = gp +     
@@ -1781,10 +1948,10 @@ mgsat.richness.counts <- function(m_a,n.rar.rep=400,do.rarefy=T) {
   #S.ACE & all se.* give NaN often
   ind.names = c("S.obs","S.chao1")
   if(do.rarefy) {
-  x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
-              .final=function(x) (x/n.rar.rep)) %dopar% 
+    x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+                .final=function(x) (x/n.rar.rep)) %dopar% 
 {estimateR(rrarefy(m_a$count,n.rar))[ind.names,]}
-}
+  }
 else {
   x = estimateR(m_a$count)[ind.names,]
 }
@@ -1876,8 +2043,8 @@ mgsat.diversity.beta.dist <- function(m_a,n.rar.rep=400,method="-1",do.rarefy=T)
   
   n.rar = min(rowSums(m_a$count))
   if(do.rarefy) {
-  x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
-              .final=function(x) (x/n.rar.rep)) %dopar% 
+    x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
+                .final=function(x) (x/n.rar.rep)) %dopar% 
 {
   betadiver(rrarefy(m_a$count,n.rar),method=method)
 }
@@ -2087,7 +2254,7 @@ mgsat.divrich.report <- function(m_a,
   group.descr.short = " for all samples"
   if(!is.null(group.attr)) {
     if(do.incidence) {
-    group.descr = sprintf(" Incidence-based estimates are computed on sample pools split by
+      group.descr = sprintf(" Incidence-based estimates are computed on sample pools split by
                           metadata attribute %s, and in each repetition, samples are also
                           stratified to balance the number of samples at each level
                           of the grouping variable.", group.attr)
@@ -2110,7 +2277,7 @@ mgsat.divrich.report <- function(m_a,
                    This is repeated multiple times (n=%s), and the results are averaged.
                    Beta diversity matrix is also computed by averaging over multiple 
                    rarefications.",
-                           n.rar.rep)
+                        n.rar.rep)
     rar.descr.short = "With rarefication."
   }
   
@@ -2125,84 +2292,84 @@ mgsat.divrich.report <- function(m_a,
   res = new_mgsatres()
   
   if(do.incidence) {
-  res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep,do.rarefy=do.rarefy)
-  caption.inc.rich=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
-                           group.descr.short)
-  report$add.table(res$rich.samples$e.se,
-                   caption=caption.inc.rich
-  )
-  report$add(mgsat.plot.richness.samples(res$rich.samples),
-             caption=caption.inc.rich
-  )
+    res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep,do.rarefy=do.rarefy)
+    caption.inc.rich=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
+                             group.descr.short)
+    report$add.table(res$rich.samples$e.se,
+                     caption=caption.inc.rich
+    )
+    report$add(mgsat.plot.richness.samples(res$rich.samples),
+               caption=caption.inc.rich
+    )
   }
   
   if(do.abundance) {
-  if(is.raw.count.data) {
-    res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep,do.rarefy=do.rarefy)
+    if(is.raw.count.data) {
+      res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep,do.rarefy=do.rarefy)
+      if(do.plot.profiles) {
+        do.call(plot.profiles,
+                c(list(m_a=list(count=as.matrix(res$rich.counts$e),attr=m_a$attr),
+                       feature.descr=sprintf("Abundance-based richness estimates %s",rar.descr.short),
+                       value.name="Richness.Estimate"),
+                  plot.profiles.task
+                )
+        )
+      }
+    }
+    
+    res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,
+                                                  is.raw.count.data=is.raw.count.data,
+                                                  do.rarefy=do.rarefy)
+    
     if(do.plot.profiles) {
       do.call(plot.profiles,
-              c(list(m_a=list(count=as.matrix(res$rich.counts$e),attr=m_a$attr),
-                     feature.descr=sprintf("Abundance-based richness estimates %s",rar.descr.short),
-                     value.name="Richness.Estimate"),
+              c(list(m_a=list(count=as.matrix(res$div.counts$e[,c("N1","N2")]),attr=m_a$attr),
+                     feature.descr=sprintf("Abundance-based diversity indices (Hill numbers) %s",rar.descr.short),
+                     value.name="index"),
                 plot.profiles.task
               )
       )
     }
-  }
-  
-  res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,
-                                                is.raw.count.data=is.raw.count.data,
-                                                do.rarefy=do.rarefy)
-  
-  if(do.plot.profiles) {
-    do.call(plot.profiles,
-            c(list(m_a=list(count=as.matrix(res$div.counts$e[,c("N1","N2")]),attr=m_a$attr),
-                   feature.descr=sprintf("Abundance-based diversity indices (Hill numbers) %s",rar.descr.short),
-                   value.name="index"),
-              plot.profiles.task
-            )
-    )
-  }
-  
-  
-  divrich.counts = res$div.counts$e
-  if(is.raw.count.data) {
-    divrich.counts = cbind(divrich.counts,res$rich.counts$e)
-  }
-  
-  m_a.dr=list(count=as.matrix(divrich.counts),attr=m_a$attr)
-  
-  write.table.file.report.m_a(m_a=m_a.dr,
-                              name.base="divrich.counts",
-                              descr="Abundance based richness and diversity")
-  
-  if(!is.null(counts.glm.task)) {
     
-    res$glm.res = do.call(mgsat.divrich.counts.glm.test,
-                          c(list(m_a.dr),
-                            counts.glm.task
-                          )
-    )
     
-  }
-  
-  if(!is.null(counts.genesel.task)) {
+    divrich.counts = res$div.counts$e
+    if(is.raw.count.data) {
+      divrich.counts = cbind(divrich.counts,res$rich.counts$e)
+    }
     
-    ## note that while group.attr above may have any number of
-    ## levels, the counts.genesel.task$group.attr must be two-level
-    tryCatchAndWarn({ 
-      res$genesel.res = do.call(genesel.stability.report,
-                                c(list(m_a.dr),
-                                  counts.genesel.task))
-    })
+    m_a.dr=list(count=as.matrix(divrich.counts),attr=m_a$attr)
     
-  }
+    write.table.file.report.m_a(m_a=m_a.dr,
+                                name.base="divrich.counts",
+                                descr="Abundance based richness and diversity")
+    
+    if(!is.null(counts.glm.task)) {
+      
+      res$glm.res = do.call(mgsat.divrich.counts.glm.test,
+                            c(list(m_a.dr),
+                              counts.glm.task
+                            )
+      )
+      
+    }
+    
+    if(!is.null(counts.genesel.task)) {
+      
+      ## note that while group.attr above may have any number of
+      ## levels, the counts.genesel.task$group.attr must be two-level
+      tryCatchAndWarn({ 
+        res$genesel.res = do.call(genesel.stability.report,
+                                  c(list(m_a.dr),
+                                    counts.genesel.task))
+      })
+      
+    }
   }
   
   if(do.accum) {
-  report$push.section(report.section)
-  mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data,do.rarefy=do.rarefy)
-  report$pop.section()
+    report$push.section(report.section)
+    mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data,do.rarefy=do.rarefy)
+    report$pop.section()
   }
   
   if(!is.null(beta.task)) {
@@ -2352,65 +2519,65 @@ plot.profiles <- function(m_a,
               ## parameters, skip otherwise
               if(!(geom == "bar_stacked" && (other.params$flip.coords || !is.null(id.var.dodge$dodge)))) {
                 
-              tryCatchAndWarn({
-                id.vars.key = paste(id.vars,collapse="#")
-                if(!id.vars.key %in% dat.summary.done) {
-                  make.summary.table = T
-                  dat.summary.done[[length(dat.summary.done)+1]] = id.vars.key
-                }
-                else {
-                  make.summary.table = F
-                }
-                
-                pl.abu = plot.abund.meta(m_a=m_a,
-                                         id.vars=id.vars,
-                                         features.order=pl.par$ord,
-                                         geom=geom,
-                                         file_name=NULL,
-                                         id.var.dodge=id.var.dodge$dodge,
-                                         flip.coords=other.params$flip.coords,
-                                         sqrt.scale=other.params$sqrt.scale,
-                                         value.name=value.name,
-                                         stat_summary.fun.y=show.profile.task$stat_summary.fun.y,
-                                         make.summary.table = make.summary.table
-                )
-                
-                pl.hist = pl.abu$plot
-                #env=as.environment(as.list(environment(), all.names=TRUE))
-                #print(names(as.list(env)))
-                #print(evals("pl.hist",env=env))
-                if(length(id.vars)>0) {
-                  gr.by.msg = sprintf("Data grouped by %s.", paste(id.vars,collapse=","))
-                }
-                else {
-                  gr.by.msg = "Data for all pooled samples."
-                }
-                geom.descr = geom
-                if(geom == "bar") {
-                  geom.descr = sprintf("%s (sample %s)",
-                                       geom.descr,
-                                       show.profile.task$stat_summary.fun.y
+                tryCatchAndWarn({
+                  id.vars.key = paste(id.vars,collapse="#")
+                  if(!id.vars.key %in% dat.summary.done) {
+                    make.summary.table = T
+                    dat.summary.done[[length(dat.summary.done)+1]] = id.vars.key
+                  }
+                  else {
+                    make.summary.table = F
+                  }
+                  
+                  pl.abu = plot.abund.meta(m_a=m_a,
+                                           id.vars=id.vars,
+                                           features.order=pl.par$ord,
+                                           geom=geom,
+                                           file_name=NULL,
+                                           id.var.dodge=id.var.dodge$dodge,
+                                           flip.coords=other.params$flip.coords,
+                                           sqrt.scale=other.params$sqrt.scale,
+                                           value.name=value.name,
+                                           stat_summary.fun.y=show.profile.task$stat_summary.fun.y,
+                                           make.summary.table = make.summary.table
                   )
-                }
-                
-                dat.melt = pl.abu$dat.melt
-                if(!is.null(dat.melt)) {
-                  report$add.table(dat.melt,caption=paste("Data table used for plots.",gr.by.msg))
-                }
-                
-                dat.summary = pl.abu$dat.summary
-                if(!is.null(dat.summary)) {
-                  report$add.table(dat.summary,caption=paste("Summary table.",gr.by.msg))
-                }
-                
-                report$add(pl.hist,
-                           caption=paste(sprintf("%s %s",feature.descr,gr.by.msg),
-                                         if(!is.null(pl.par$ord)) 
-                                         {sprintf("Sorting order of features is %s.",pl.par$ord_descr)} 
-                                         else {""},
-                                         geom.descr,"plot.")
-                )
-              })
+                  
+                  pl.hist = pl.abu$plot
+                  #env=as.environment(as.list(environment(), all.names=TRUE))
+                  #print(names(as.list(env)))
+                  #print(evals("pl.hist",env=env))
+                  if(length(id.vars)>0) {
+                    gr.by.msg = sprintf("Data grouped by %s.", paste(id.vars,collapse=","))
+                  }
+                  else {
+                    gr.by.msg = "Data for all pooled samples."
+                  }
+                  geom.descr = geom
+                  if(geom == "bar") {
+                    geom.descr = sprintf("%s (sample %s)",
+                                         geom.descr,
+                                         show.profile.task$stat_summary.fun.y
+                    )
+                  }
+                  
+                  dat.melt = pl.abu$dat.melt
+                  if(!is.null(dat.melt)) {
+                    report$add.table(dat.melt,caption=paste("Data table used for plots.",gr.by.msg))
+                  }
+                  
+                  dat.summary = pl.abu$dat.summary
+                  if(!is.null(dat.summary)) {
+                    report$add.table(dat.summary,caption=paste("Summary table.",gr.by.msg))
+                  }
+                  
+                  report$add(pl.hist,
+                             caption=paste(sprintf("%s %s",feature.descr,gr.by.msg),
+                                           if(!is.null(pl.par$ord)) 
+                                           {sprintf("Sorting order of features is %s.",pl.par$ord_descr)} 
+                                           else {""},
+                                           geom.descr,"plot.")
+                  )
+                })
               }              
             }
             report$pop.section()
@@ -2526,8 +2693,6 @@ read.choc <- function(taxa.level=3) {
   return (merge.counts.with.meta(taxa.lev,meta))
 }
 
-
-
 ## Default method for loading metadata file
 ## This will work OK if your file follows certain conventions:
 ## 1. Tab delimited with a header row
@@ -2557,27 +2722,34 @@ read.data.project.yap <- function(taxa.summary.file,
                                   load.meta.method,
                                   load.meta.options=list(),
                                   count.filter.options=NULL,
-                                  count.basis="seq",
+                                  count.basis=c("seq","otu"),
                                   sanitize=T,
+                                  taxa.count.source=c("shared","summary"),
+                                  otu.count.filter.options=NULL,
                                   taxa.level=3) {
-  if (taxa.level == "otu") {
+  taxa.count.source = taxa.count.source[[1]]
+  count.basis = count.basis[[1]]
+  count.basis.descr = sprintf(" with count basis %s",count.basis)
+  if (taxa.count.source == "shared" || taxa.level == "otu") {
     taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,
                                                  cons.taxonomy.file=cons.taxonomy.file,
-                                                 sanitize=sanitize)
+                                                 sanitize=sanitize,
+                                                 taxa.level=taxa.level,
+                                                 count.basis=count.basis,
+                                                 otu.count.filter.options=otu.count.filter.options)
     report$add.p(sprintf("Loaded OTU taxonomy file %s.",
                          pandoc.link.verbatim.return(cons.taxonomy.file)
     ))
     count.file = otu.shared.file
-    count.basis.descr = ""
   }
   else {
     count.file = switch(count.basis,
-           seq=taxa.summary.file,
-           otu=taxa.summary.file.otu
+                        seq=taxa.summary.file,
+                        otu=taxa.summary.file.otu
     )
     moth.taxa <- read.mothur.taxa.summary(count.file,sanitize=sanitize)
     taxa.lev.all = multi.mothur.to.abund.m_a(moth.taxa,taxa.level)
-    count.basis.descr = sprintf(" with count basis %s",count.basis)
+    
   }  
   report$add.p(sprintf("Loaded %i records for %i features from count file %s for taxonomic level %s 
                        with taxa name sanitize setting %s%s",
@@ -2586,18 +2758,7 @@ read.data.project.yap <- function(taxa.summary.file,
                        taxa.level,
                        sanitize,
                        count.basis.descr))
-  if(!is.null(count.filter.options)) {
-    report$add.p(paste("Filtering initial records with arguments",arg.list.as.str(count.filter.options)))
-    report$add.p("Note that many community richness estimators will not work correctly 
-                 if provided with abundance-filtered counts")
-    taxa.lev = do.call(count.filter.m_a,c(list(taxa.lev.all),count.filter.options))
-    report$add.p(sprintf("After filtering, left %i records for %i taxa for taxonomic level %s",
-                         nrow(taxa.lev$count),ncol(taxa.lev$count),taxa.level))
-  }
-  else {
-    ##this should only order features by mean abundance but not drop anything
-    taxa.lev = count.filter.m_a(taxa.lev.all)
-  }
+  taxa.lev = report.count.filter.m_a(taxa.lev.all,count.filter.options=count.filter.options)
   meta = do.call(load.meta.method,c(file.name=meta.file,load.meta.options))  
   m_a = merge.counts.with.meta(taxa.lev$count,meta)
   report$add.p(sprintf("After merging with metadata, %i records left",
@@ -2631,6 +2792,9 @@ mgsat.16s.task.template = within(list(), {
     cons.taxonomy.file=NULL,
     count.basis="seq",
     sanitize=T,
+    count.filter.options=list(),
+    taxa.count.source=c("shared"),
+    otu.count.filter.options=list(),
     meta.file=NULL,
     load.meta.method=load.meta.default,
     load.meta.options=list()
@@ -2879,21 +3043,22 @@ get.feature.ranking.mgsatres <- function(x.f,method="stabsel") {
   return (res)
 }
 
-count.filter.report <- function(m_a,count.filter.options,descr) {
-  m_a = do.call(count.filter.m_a,
-                c(list(m_a),
-                  count.filter.options)
-  )
-  
-  report$add.p(paste("After",descr,"count filtering with arguments",
-                     arg.list.as.str(count.filter.options),
-                     ",",
-                     ncol(m_a$count),
-                     "features and",
-                     nrow(m_a$count),
-                     "samples left."))
-  return(m_a)
+
+report.count.filter.m_a <- function(m_a,count.filter.options=NULL,descr="") {
+  if(is.null(count.filter.options)) {
+    count.filter.options = list()
+  }
+  report$add.p(sprintf("Filtering abundance matrix with arguments %s. %s",
+                       arg.list.as.str(count.filter.options),
+                       descr))
+  report$add.p("Note that some community richness estimators will not work correctly 
+               if provided with abundance-filtered counts")
+  m_a = do.call(count.filter.m_a,c(list(m_a),count.filter.options))
+  report$add.p(sprintf("After filtering, left %i records for %i features",
+                       nrow(m_a$count),ncol(m_a$count)))
+  return (m_a)
 }
+
 
 proc.project <- function(
   task.generator.method
@@ -2956,9 +3121,9 @@ proc.project <- function(
         
         report$add.p(paste("After aggregating/subsetting, sample count is:",nrow(m_a$count)))
         
-        m_a = count.filter.report(m_a,
-                                  count.filter.options=count.filter.sample.options,
-                                  "sample")
+        m_a = report.count.filter.m_a(m_a,
+                                      count.filter.options=count.filter.sample.options,
+                                      "sample")
         
         if(do.summary.meta) {
           summary.meta.method(m_a)
@@ -3106,23 +3271,23 @@ show.sample.summaries.meta <- function(m_a,
     summ.names = names(m_a$count)
   }
   show.feature.meta(m_a=m_a,
-                  feature.names=summ.names,
-                  x.var=x.var,
-                  group.var=group.var,
-                  value.name=value.name,
-                  trans=trans,
-                  vars.descr=vars.descr) 
+                    feature.names=summ.names,
+                    x.var=x.var,
+                    group.var=group.var,
+                    value.name=value.name,
+                    trans=trans,
+                    vars.descr=vars.descr) 
   
 }
 
 
 show.feature.meta <- function(m_a,
-                            feature.names,
-                            x.var,
-                            group.var,
-                            value.name="abundance",
-                            trans="boxcox",
-                            vars.descr="Abundances") {
+                              feature.names,
+                              x.var,
+                              group.var,
+                              value.name="abundance",
+                              trans="boxcox",
+                              vars.descr="Abundances") {
   
   
   count = m_a$count[,feature.names,drop=F]
@@ -4067,9 +4232,9 @@ test.counts.project <- function(m_a,
   }
   
   if(!is.null(count.filter.feature.options)) {
-    m_a = count.filter.report(m_a,
-                              count.filter.options=count.filter.feature.options,
-                              "feature")
+    m_a = report.count.filter.m_a(m_a,
+                                  count.filter.options=count.filter.feature.options,
+                                  "feature")
   }
   
   make.global(m_a)
@@ -4878,11 +5043,6 @@ test.counts.glmer.col <- function(taxa.count,
     
     #cat(xtabs(~(response[,"taxa.count"]>0)+attr$Batch+attr$T1D))
     
-    #make.global(dat.glmer)
-    make.global(attr)
-    make.global(response)
-    make.global(formula_rhs)
-    
     p_val = NA
     
   }
@@ -5636,7 +5796,7 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
   report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=sub.report)
   
   m_a.summ=make.sample.summaries(m_a)
-
+  
   if(show.sample.totals) {
     report$add.table(m_a.summ$count[,"count.sum",drop=F],
                      caption="Summary of total counts per sample",
@@ -5696,10 +5856,9 @@ read.t1d.mg <-function(annot.type,level) {
     counts = count.filter(counts,col_ignore=c(),min_max_frac=0,min_max=0,min_row_sum=0,other_cnt="other")      
   }
   else if (annot.type %in% c("cog","kegg","subsys")) {
-    make.global(level)
+    
     counts = read.mgrast.summary(paste(mgrast.dir,paste(annot.type,"tsv",sep="."),sep="/"),
                                  file_name.id.map=paste(mgrast.dir,"mgrast_to_samp_id.tsv",sep="/"))
-    make.global(counts)
     print(level)
     counts = mgrast.to.abund.df(counts,level)
     counts = count.filter(counts,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=0,other_cnt="other")
@@ -5734,7 +5893,6 @@ proc.t1d.mg <- function() {
       count.meta = read.t1d.mg(annot.type,level)
       count.meta.data = count.meta$data
       count.meta.attr.names = count.meta$attr.names
-      make.global(count.meta.data)
       
       if (do.tests) {
         
@@ -5968,7 +6126,7 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     #report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
     #           caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
     pwr.res = show.partial.auc.roc(g,x,predictor.descr=feat.name)
-    make.global(pwr.res)
+    
     report$add.table(as.data.frame(pwr.res$power),
                      caption=sprintf("Power analysis for %s",feat.name)
     )
@@ -6020,7 +6178,7 @@ power.pieper.t1d <- function(
                                        aggr_var,
                                        taxa.meta$attr.names)
     
-    make.global(taxa.meta)
+    
   }
   taxa.meta.attr.names = taxa.meta$attr.names    
   dim.data.orig = dim(count_matr_from_df(taxa.meta$data,taxa.meta.attr.names))
@@ -6029,7 +6187,7 @@ power.pieper.t1d <- function(
   print(dim(taxa.meta.data.raw))
   
   taxa.meta.data = norm.meta.data(taxa.meta.data.raw,col_ignore=taxa.meta.attr.names,norm.func=ihs)
-  make.global(taxa.meta.data)
+  
   
   #feature.names = get.feature.names(taxa.meta.data,taxa.meta.attr.names)
   #print(feature.names)
@@ -6056,8 +6214,6 @@ power.pieper.t1d <- function(
   #mtp.res = MTP(X=t(m),Y=taxa.meta.data$group,get.adjp=F)
   
   group = taxa.meta.data$group
-  make.global(m)
-  make.global(group)
   m.raw = count_matr_from_df(taxa.meta.data.raw,taxa.meta.attr.names)
   eff.raw = group.mean.ratio(m.raw,group)
   
@@ -6094,17 +6250,17 @@ power.pieper.t1d <- function(
                     test.method=wilcox.test.multi.fast)$t
   ## some numerical instability creates pvals that are slightly larger than 1
   pvals.boot[pvals.boot>1] = 1  
-  make.global(pvals.boot)
+  
   if(mult.adj=="fdrtool") {
     pvals.boot.adj = aaply(pvals.boot,1,function(x) fdrtool(x,statistic="pvalue",plot=F,verbose=F)$qval)
   }
   else {
     pvals.boot.adj = aaply(pvals.boot,1,p.adjust,method=mult.adj)
   }
-  make.global(pvals.boot.adj)
+  
   power.sig = colMeans(pvals.boot.adj[,ind.sig] <= alpha.sim)
   names(power.sig) = names(pvals.adj[ind.sig])
-  make.global(power.sig)
+  
   #print(power.sig)
   #print(mean(power.sig))
   return(list(cohens.d=cohens.d,
@@ -6193,7 +6349,7 @@ power.madupu.kidney_diabetes<-function() {
     )
   )
   names(prot.ids) = c("name","uniref100")
-  make.global(prot.ids)
+  
   power.res = power.pieper.t1d(
     n = 300,
     ## this is under the proposal directory
