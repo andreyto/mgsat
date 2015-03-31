@@ -357,6 +357,34 @@ so this dataset can be used in diversity and abundance estimates together with a
   return (res)
 }
 
+
+plot.dissim.to.gt <- function(dist.m,caption) {
+  pl.data = dist.m[-1,1,drop=F]
+  pl.data = data.frame(SampleID=factor(rownames(pl.data)),Dissimilarity=pl.data[,1])
+  min.x = min(pl.data$Dissimilarity)
+  pl.data$min.x = min.x
+  max.x = max(pl.data$Dissimilarity)
+  pl.data$max.x = max.x
+  pl = ggplot(pl.data, aes(x = Dissimilarity, y = SampleID)) +  
+    geom_point(size=rel(4)) +
+    geom_segment(aes(xend = Dissimilarity,yend=SampleID,y=SampleID,
+                     x=min.x-(max.x-min.x)*0.1)) +
+    #geom_bar(stat="identity",width=0.8) +
+    scale_x_continuous(limits=c(
+                           min.x-(max.x-min.x)*0.1,
+                           max.x)
+                       ) +
+    #coord_flip() +
+    theme(axis.title=element_blank(),
+          axis.text.y=element_text(color=c("black","black")),
+          plot.title = element_text(size = rel(2)),
+          axis.text.x = element_text(size = rel(2)), #,angle=90
+          axis.text.y = element_text(size = rel(1)))
+  
+  report$add(pl,caption=paste(caption,"relative to ground truth"))      
+  return(pl)
+}
+
 benchmark.abund <- function(m_a.abs,
                             aggr.type,
                             aggr.descr,
@@ -463,14 +491,20 @@ benchmark.abund <- function(m_a.abs,
   if(are.props) {
     ## This adds a small offset to the matrix for zero elements, so that
     ## the distance with self is defined (it has to compute x*log(x+y)).
-    report$add.table(as.matrix(dist.js(m_a.norm$count)),show.row.names=T,
-                     caption="Jensen-Shannon distance")
+    dist.m = as.matrix(dist.js(m_a.norm$count))
+    caption="Jensen-Shannon dissimilarity"
+    report$add.table(dist.m,show.row.names=T,
+                     caption=caption)
+    plot.dissim.to.gt(dist.m=dist.m,caption=caption)
     ## This dissimilarity is easier to understand in the continuous case,
     ## where it is 1 minus an integral of a product of densities of two variables.
     ## In the discreet case, the rational is that sqrt(p) is a unit vector in L2 norm,
     ## and the distance is defined as Euclidian distance between sqrt(p).
-    report$add.table(as.matrix(vegdist(sqrt(m_a.norm$count),method = "euclidian")/sqrt(2)),show.row.names=T,
-                     caption="Hellinger distance")
+    dist.m = as.matrix(vegdist(sqrt(m_a.norm$count),method = "euclidian")/sqrt(2))
+    caption="Hellinger dissimilarity"
+    report$add.table(dist.m,show.row.names=T,
+                     caption=caption)
+    plot.dissim.to.gt(dist.m=dist.m,caption=caption)
     res.mult = test.multinom.counts(m_a.abs,gt.rowid)
   }
   
@@ -508,9 +542,11 @@ benchmark.abund <- function(m_a.abs,
           )
   )
   
-  report$add.table(as.matrix(vegdist(m_a.norm$count,
-                                     method=vegdist.method)),show.row.names=T,
-                   caption=sprintf("%s distance. %s.",vegdist.method,decostand.descr))
+  dist.m = as.matrix(vegdist(m_a.norm$count,method=vegdist.method))
+  caption=sprintf("%s distance. %s.",vegdist.method,decostand.descr)
+  report$add.table(dist.m,show.row.names=T,
+                   caption=caption)
+  plot.dissim.to.gt(dist.m=dist.m,caption=caption)
   report$pop.section()
 }
 
@@ -537,13 +573,13 @@ benchmark.project <- function() {
     method.args = list(offset=1,tol=0.0000001)
     drop.features=list("other")
   })
-
+  
   norm.count.task.prop = within(mgsat.16s.task.template$test.counts.task$norm.count.task, {
     method = "norm.prop"
     method.args = list()
     drop.features=list("other")
   })  
-
+  
   norm.count.task.ident = within(mgsat.16s.task.template$test.counts.task$norm.count.task, {
     method = "ident"
     method.args = list()
@@ -553,24 +589,25 @@ benchmark.project <- function() {
   report.section = report$get.section()
   
   for(task.aggr in list(
-#     list(aggr.type="genus.abund",
-#          aggr.descr="Genus relative abundance",
-#          norm.count.task=norm.count.task.prop)
-#     ,
-#     list(aggr.type="genus.abund",
-#          aggr.descr="Genus relative abundance, Centered Log Ratio transform",
-#          norm.count.task=norm.count.task.comp)    
-#         ,
-         list(aggr.type="genus.otus",
-              aggr.descr="OTU counts per genus",
-              norm.count.task=norm.count.task.ident)
-        ,
-         list(aggr.type="genus.otus",
-              aggr.descr="OTU relative counts per genus",
-              norm.count.task=norm.count.task.prop)
-    #     list(aggr.type="otu",
-    #          aggr.descr="OTU abundance",
-    #          norm.method.basic = norm.method.basic.default)
+    list(aggr.type="genus.abund",
+         aggr.descr="Genus relative abundance",
+         norm.count.task=norm.count.task.prop)
+    ,
+    list(aggr.type="genus.abund",
+         aggr.descr="Genus relative abundance, Centered Log Ratio transform",
+         norm.count.task=norm.count.task.comp)    
+    ,
+    list(aggr.type="genus.otus",
+         aggr.descr="OTU counts per genus",
+         norm.count.task=norm.count.task.ident)
+    ,
+    list(aggr.type="genus.otus",
+         aggr.descr="OTU relative counts per genus",
+         norm.count.task=norm.count.task.prop)
+    ,
+    list(aggr.type="otu",
+         aggr.descr="OTU abundance",
+         norm.method.basic=norm.count.task.prop)
   )) {
     
     
@@ -711,15 +748,15 @@ benchmark.project <- function() {
         }
         if(do.contrasts) {
           for(contrasts.method in contrasts.methods) {
-          abund.subtask = list(m_a.abs=m_a.abs,
-                               prof.descr=paste("Difference between community profiles.",
-                                                switch(contrasts.method,
-                                                       diff="Values are subtracted.",
-                                                       lfc="Log-fold-change of values."),
-                                                "Even community is used as base."),
-                               do.contrasts=T,
-                               contrasts.method=contrasts.method)
-          abund.subtasks = c(abund.subtasks,list(abund.subtask))
+            abund.subtask = list(m_a.abs=m_a.abs,
+                                 prof.descr=paste("Difference between community profiles.",
+                                                  switch(contrasts.method,
+                                                         diff="Values are subtracted.",
+                                                         lfc="Log-fold-change of values."),
+                                                  "Even community is used as base."),
+                                 do.contrasts=T,
+                                 contrasts.method=contrasts.method)
+            abund.subtasks = c(abund.subtasks,list(abund.subtask))
           }
         }
         
@@ -728,17 +765,17 @@ benchmark.project <- function() {
                             section.action="push",
                             report.section=report.section,sub=T)
           benchmark.abund(m_a.abs=abund.subtask$m_a.abs,
-                            aggr.type=aggr.type,
-                            aggr.descr=aggr.descr,
-                            drop.taxa=drop.taxa,
-                            true.taxa.only=true.taxa.only,
-                            other_cnt=other_cnt,
-                            norm.count.task=norm.count.task,
-                            constrasts.stage.min.feature.prop=constrasts.stage.min.feature.prop,
-                            ground.truth.run.id=ground.truth.run.id,
-                            do.contrasts=abund.subtask$do.contrasts,
-                            contrasts.method=abund.subtask$contrasts.method,
-                            plot.profiles.task=test.counts.task$plot.profiles.task)      
+                          aggr.type=aggr.type,
+                          aggr.descr=aggr.descr,
+                          drop.taxa=drop.taxa,
+                          true.taxa.only=true.taxa.only,
+                          other_cnt=other_cnt,
+                          norm.count.task=norm.count.task,
+                          constrasts.stage.min.feature.prop=constrasts.stage.min.feature.prop,
+                          ground.truth.run.id=ground.truth.run.id,
+                          do.contrasts=abund.subtask$do.contrasts,
+                          contrasts.method=abund.subtask$contrasts.method,
+                          plot.profiles.task=test.counts.task$plot.profiles.task)      
           report$pop.section()
         }
       }
