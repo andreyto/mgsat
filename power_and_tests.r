@@ -1586,6 +1586,7 @@ require(scales) # trans_new() is in the scales library
 signed_sqrt_trans = function() trans_new("signed_sqrt", function(x) sign(x)*sqrt(abs(x)), function(x) sign(x)*sqrt(abs(x)))
 
 plot.abund.meta <- function(m_a,
+                            ci=NULL,
                             id.vars=c(),
                             value.name="abundance",
                             file_name=NULL,
@@ -1616,6 +1617,13 @@ plot.abund.meta <- function(m_a,
   attr.names = names(m_a$attr)
   
   dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
+  if(!is.null(ci)) {
+    ci.m = dcast(melt(ci,varnames=c(".record.id","feature","var")),.record.id+feature~var)
+    n.rec.dat = nrow(dat)
+    dat = join(dat,ci.m,by=c(".record.id","feature"),type="left",match="first")
+    stopifnot(nrow(dat)==n.rec.dat)
+  }
+  
   if (is.null(features.order)) {
     dat$feature = sort.factor.by.total(dat$feature,dat[[value.name]])
   }
@@ -1635,7 +1643,7 @@ plot.abund.meta <- function(m_a,
         mean = mean(%s),
         sd = sd(%s),
         median = median(%s),
-        positive.ratio = mean(%s>0)
+        incidence = mean(%s>0)
         )',value.name,value.name,value.name,value.name)
     ))
     dat.melt = dat
@@ -1708,10 +1716,16 @@ plot.abund.meta <- function(m_a,
     gp = ggplot(dat, aes_s)
     
     if(geom == "bar") {
+      pos_dod = position_dodge(width=0.7) #0.9
       gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
-                             position=position_dodge(width=0.7)) #0.9
+                             position=pos_dod)
       #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
       #geom_obj = geom_bar(stat=stat_summary(fun.y="mean"),width=0.4)
+      if(!is.null(ci) && stat_summary.fun.y=="identity") {
+        gp = gp + geom_errorbar(position = pos_dod,
+                                aes(ymin=lwr.ci, ymax=upr.ci,width=0.5),
+                                color="black")
+      }
     }
     else if(geom == "violin") {
       gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
@@ -1772,8 +1786,15 @@ plot.abund.meta <- function(m_a,
     facet.cnt$.n = paste("n =", facet.cnt$.n)
     #facet.cnt$y = facet.cnt$V2
     
-    gp = gp +
-      geom_text(aes(x=.x, y=.y, label=.n), data=facet.cnt, size=rel(4), colour="black", inherit.aes=F, parse=FALSE)
+    if(stat_summary.fun.y!="identity") {
+      gp = gp +
+        geom_text(aes(x=.x, y=.y, label=.n), 
+                  data=facet.cnt, 
+                  size=rel(4), 
+                  colour="black", 
+                  inherit.aes=F, 
+                  parse=FALSE)
+    }
   }
   else {
     if(geom=="bar_stacked") {
@@ -2390,6 +2411,7 @@ mgsat.divrich.report <- function(m_a,
 
 
 plot.profiles <- function(m_a,
+                          ci=NULL,
                           feature.order=NULL,
                           id.vars.list=list(c()),
                           feature.meta.x.vars=c(),
@@ -2406,7 +2428,10 @@ plot.profiles <- function(m_a,
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
   
-  report.section = report$add.header(sprintf("Plots of %s in multiple representations",feature.descr),
+  if(!grepl("\\.$",feature.descr)) {
+    feature.descr = paste(feature.descr,".",sep="")
+  }
+  report.section = report$add.header(sprintf("Plots of %s",feature.descr),
                                      section.action="push", sub=T)
   report$add.descr("Plots are shown with relation to various combinations of meta 
                    data variables and in different graphical representations. Lots of plots here.")
@@ -2530,6 +2555,7 @@ plot.profiles <- function(m_a,
                   }
                   
                   pl.abu = plot.abund.meta(m_a=m_a,
+                                           ci=ci,
                                            id.vars=id.vars,
                                            features.order=pl.par$ord,
                                            geom=geom,
@@ -5423,15 +5449,11 @@ genesel.stability <- function(m_a,
     rnk.vals = cbind(rnk.vals,group.mean)
     if(type.orig=="paired") {
       m_a.g = s.c$m_a.groups
-      log.fold.change.paired = log(m_a.g$count[m_a.g$attr$.contrast==1,]+.Machine$double.eps*100,base=2) - 
-        log(m_a.g$count[m_a.g$attr$.contrast==-1,]+.Machine$double.eps*100,base=2)
-      m_a.lfc.paired = list(count=log.fold.change.paired,
-                            attr=m_a.g$attr[m_a.g$attr$.contrast==1,])
-      with(m_a.lfc.paired, stopifnot(all(rownames(count)==rownames(attr))))
+      m_a.lfc.paired = contrasts.groups.log.fold.change(m_a.g)
       
       rnk.vals = cbind(rnk.vals,
                        l2fc.paired.median = aaply(
-                         log.fold.change.paired,
+                         m_a.lfc.paired$count,
                          2,
                          median
                        )
@@ -5788,6 +5810,18 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
     m_a.groups = NULL
   }
   return (list(m_a.contr=m_a.contr,m_a.groups=m_a.groups,contrasts=contrasts.ret))
+}
+
+contrasts.groups.log.fold.change <- function(m_a.g,base=2,
+                                             contrasts=c(1,-1),
+                                             offset=.Machine$double.eps*100) {
+  lfc = log(m_a.g$count[m_a.g$attr$.contrast==contrasts[1],]+offset,base=base) - 
+    log(m_a.g$count[m_a.g$attr$.contrast==contrasts[2],]+offset,base=base)
+  m_a.lfc = list(count=lfc,
+                        attr=m_a.g$attr[m_a.g$attr$.contrast==contrasts[1],])
+  with(m_a.lfc, stopifnot(all(rownames(count)==rownames(attr))))
+  
+  return (m_a.lfc)
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,

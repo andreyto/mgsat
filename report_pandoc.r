@@ -299,6 +299,7 @@ PandocAT$methods(initialize = function(
   dir.create(graph.dir, showWarnings = FALSE, recursive = TRUE)
   
   callSuper(author=author,title=title,...)
+
 })
 
 ## private service method - should be called whenever an element is
@@ -408,6 +409,14 @@ PandocAT$methods(add = function(x,new.paragraph=T,
 
 PandocAT$methods(add.list = function(x,...) {
   return(.self$add(as.list(x),...))
+})
+
+PandocAT$methods(reset.section = function(...) {
+  return(NULL)
+})
+
+PandocAT$methods(default.section = function(...) {
+  return(get.default.section(...))
 })
 
 PandocAT$methods(get.section = function(...) {
