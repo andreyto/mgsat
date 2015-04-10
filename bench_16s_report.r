@@ -206,17 +206,18 @@ benchmark.load.data <- function(otu.count.filter.options,
   res = with(mgsat.16s.task.template,{
     
     runs.files = list(
-      list(
-        RunID="YAP.comm",
-        run.descr="YAP currently deployed in common area",
-        read.data.task=within(read.data.task, {
-          taxa.summary.file = "yap/bei/v13/common/7913675baaa4dd38c5ad2c19b10bdda5.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-          otu.shared.file="yap/bei/v13/common/5f44040ee0ae9f533d83e48deded4bac.files_x1.sorted.0.03.shared"
-          cons.taxonomy.file="yap/bei/v13/common/dce008a0990dc67e8148b3a31fb0bb02.files_x1.sorted.0.03.cons.taxonomy"
-          taxa.summary.file.otu = "yap/bei/v13/common/0211bc387719c7e0a4dc9d4ea0eccee9.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
-          meta.file=meta.file.samples
-        })
-      ),  
+#       list(
+#         RunID="YAP.comm",
+#         run.descr="YAP currently deployed in common area",
+#         read.data.task=within(read.data.task, {
+#           taxa.summary.file = "yap/bei/v13/common/7913675baaa4dd38c5ad2c19b10bdda5.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+#           otu.shared.file="yap/bei/v13/common/5f44040ee0ae9f533d83e48deded4bac.files_x1.sorted.0.03.shared"
+#           cons.taxonomy.file="yap/bei/v13/common/dce008a0990dc67e8148b3a31fb0bb02.files_x1.sorted.0.03.cons.taxonomy"
+#           taxa.summary.file.otu = "yap/bei/v13/common/0211bc387719c7e0a4dc9d4ea0eccee9.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
+#           meta.file=meta.file.samples
+#         })
+#       )
+#       ,  
       #   list(
       #     RunID="YAP.base",
       #     read.data.task=within(read.data.task, {
@@ -260,16 +261,41 @@ benchmark.load.data <- function(otu.count.filter.options,
         })
       ),    
       list(
-        RunID="Mothur.01",
-        run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Andrey (reference-based chimera removal)",
+        RunID="YAP.upd.split",
+        run.descr="YAP updated to use Mothur make.contigs, Mothur reference DB v.10, three-stage split pre-clustering step and drop singletons after pre-clustering step",    
         read.data.task=within(read.data.task, {
-          taxa.summary.file = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
-          otu.shared.file="bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
-          cons.taxonomy.file="bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
-          taxa.summary.file.otu = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
+          taxa.summary.file = "yap/bei/v13/min_precluster_size_split/9b08b971d51b7ed71c3dc1e968778957.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+          otu.shared.file="yap/bei/v13/min_precluster_size_split/51fc031dfaeff9acc580d26676cd2ce4.files_x1.sorted.0.03.shared"
+          cons.taxonomy.file="yap/bei/v13/min_precluster_size_split/9b08b971d51b7ed71c3dc1e968778957.files_x1.sorted.0.03.cons.taxonomy.seq.taxonomy"
+          taxa.summary.file.otu = "yap/bei/v13/min_precluster_size_split/1ba957695051f8733a71572a5cadc143.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
           meta.file=meta.file.samples
         })
       )
+      ,          
+      list(
+        RunID="YAP.rc.2015-04-09",
+        run.descr="YAP RC 2015-04-09",    
+        read.data.task=within(read.data.task, {
+          taxa.summary.file = "yap/bei/v13/rc.2015-04-09/d95c583431096967cf6279fdb7feb3cd.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+          otu.shared.file="yap/bei/v13/rc.2015-04-09/d41c472173ef00e1ce21205c22111779.files_x1.sorted.0.03.shared"
+          cons.taxonomy.file="yap/bei/v13/rc.2015-04-09/d95c583431096967cf6279fdb7feb3cd.files_x1.sorted.0.03.cons.taxonomy.seq.taxonomy"
+          taxa.summary.file.otu = "yap/bei/v13/rc.2015-04-09/a67ca553bd7a28470116ff39c303c03d.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
+          meta.file=meta.file.samples
+        })
+      )
+#      ,                
+#       list(
+#         RunID="Mothur.01",
+#         run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Andrey (reference-based chimera removal)",
+#         read.data.task=within(read.data.task, {
+#           taxa.summary.file = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
+#           otu.shared.file="bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
+#           cons.taxonomy.file="bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
+#           taxa.summary.file.otu = "bei/v13/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
+#           meta.file=meta.file.samples
+#         })
+#       )
+#       ,
       #   list(
       #   RunID="Mothur.Sarah.01",
       #   read.data.task=within(read.data.task, {
@@ -280,18 +306,18 @@ benchmark.load.data <- function(otu.count.filter.options,
       #     meta.file=meta.file.samples
       #   })
       #  )
-      ,
-      list(
-        RunID="Mothur.Sarah.02",
-        run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Sarah (dataset-based chimera removal)",
-        read.data.task=within(read.data.task, {
-          taxa.summary.file = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
-          otu.shared.file="sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
-          cons.taxonomy.file="sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
-          taxa.summary.file.otu = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
-          meta.file=meta.file.samples
-        })
-      )
+#       ,
+#       list(
+#         RunID="Mothur.Sarah.02",
+#         run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Sarah (dataset-based chimera removal)",
+#         read.data.task=within(read.data.task, {
+#           taxa.summary.file = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
+#           otu.shared.file="sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.shared"
+#           cons.taxonomy.file="sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.taxonomy"
+#           taxa.summary.file.otu = "sarah/mothur.2015-03-19/stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.an.unique_list.0.03.cons.tax.summary"
+#           meta.file=meta.file.samples
+#         })
+#       )
       
     )
     
@@ -307,6 +333,7 @@ so this dataset can be used in diversity and abundance estimates together with a
                          with(run.files,{
                            read.data.task$count.basis = count.basis
                            read.data.task$otu.count.filter.options = otu.count.filter.options
+                           report$add.header(paste("Loading inputs for run:",run.descr))
                            m_a = do.call(read.data.method,
                                          c(
                                            list(taxa.level=taxa.level),
@@ -484,7 +511,7 @@ benchmark.abund <- function(m_a.abs,
             plot.profiles.task
           )
   )
-  
+
   report$add.header("Distance measures between samples")
   report$push.section(report.section)
   
@@ -607,7 +634,7 @@ benchmark.project <- function() {
     ,
     list(aggr.type="otu",
          aggr.descr="OTU abundance",
-         norm.method.basic=norm.count.task.prop)
+         norm.count.task=norm.count.task.prop)
   )) {
     
     
