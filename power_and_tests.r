@@ -2754,6 +2754,7 @@ read.data.project.yap <- function(taxa.summary.file,
                                   otu.count.filter.options=NULL,
                                   taxa.level=3) {
   taxa.count.source = taxa.count.source[[1]]
+  count.count.source.descr = sprintf(" with taxa count source %s",taxa.count.source)
   count.basis = count.basis[[1]]
   count.basis.descr = sprintf(" with count basis %s",count.basis)
   if (taxa.count.source == "shared" || taxa.level == "otu") {
@@ -2778,12 +2779,13 @@ read.data.project.yap <- function(taxa.summary.file,
     
   }  
   report$add.p(sprintf("Loaded %i records for %i features from count file %s for taxonomic level %s 
-                       with taxa name sanitize setting %s%s",
+                       with taxa name sanitize setting %s%s%s",
                        nrow(taxa.lev.all$count),ncol(taxa.lev.all$count),
                        pandoc.link.verbatim.return(count.file),
                        taxa.level,
                        sanitize,
-                       count.basis.descr))
+                       count.basis.descr,
+                       count.count.source.descr))
   taxa.lev = report.count.filter.m_a(taxa.lev.all,count.filter.options=count.filter.options)
   meta = do.call(load.meta.method,c(file.name=meta.file,load.meta.options))  
   m_a = merge.counts.with.meta(taxa.lev$count,meta)
@@ -2820,7 +2822,8 @@ mgsat.16s.task.template = within(list(), {
     sanitize=T,
     count.filter.options=list(),
     taxa.count.source=c("shared"),
-    otu.count.filter.options=list(),
+    ##drop all low abundant OTUs before we aggregate them into taxonomic rank counts
+    otu.count.filter.options=list(), #list(min_max_frac = 0.0001)
     meta.file=NULL,
     load.meta.method=load.meta.default,
     load.meta.options=list()
@@ -2830,7 +2833,7 @@ mgsat.16s.task.template = within(list(), {
   
   get.taxa.meta.aggr<-function(m_a) { return (m_a) }
   
-  count.filter.sample.options=list(min_row_sum=1000,max_row_sum=400000)
+  count.filter.sample.options=list(min_row_sum=2000,max_row_sum=400000)
   
   summary.meta.method=summary.meta.method.default
   
