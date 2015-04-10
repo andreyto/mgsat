@@ -170,8 +170,8 @@ gen.tasks.choc <- function() {
   task0 = within( mgsat.16s.task.template, {
     
     #DEBUG:
-    taxa.levels = c(2,3,4,5,6,"otu")
-    #taxa.levels = c(2)
+    #taxa.levels = c(2,3,4,5,6,"otu")
+    taxa.levels = c(2)
     
     descr = "All samples, no aggregation"
     
