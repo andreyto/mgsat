@@ -19,6 +19,15 @@ evalsOptions("height",480)
 evalsOptions("res",75)
 evalsOptions("hi.res",T)
 evalsOptions("hi.res.width",800)
+evalsOptions("graph.env",F)
+evalsOptions("graph.recordplot",F)
+evalsOptions("graph.RDS",F)
+##using graph.name option causes seemingly unconnected
+##errors starting with warnings like:
+##`No pander method for "ggplot", reverting to default`
+##described in the URL but still not solved apparently
+#https://github.com/Rapporter/rapport/issues/98
+#evalsOptions("graph.name","plot-%d-%n")
 ## This is ggplot2 function that changes
 ## text base size within a current theme for entire session
 #theme_set(theme_gray(base_size = 20))
