@@ -176,9 +176,9 @@ gen.tasks.choc <- function() {
     descr = "All samples, no aggregation"
     
     read.data.task = within(read.data.task, {
-      taxa.summary.file = "2b256d57d3fd3114dc1c0391cc87c2f8.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-      otu.shared.file="b98469d29ce9694f9f0254f415aab6f6.files_x1.sorted.0.03.shared"
-      cons.taxonomy.file="71f294ce8d2a4b33bf6656ef72b0d5f6.files_x1.sorted.0.03.cons.taxonomy"
+      taxa.summary.file = NA
+      otu.shared.file="yap.2015-04-10/1b418b32c139b24f6945fe88f75bce9f.files_x1.sorted.0.03.shared"
+      cons.taxonomy.file="yap.2015-04-10/2d352a0510c12c320e45f8280c4230db.files_x1.sorted.0.03.cons.taxonomy.seq.taxonomy"
       meta.file="CHOC_ALL_Samples_Metadata_Nov-19-2014.txt"
       load.meta.method=load.meta.choc
       load.meta.options=list()    
