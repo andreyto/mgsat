@@ -2758,6 +2758,11 @@ read.data.project.yap <- function(taxa.summary.file,
   count.basis = count.basis[[1]]
   count.basis.descr = sprintf(" with count basis %s",count.basis)
   if (taxa.count.source == "shared" || taxa.level == "otu") {
+    ## glob() to make it easy just providing directory name with extension-based globs
+    otu.shared.file = Sys.glob(otu.shared.file)
+    stopifnot(length(otu.shared.file)==1)
+    cons.taxonomy.file = Sys.glob(cons.taxonomy.file)
+    stopifnot(length(cons.taxonomy.file)==1)
     taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,
                                                  cons.taxonomy.file=cons.taxonomy.file,
                                                  sanitize=sanitize,
@@ -2774,6 +2779,8 @@ read.data.project.yap <- function(taxa.summary.file,
                         seq=taxa.summary.file,
                         otu=taxa.summary.file.otu
     )
+    count.file = Sys.glob(count.file)
+    stopifnot(length(count.file)==1)
     moth.taxa <- read.mothur.taxa.summary(count.file,sanitize=sanitize)
     taxa.lev.all = multi.mothur.to.abund.m_a(moth.taxa,taxa.level)
     
