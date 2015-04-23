@@ -268,9 +268,9 @@ gen.tasks.choc <- function() {
         id.vars.list = list(c("Sample.type","visit"),
                             c("Sample.type.Antibio.Before","visit"),
                             c("Antibiotic.Before.Therapy","Sample.type.1"))
-        clade.meta.x.vars=c("visit")
+        feature.meta.x.vars=c("visit")
         do.profile=T
-        do.clade.meta=F
+        do.feature.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -401,7 +401,7 @@ gen.tasks.choc <- function() {
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var),c(main.meta.var,"age.quant"))
         do.profile=T
-        do.clade.meta=F
+        do.feature.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -567,7 +567,7 @@ gen.tasks.choc <- function() {
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var),c(main.meta.var,"Antibiotic.Before.Therapy"))
         do.profile=T
-        do.clade.meta=F
+        do.feature.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -690,7 +690,7 @@ gen.tasks.choc <- function() {
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var,"Antibiotic.Before.Therapy"))
         do.profile=T
-        do.clade.meta=T
+        do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{

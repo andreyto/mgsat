@@ -566,6 +566,16 @@ cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
   m_a
 }
 
+quant.mask <- function(x,prob,drop.zero=T) {
+  if(drop.zero) {
+    x.q = x[x>0]
+  }
+  else {
+    x.q = x
+  }
+  x.cut = quantile(x.q, probs=prob)
+  return (x>=x.cut)
+}
 
 ## If the other_cnt column is already present, it will be incremented with counts of features
 ## relegated to the "other" in this call; otherwise, the new column with this name will be
@@ -583,7 +593,9 @@ count.filter.m_a <- function(m_a,
                              min_max=0,
                              min_mean=0,
                              min_mean_frac=0.0,
+                             min_quant_mean_frac=0.0,
                              min_incidence_frac=0.0,
+                             min_quant_incidence_frac=0.0,
                              min_row_sum=0,
                              max_row_sum=.Machine$integer.max,
                              other_cnt="other",
@@ -645,12 +657,21 @@ count.filter.m_a <- function(m_a,
     mask_col_sel = mask_col_sel & (!apply(cnt==0,2,all))
     #cnt = cnt[,!apply(cnt==0,2,all),drop=F]
   }
+  if(min_quant_mean_frac > 0) {
+    frac.sums = colSums(cnt_norm)
+    mask_col_sel = mask_col_sel & quant.mask(frac.sums,min_quant_mean_frac,drop.zero=drop.zero)
+  }
   mask_col_sel = mask_col_sel & (apply(cnt,2,max) >= min_max)
   #cnt = cnt[,apply(cnt,2,max) >= min_max,drop=F]
   mask_col_sel = mask_col_sel & (apply(cnt,2,mean) >= min_mean)
   #cnt = cnt[,apply(cnt,2,mean) >= min_mean,drop=F]
   mask_col_sel = mask_col_sel & (apply(cnt>0,2,mean) >= min_incidence_frac)
-  #cnt = cnt[,apply(cnt>0,2,mean) >= min_incidence_frac,drop=F]
+  
+  if(min_quant_incidence_frac > 0) {
+    frac.inc = apply(cnt>0,2,mean)
+    mask_col_sel = mask_col_sel & quant.mask(frac.inc,min_quant_incidence_frac,drop.zero=drop.zero)
+  }
+  
   
   ## drop all columns accumulated so far; not updating cnt_norm because not needed anymore
   cnt = cnt[,mask_col_sel,drop=F]
@@ -1387,9 +1408,9 @@ read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu") {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   row.names(data) = data$OTU
   data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),
-                    function(x) {
-                      if(is.numeric(taxa.level)) {
-                        x = x[1:taxa.level]
+                    function(x,taxa.level) {
+                      if(!is.taxa.level.otu(taxa.level)) {
+                        x = x[1:as.integer(taxa.level)]
                       }
                       no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
                       last = no.tail[length(no.tail)]
@@ -1397,12 +1418,17 @@ read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu") {
                         last = paste("Unclassified",last,sep="_")
                       }
                       last
-                    }
+                    },
+                    taxa.level=taxa.level
   )
   if(sanitize) {
     data$Taxa = sanitize.taxa.names(data$Taxa)
   }
   return (data)
+}
+
+is.taxa.level.otu <- function(taxa.level) {
+  as.character(taxa.level) == "otu"
 }
 
 read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T,taxa.level="otu",
@@ -1422,7 +1448,7 @@ read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitiz
   if(count.basis=="otu") {
     otu.df = ifelse(otu.df > 0,1,0)
   }
-  if(is.numeric(taxa.level)) {
+  if(!is.taxa.level.otu(taxa.level)) {
     x = aggregate(t(otu.df),list(row.ids=taxa.df$Taxa),sum)
     rownames(x) = x$row.ids
     x$row.ids = NULL
@@ -1632,7 +1658,7 @@ plot.abund.meta <- function(m_a,
   }
   
   rownames.sorted = rownames(m_a$count)[
-    do.call(order, -as.data.frame(m_a$count)[,levels(dat$feature)])
+    do.call(order, -as.data.frame(m_a$count)[,levels(dat$feature),drop=F])
     ]
   
   dat$.record.id = factor(dat$.record.id,levels=rownames.sorted)
@@ -1656,7 +1682,7 @@ plot.abund.meta <- function(m_a,
   ##show only n.top
   features = levels(dat$feature)
   features = features[1:min(length(features),n.top)]
-  dat = dat[dat$feature %in% features,]
+  dat = dat[dat$feature %in% features,,drop=F]
   
   if(geom == "violin") {
     ##violin will fail the entire facet if one feature has zero variance,
@@ -1676,6 +1702,7 @@ plot.abund.meta <- function(m_a,
   }
   
   if(geom == "bar_stacked") {
+    sqrt.scale = F
     aes_s = aes_string(x=".record.id",y=value.name,
                        fill = fill,color = color)
     gp = ggplot(dat, aes_s)
@@ -1960,21 +1987,29 @@ balanced.sample <- function(x, grouped = TRUE, reps = 0) {
   return(seq2)
 }
 
-mgsat.richness.counts <- function(m_a,n.rar.rep=400,do.rarefy=T) {
+mgsat.richness.counts <- function(m_a,
+                                  n.rar.rep=400,
+                                  do.rarefy=T,
+                                  filtered.singletons=F) {
   
   require(vegan)
   
   n.rar = min(rowSums(m_a$count))
   
   #S.ACE & all se.* give NaN often
-  ind.names = c("S.obs","S.chao1")
+  if(!filtered.singletons) {
+    ind.names = c("S.obs","S.chao1")
+  }
+  else {
+    ind.names = c("S.obs")
+  }
   if(do.rarefy) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-{estimateR(rrarefy(m_a$count,n.rar))[ind.names,]}
+{estimateR(rrarefy(m_a$count,n.rar))[ind.names,,drop=F]}
   }
 else {
-  x = estimateR(m_a$count)[ind.names,]
+  x = estimateR(m_a$count)[ind.names,,drop=F]
 }
 return(list(e=t(x)))
 }
@@ -2024,8 +2059,8 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
 }
 
 se.ind = grep(".*[.]se",names(x))
-e = x[,-se.ind]
-se = x[,se.ind]
+e = x[,-se.ind,drop=F]
+se = x[,se.ind,drop=F]
 names(se) = sub("[.]se","",names(se))
 return(list(e=e,se=se,e.se=x))
 }
@@ -2229,9 +2264,8 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
   
 }
 
-mgsat.plot.richness.samples <- function(rich) {
+mgsat.plot.richness.samples <- function(rich,var.names=c("chao","jack1","boot")) {
   
-  var.names = c("chao","jack1","boot")
   var.names.se = var.names
   e = rich$e[,var.names]
   e$Group = rownames.as.factor(e)
@@ -2257,6 +2291,7 @@ mgsat.plot.richness.samples <- function(rich) {
 mgsat.divrich.report <- function(m_a,
                                  n.rar.rep=400,
                                  is.raw.count.data=T,
+                                 filtered.singletons=F,
                                  group.attr=NULL,
                                  counts.glm.task=NULL,
                                  counts.genesel.task=NULL,
@@ -2313,6 +2348,9 @@ mgsat.divrich.report <- function(m_a,
   res = new_mgsatres()
   
   if(do.incidence) {
+    ##even if we filtered singletons, incidence based estimators are probably still fine - singletons
+    ##for them means a species that was observed only in a single sample, and filtering out singletons
+    ##merely changes our definition of "observed"
     res$rich.samples = mgsat.richness.samples(m_a,group.attr=group.attr,n.rar.rep=n.rar.rep,do.rarefy=do.rarefy)
     caption.inc.rich=sprintf("Incidence based rihcness estimates and corresponding standard errors%s",
                              group.descr.short)
@@ -2326,7 +2364,9 @@ mgsat.divrich.report <- function(m_a,
   
   if(do.abundance) {
     if(is.raw.count.data) {
-      res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep,do.rarefy=do.rarefy)
+      res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep,
+                                              do.rarefy=do.rarefy,
+                                              filtered.singletons=filtered.singletons)
       if(do.plot.profiles) {
         do.call(plot.profiles,
                 c(list(m_a=list(count=as.matrix(res$rich.counts$e),attr=m_a$attr),
@@ -2542,7 +2582,14 @@ plot.profiles <- function(m_a,
             for(geom in show.profile.task$geoms) {
               ## "bar_stacked" is only compatible with some combinations of other
               ## parameters, skip otherwise
-              if(!(geom == "bar_stacked" && (other.params$flip.coords || !is.null(id.var.dodge$dodge)))) {
+              skip.bar_stacked = F
+              if(other.params$flip.coords || 
+                   !is.null(id.var.dodge$dodge) || 
+                   length(id.vars) > 1 ||
+                   ncol(m_a$count) < 2) {
+                skip.bar_stacked = T
+              }
+              if(!(geom == "bar_stacked" && skip.bar_stacked)) {
                 
                 tryCatchAndWarn({
                   id.vars.key = paste(id.vars,collapse="#")
@@ -2830,7 +2877,7 @@ mgsat.16s.task.template = within(list(), {
     count.filter.options=list(),
     taxa.count.source=c("shared"),
     ##drop all low abundant OTUs before we aggregate them into taxonomic rank counts
-    otu.count.filter.options=list(), #list(min_max_frac = 0.0001)
+    otu.count.filter.options=list(), #list(min_max_frac = 0.0001),
     meta.file=NULL,
     load.meta.method=load.meta.default,
     load.meta.options=list()
@@ -2875,6 +2922,7 @@ mgsat.16s.task.template = within(list(), {
     divrich.task = within(list(),{
       n.rar.rep=400
       is.raw.count.data=T
+      filtered.singletons=T
       group.attr = main.meta.var
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
@@ -2894,9 +2942,9 @@ mgsat.16s.task.template = within(list(), {
     
     norm.count.task = within(list(), {
       method = "norm.ihs.prop"
-      method.args = list()
+      method.args = list(theta=1000)
       drop.features=list("other")
-      ##method="norm.rlog"
+      ##method="norm.rlog.dds"
       ##method.args=list(dds=NA) #signals to pull Deseq2 object
     })
     
@@ -2934,6 +2982,7 @@ mgsat.16s.task.template = within(list(), {
         ## this makes plots generated here for paired test
         ## to show easily understood proportions
         method = "norm.prop"
+        method.args = list()
       })      
       genesel.param = within(list(), {
         block.attr = NULL
@@ -2963,6 +3012,7 @@ mgsat.16s.task.template = within(list(), {
       col.trans="ident"
       norm.count.task = within(norm.count.task, {
         method = "norm.prop"
+        method.args = list()
       })      
     })
     
@@ -2986,7 +3036,7 @@ mgsat.16s.task.template = within(list(), {
         dodged=T,
         faceted=T,
         stat_summary.fun.y="mean",
-        sqrt.scale=F
+        sqrt.scale=T
       )
       show.feature.meta.task=list()
     })
@@ -3003,9 +3053,11 @@ mgsat.16s.task.template = within(list(), {
     heatmap.abund.task = within(list(), {
       attr.annot.names=c(main.meta.var)
       attr.row.labels=NULL
+      trans.clust=NULL
       stand.clust="range"
       dist.metr="bray"
       caption="Heatmap of abundance profile"
+      trans.show="norm.boxcox"
       stand.show="range"
     })
     
@@ -4590,7 +4642,7 @@ plot.annHeatmap2AT <-
 environment(plot.annHeatmap2AT) <- asNamespace('Heatplus')
 
 ## taxa count columns in meta.data must be already sorted by some abundance metrics
-heatmap.counts <- function(m_a,attr.annot.names,
+heatmap.counts <- function(m_a,attr.annot.names=NULL,
                            attr.row.labels=NULL,
                            caption="Heatmap",
                            max.species.show=30, 
@@ -4635,7 +4687,12 @@ heatmap.counts <- function(m_a,attr.annot.names,
   row.dendro = reorder(row.dendro, wgts, agglo.FUN=agglo.fun.order)
   #row.ind = order.dendrogram(row.dendro)
   
-  attr.annot = attr[,attr.annot.names,drop=F]
+  if(!is.null(attr.annot.names)) {
+    attr.annot = attr[,attr.annot.names,drop=F]
+  }
+  else {
+    attr.annot = NULL
+  }
   
   ## cluster on normalized columns
   count.sub = count[,1:min(ncol(count),max.species.show)]
@@ -5828,7 +5885,7 @@ contrasts.groups.log.fold.change <- function(m_a.g,base=2,
   lfc = log(m_a.g$count[m_a.g$attr$.contrast==contrasts[1],]+offset,base=base) - 
     log(m_a.g$count[m_a.g$attr$.contrast==contrasts[2],]+offset,base=base)
   m_a.lfc = list(count=lfc,
-                        attr=m_a.g$attr[m_a.g$attr$.contrast==contrasts[1],])
+                 attr=m_a.g$attr[m_a.g$attr$.contrast==contrasts[1],])
   with(m_a.lfc, stopifnot(all(rownames(count)==rownames(attr))))
   
   return (m_a.lfc)
