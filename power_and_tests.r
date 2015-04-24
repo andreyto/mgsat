@@ -2845,9 +2845,21 @@ read.data.project.yap <- function(taxa.summary.file,
   m_a = merge.counts.with.meta(taxa.lev$count,meta)
   report$add.p(sprintf("After merging with metadata, %i records left",
                        nrow(m_a$count)))
+  make.global(m_a)
+  stop("DEBUG")
   return (m_a)
 }
 
+m_a.to.phyloseq <- function(m_a) {
+  require(phyloseq)
+  otu = otu_table(m_a$count, taxa_are_rows = F)
+  tax = as.matrix(data.frame(Feature=colnames(m_a$count)))
+  #colnames(tax) = c("Feature")
+  rownames(tax) = tax[,"Feature"]
+  tax = tax_table(tax)
+  attr = sample_data(m_a$attr)
+  phyloseq(otu,tax,attr)
+}
 
 summary.meta.method.default <- function(taxa.meta) {
   
