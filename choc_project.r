@@ -203,7 +203,7 @@ gen.tasks.choc <- function() {
       meta = meta.aggr
       meta.aggr = join(meta,
                        ddply(meta,"FamilyID",summarise,
-                             has.sibling=("patient" %in% Sample.type) && ("sibling" %in% Sample.type)),
+                             has.sibling=("patient" %in% Sample.type) & ("sibling" %in% Sample.type)),
                        by="FamilyID",
                        match="first")
       stopifnot(!any(is.na(meta.aggr$has.sibling)) && 
