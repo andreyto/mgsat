@@ -89,7 +89,7 @@ gen.tasks.gwu_cw <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(6)
+    taxa.levels = c(2,3,6,"otu")
     #taxa.levels = c(2)
     
     descr = "One sample per patient"
@@ -167,7 +167,7 @@ gen.tasks.gwu_cw <- function() {
     do.tests = T
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = "Healing.rate.one.month"
+      meta.x.vars = "Healing.rate.collection"
       group.vars = c(main.meta.var)
     })
     
@@ -180,7 +180,7 @@ gen.tasks.gwu_cw <- function() {
       do.glmer = F
       #do.divrich = c(6,"otu")
       
-      do.plot.profiles.abund=F
+      do.plot.profiles.abund=T
       do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
@@ -188,9 +188,9 @@ gen.tasks.gwu_cw <- function() {
         is.raw.count.data=T
         group.attr = main.meta.var
         counts.glm.task = within(counts.glm.task,{
-          formula.rhs = main.meta.var
+          formula.rhs = paste("Diabetes",main.meta.var,sep="*")
         })      
-        do.plot.profiles=F
+        do.plot.profiles=T
       })
       
       deseq2.task = within(deseq2.task, {
@@ -226,7 +226,7 @@ gen.tasks.gwu_cw <- function() {
       
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var),c(main.meta.var,"SampleType"),c(main.meta.var,"Diabetes"))
-        feature.meta.x.vars=c("Healing.rate.collection","Healing.rate.collection","age")
+        feature.meta.x.vars=c("Healing.rate.collection","age")
         do.profile=T
         do.feature.meta=F
       })
@@ -254,7 +254,7 @@ gen.tasks.gwu_cw <- function() {
     }
     
     main.meta.var = "Healing.rate.collection.quant"
-    main.meta.var.cont = "Healing.collection.month" 
+    main.meta.var.cont = "Healing.rate.collection" 
     
     
     summary.meta.task = within(summary.meta.task, {
@@ -279,7 +279,7 @@ gen.tasks.gwu_cw <- function() {
         #n.rar.rep=4
         is.raw.count.data=T
         group.attr = main.meta.var
-        counts.glm.task = within(list(),{
+        counts.glm.task = within(counts.glm.task,{
           formula.rhs = main.meta.var.cont
         })      
       })
@@ -326,7 +326,7 @@ gen.tasks.gwu_cw <- function() {
     })
     
   })
-  return (list(task1))
+  return (list(task1,task2))
 }
 
 
@@ -361,7 +361,7 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
