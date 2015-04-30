@@ -134,6 +134,9 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   meta$TimestampMonth = as.numeric(meta$Timestamp - min(meta$Timestamp),units="days")/30  
   meta$Timestamp = as.numeric(meta$Timestamp)
   meta$TimestampDate = as.Date(timeDate(meta$Timestamp))
+  meta$TimestampMonth.quant = quantcut.ordered(meta$TimestampMonth)
+  
+  meta$FamilyID.T1D = paste(meta$FamilyID,meta$T1D,sep=".")
   
   row.names(meta) = meta$SampleID
   
@@ -221,12 +224,13 @@ gen.tasks.t1d <- function() {
     
     report$add.p(paste("After filtering for repeated samples per subject:",nrow(m_a$count)))
     
+    
     return (m_a)
   }
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(2,3,4,5,6,"otu")
+    taxa.levels = c(6)
     #taxa.levels = c(6)
     
     descr = "All samples, aggregated by AliquotID"
@@ -245,6 +249,7 @@ gen.tasks.t1d <- function() {
     })
     
     read.data.task = within(read.data.task.yap, {
+      #meta.file="aliq_id_to_metadata_20150403.tsv"
       meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922_batches.tsv"
       load.meta.method=load.meta.t1d
       load.meta.options=list(aggr.var="AliquotID")
@@ -303,7 +308,9 @@ gen.tasks.t1d <- function() {
   
   task1 = within( task0, {
     
-    do.summary.meta = F
+    descr = "All samples, aggregated by AliquotID"
+    
+    do.summary.meta = T
     
     do.tests = T
     
@@ -315,14 +322,14 @@ gen.tasks.t1d <- function() {
     test.counts.task = within(test.counts.task, {
       
       do.deseq2 = T
-      do.adonis = T
-      do.genesel = T
+      do.adonis = F
+      do.genesel = F
       do.stabsel = T
       do.glmer = F
-      #do.divrich = c(6,"otu")
+      do.divrich = c()
       
-      do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -356,6 +363,9 @@ gen.tasks.t1d <- function() {
                descr="Association with the patient/control status paired by family"),
           list(formula.rhs="T1D*age",
                strata=NULL,
+               descr="Association with the patient/control status and age unpaired"),
+          list(formula.rhs="age*T1D",
+               strata=NULL,
                descr="Association with the patient/control status and age unpaired")
           
         )
@@ -385,6 +395,171 @@ gen.tasks.t1d <- function() {
     })
     
   })
+  
+
+  task1.1 = within( task1, {
+    
+    descr = "All samples, aggregated by AliquotID, control for age and paired GeneSelector"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    summary.meta.task = within(summary.meta.task, {
+      meta.x.vars = c("Timestamp")
+      group.vars = c(main.meta.var)
+    })
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.deseq2 = T
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      #do.divrich = c()
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      divrich.task = within(divrich.task,{
+        #n.rar.rep=4
+        is.raw.count.data=T
+        group.attr = main.meta.var
+        counts.glm.task = within(list(),{
+          formula.rhs = paste("age",main.meta.var,sep="+")
+        })      
+      })
+      
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = paste("age",main.meta.var,sep="+")
+      })
+      
+      genesel.task = within(genesel.task, {
+        group.attr = main.meta.var
+        genesel.param = within(genesel.param, {
+          block.attr = "FamilyID"
+          type="paired"
+        })        
+      })
+      
+      plot.profiles.task = within(plot.profiles.task, {
+        id.vars.list = list(c(main.meta.var))
+        feature.meta.x.vars=c("YearsSinceDiagnosis","TimestampDate","age")
+        do.profile=T
+        do.feature.meta=F
+      })
+      
+      
+    })
+    
+  })
+  
+  task1.3 = within( task0, {
+    
+    descr = "All samples, aggregated by AliquotID, Within/Between distance test"
+    
+    #taxa.levels = c(2,3,6,"otu")
+    taxa.levels = c(2)
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = task0$get.taxa.meta.aggr(m_a)
+      
+      m_a = aggregate.by.meta.data.m_a(m_a,group_col="FamilyID.T1D")
+
+      meta = m_a$attr
+      
+      meta$T1D = factor(meta$T1D)
+      meta$FamilyID = factor(meta$FamilyID)
+      
+      meta.aggr = join(meta,
+                       ddply(meta,"FamilyID",summarise,
+                             has.sibling=("T1D" %in% T1D) & ("Control" %in% T1D)),
+                       by="FamilyID",
+                       match="first")
+      stopifnot(!any(is.na(meta.aggr$has.sibling)) && 
+                  nrow(meta.aggr)==nrow(meta))
+      
+      m_a$attr = meta.aggr
+      
+      
+      m_a = subset.m_a(m_a,subset=(m_a$attr$has.sibling)) 
+      return(m_a)
+    }    
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.divrich = c()
+      do.extra.method = taxa.levels
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          test.dist.matr.within.between(m_a=m_a,
+                                        group.attr=main.meta.var,
+                                        block.attr="FamilyID",
+                                        n.perm=4000,
+                                        norm.count.task=norm.count.task.extra
+          )
+        }
+        norm.count.task.extra = within(norm.count.task, {
+          method="norm.clr"
+          #drop.features = list()
+        })
+        
+      })
+      
+    })
+    
+  })
+  
+  task1.4 = within( task1, {
+    
+    descr = "All samples, aggregated by AliquotID, last quartile of collection timestamp"
+    
+    taxa.levels = c(6,"otu")
+    #taxa.levels = c(2)
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = task1$get.taxa.meta.aggr(m_a)
+      m_a = subset.m_a(m_a,subset=(m_a$attr$TimestampMonth.quant==
+                                     levels(m_a.here$attr$TimestampMonth.quant)[4])) 
+      return(m_a)
+    }    
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.divrich = c()
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+            
+    })
+    
+  })
+  
   
   
   task2 = within( task0, {
@@ -662,7 +837,7 @@ gen.tasks.t1d <- function() {
     })
   })
   
-  task1.1 = within( task1, {
+  task1.2 = within( task1, {
     
     do.summary.meta = F
     
@@ -816,8 +991,8 @@ gen.tasks.t1d <- function() {
     
   })
   
-  #return (list(task1))
-  return (list(task1,task2,task3,task3.1,task4,task4.1))
+  return (list(task1))
+  #return (list(task1,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
 }
 
 
