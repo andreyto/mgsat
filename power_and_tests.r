@@ -2805,6 +2805,25 @@ read.data.project.yap <- function(taxa.summary.file,
   return (m_a)
 }
 
+m_a.to.phyloseq <- function(m_a,attr.taxa=NULL) {
+  require(phyloseq)
+  otu = otu_table(m_a$count, taxa_are_rows = F)
+  ##need at least two columns or some phyloseq methods lose the dimension (not using drop=F)
+  tax = data.frame(Feature=colnames(m_a$count),Dummy=colnames(m_a$count))
+  rownames(tax) = tax[,"Feature"]
+  if(!is.null(attr.taxa)) {
+    attr.taxa = as.data.frame(attr.taxa)
+    tax.m = merge(tax,attr.taxa,by="row.names")
+    stopifnot(nrow(tax.m)==nrow(tax) && nrow(tax.m)==nrow(attr.taxa))
+    rownames(tax.m) = tax.m$Row.names
+    tax.m$Row.names=NULL
+    tax = tax.m[rownames(tax),]
+    tax.d = tax
+  }
+  tax = tax_table(as.matrix(tax))
+  attr = sample_data(m_a$attr)
+  phyloseq(otu,tax,attr)
+}
 
 summary.meta.method.default <- function(taxa.meta) {
   
@@ -3072,14 +3091,14 @@ get.feature.ranking.stabsel <- function(x.f,only.names=T) {
   return(list(ranked=ranked))
 }
 
-get.feature.ranking.mgsatres <- function(x.f,method="stabsel") {
+get.feature.ranking.mgsatres <- function(x.f,method="stabsel",...) {
   meth.res = x.f[[method]]
   if(is.null(meth.res)) {
     res = NULL
   }
   else {
     if(method %in% c("stabsel","genesel")) {
-      res = get.feature.ranking(meth.res)
+      res = get.feature.ranking(meth.res,...)
     }
     else {
       stop(paste("I do not know what to do for method",method))
