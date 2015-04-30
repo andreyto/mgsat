@@ -1,46 +1,3 @@
-#install.packages("vegan")
-#install.packages("HMP")
-#install.packages("reshape2")
-#install.packages("ggplot2")
-#install.packages("gtools")
-#install.packages("BiodiversityR")
-#install.packages("LiblineaR")
-#install.packages("BatchJobs")
-#install.packages("Rcmdr")
-##base as.Date() method is brittle and does very little error checking
-#install.packages("date")
-##handle timestamps
-#install.packages("timeDate")
-#install.packages("pheatmap")
-
-##two alternative implementations of the same stability
-##selection paper, and different classification methods
-#GLMs
-#install.packages("c060")
-## used by c060, install here just in case
-#install.packages("glmnet")
-#combined L1 and L2 penalties
-#this will need options(warn=0) on Windows
-#install.packages("quadrupen")
-##for boxcoxfit
-#install.packages("geoR")
-## parallel backend that works on Windows with foreach()
-#install.packages("doSNOW")
-#?gridExtra
-#install.packages("elasticnet")
-#install.packages("BioMark")
-#install.packages("fdrtool")
-#install.packages("tikzDevice") #for knitr
-#install.packages("markdown") #for knit2html
-#install.packages("kernlab")
-#install.packages("ROCR")
-#install.packages("caret")
-#source("http://bioconductor.org/biocLite.R")
-#biocLite("multtest")
-#biocLite("GeneSelector")
-#biocLite("RColorBrewer")
-## To upgrade Bioconductor packages, use: source("http://bioconductor.org/biocLite.R"); biocLite("BiocUpgrade")
-## Normal R-Studio upgrade apparently does not upgrade Bioconductor.
 
 set_trace_options<-function(try.debug=T) {
   #tell our custom tryCatchAndWarn not to catch anything
@@ -4262,6 +4219,8 @@ test.counts.project <- function(m_a,
                                 do.select.samples=F,
                                 do.deseq2=T,
                                 do.divrich=T,
+                                do.divrich.pre.filter=T,
+                                do.divrich.post.filter=T,
                                 do.plot.profiles.abund=T,
                                 do.heatmap.abund=T,
                                 do.extra.method=F,
@@ -4309,11 +4268,13 @@ test.counts.project <- function(m_a,
     if(!do.genesel) {
       divrich.task$counts.genesel.task = NULL
     }
-    
+  }
+  if(do.divrich && do.divrich.pre.filter) {
     tryCatchAndWarn({ 
       res$divrich <- do.call(mgsat.divrich.report,
                              c(list(m_a,
-                                    plot.profiles.task=plot.profiles.task),
+                                    plot.profiles.task=plot.profiles.task,
+                                    extra.header="Before count filtering"),
                                divrich.task)
       )
     })
@@ -4324,9 +4285,23 @@ test.counts.project <- function(m_a,
                                   count.filter.options=count.filter.feature.options,
                                   "feature")
   }
+  if(is.null(count.filter.feature.options) || length(count.filter.feature.options)==0) {
+    divrich.post.filter=F
+  }
   
   make.global(m_a)
-  
+
+  if(do.divrich && do.divrich.post.filter) {
+    tryCatchAndWarn({ 
+      res$divrich <- do.call(mgsat.divrich.report,
+                           c(list(m_a,
+                                  plot.profiles.task=plot.profiles.task,
+                                  extra.header="After count filtering"),
+                             divrich.task)
+      )
+    })
+  }
+
   if(do.deseq2) {
     tryCatchAndWarn({ 
       res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
