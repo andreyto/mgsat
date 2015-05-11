@@ -87,7 +87,9 @@ gen.tasks.diet <- function() {
       cons.taxonomy.file="example_cons.taxonomy.file"
       meta.file="example_meta.txt"
       load.meta.method=load.meta.diet
-      load.meta.options=list()    
+      load.meta.options=list()
+      count.filter.options = list()    
+      otu.count.filter.options=list()      
     })
     
     get.taxa.meta.aggr.base<-function(m_a) { 
@@ -105,8 +107,37 @@ gen.tasks.diet <- function() {
     
     test.counts.task = within(test.counts.task, {
       
+      count.filter.feature.options = within(list(), {
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
+        #min_max=30
+        min_mean=10
+      })
+      
       norm.count.task = within(norm.count.task, {
-        method="norm.ihs.prop"
+        #method="norm.ihs.prop"
+        #method.args = list(theta=2000)
+        #method="norm.rlog.dds"
+        #method.args=list(dds=NA) #signals to pull Deseq2 object
+        method="norm.clr"
+        method.args=list()
+      })
+      
+      adonis.task = within(adonis.task, {
+        
+        dist.metr="euclidean"
+        col.trans=NULL
+        norm.count.task=NULL
+        data.descr="normalized counts"
+      })
+      
+      heatmap.abund.task = within(heatmap.abund.task,{
+        trans.clust=NULL
+        stand.clust=NULL
+        dist.metr="euclidian"
+        trans.show=NULL
+        stand.show="range"
+        cluster.row.cuth=10
       })
       
     })
@@ -152,9 +183,9 @@ gen.tasks.diet <- function() {
         id.vars.list = list(c("Sample.type","visit"),
                             c("Sample.type.Drug.Before","visit"),
                             c("Drug.Before.Diet","Sample.type.1"))
-        clade.meta.x.vars=c("visit")
+        feature.meta.x.vars=c("visit")
         do.profile=T
-        do.clade.meta=F
+        do.feature.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -233,7 +264,7 @@ gen.tasks.diet <- function() {
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var),c(main.meta.var,"age.quant"))
         do.profile=T
-        do.clade.meta=F
+        do.feature.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -296,12 +327,12 @@ gen.tasks.diet <- function() {
                                         group.attr="Sample.type",
                                         block.attr="MatchedGroupID",
                                         n.perm=4000,
+                                        dist.metr="euclidian",
                                         norm.count.task=norm.count.task.extra
           )
         }
+        
         norm.count.task.extra = within(norm.count.task, {
-          method="norm.prop"
-          #drop.features = list()
         })
         
       })
@@ -383,20 +414,12 @@ gen.tasks.diet <- function() {
                descr="Association with Drug use before diet and diet status")
         )
         
-        #dist.metr="euclidian"
-        #col.trans="standardize"
-
-        #norm.count.task = within(norm.count.task, {
-        #  method="norm.clr"
-        #  drop.features = list()
-        #})
-        
       })
       
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var),c(main.meta.var,"Drug.Before.Diet"))
         do.profile=T
-        do.clade.meta=F
+        do.feature.meta=F
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -410,14 +433,12 @@ gen.tasks.diet <- function() {
                                         group.attr="DietStatus",
                                         block.attr="SubjectID",
                                         n.perm=8000,
-                                        #dist.metr="euclidian",
+                                        dist.metr="euclidian",
                                         col.trans="ident",
                                         norm.count.task=norm.count.task.extra
                                         )
         }
         norm.count.task.extra = within(norm.count.task, {
-          method="norm.prop"
-          #drop.features = list()
         })
         
       })
@@ -519,7 +540,7 @@ gen.tasks.diet <- function() {
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var,"Drug.Before.Diet"))
         do.profile=T
-        do.clade.meta=T
+        do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -530,6 +551,7 @@ gen.tasks.diet <- function() {
     
   })
   
+  #return (list(task2.1))
   return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
@@ -566,10 +588,6 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 ## leave with try.debug=F for production runs
 set_trace_options(try.debug=F)
 
-## set incremental.save=T only for debugging or demonstration runs - it forces 
-## report generation after adding every header section, thus slowing down
-## a long run. But then incremental.save=T, you can open HTML report file in
-## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="noone@mail.com",
                        title="Analysis of Dieting study 16S data",
                        incremental.save=F)

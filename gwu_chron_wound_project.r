@@ -25,9 +25,12 @@ load.meta.gwu_cw <- function(file.name,batch=NULL,aggr.var=NULL) {
   
   meta = arrange(meta,PatientID,age,SampleType)
   
+  meta$Diabetes = toupper(as.character(meta$Diabetes))
+  meta = meta[meta$Diabetes %in% c("YES","NO"),]
+  meta$Diabetes = factor(meta$Diabetes)
   #DEBUG: for now just take unique records
   meta = meta[meta$Hidradenitis!="Yes",,drop=F]
-  #meta = meta[meta$SampleType=="q",,drop=F]
+  meta = meta[meta$SampleType=="q",,drop=F]
   meta = meta[!duplicated(meta$PatientID),,drop=F]  
   
   row.names(meta) = meta$SampleID
@@ -89,8 +92,8 @@ gen.tasks.gwu_cw <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(2,3,6,"otu")
-    #taxa.levels = c(2)
+    #taxa.levels = c(2,3,6,"otu")
+    taxa.levels = c(6)
     
     descr = "One sample per patient"
     
@@ -108,15 +111,8 @@ gen.tasks.gwu_cw <- function() {
       load.meta.method=load.meta.gwu_cw
       load.meta.options=list()
       
-      count.filter.options = within(count.filter.options, {
-        #min_mean_frac=0.00005
-        min_quant_mean_frac=0.25
-        min_quant_incidence_frac=0.25
-        min_max=20
-        #min_mean=10
-      })    
-      
       otu.count.filter.options=list()
+      count.filter.options = list()
       
     })
     
@@ -128,7 +124,14 @@ gen.tasks.gwu_cw <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      count.filter.feature.options = list()
+      count.filter.feature.options = within(count.filter.feature.options, {
+        #min_mean_frac=0.00005
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
+        min_max=20
+        #min_mean=10
+      })    
+      
       
       norm.count.task = within(norm.count.task, {
         #method="norm.ihs.prop"
@@ -142,14 +145,14 @@ gen.tasks.gwu_cw <- function() {
       adonis.task = within(adonis.task, {
         
         dist.metr="euclidean"
-        #col.trans="standardize"
+        col.trans=NULL
         norm.count.task=NULL
         data.descr="normalized counts"
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
         trans.clust=NULL
-        stand.clust="standardize"
+        stand.clust=NULL
         dist.metr="euclidian"
         trans.show=NULL
         stand.show="range"
@@ -173,15 +176,15 @@ gen.tasks.gwu_cw <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.deseq2 = T
-      do.adonis = T
-      do.genesel = T
-      do.stabsel = T
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
       do.glmer = F
       #do.divrich = c(6,"otu")
       
-      do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -326,7 +329,8 @@ gen.tasks.gwu_cw <- function() {
     })
     
   })
-  return (list(task1,task2))
+  return (list(task1))
+  #return (list(task1,task2))
 }
 
 
@@ -361,7 +365,7 @@ source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=F)
+set_trace_options(try.debug=T)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down

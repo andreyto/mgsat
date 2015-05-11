@@ -60,7 +60,7 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   meta$age.quant = quantcut.ordered(meta$age)
   meta$A1C = as.double(as.character(meta$A1C))
   #meta$A1C[is.na(meta$A1C)] = 6.2
-  meta$A1C.quant = quantcut(as.double(as.character(meta$A1C)))
+  meta$A1C.quant = quantcut.ordered(as.double(as.character(meta$A1C)))
   
   meta = arrange(meta,SubjectID,Timestamp)
   
@@ -230,7 +230,7 @@ gen.tasks.t1d <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(6)
+    taxa.levels = c(6,"otu")
     #taxa.levels = c(6)
     
     descr = "All samples, aggregated by AliquotID"
@@ -254,13 +254,7 @@ gen.tasks.t1d <- function() {
       load.meta.method=load.meta.t1d
       load.meta.options=list(aggr.var="AliquotID")
       
-      count.filter.options = within(count.filter.options, {
-        #min_mean_frac=0.00005
-        min_quant_mean_frac=0.25
-        min_quant_incidence_frac=0.25
-        #min_max=30
-        min_mean=10
-      })    
+      count.filter.options = list()    
       
       otu.count.filter.options=list()
       
@@ -274,7 +268,12 @@ gen.tasks.t1d <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      count.filter.feature.options = list()
+      count.filter.feature.options = within(list(), {
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
+        #min_max=30
+        min_mean=10
+      })
       
       norm.count.task = within(norm.count.task, {
         #method="norm.ihs.prop"
@@ -288,14 +287,14 @@ gen.tasks.t1d <- function() {
       adonis.task = within(adonis.task, {
         
         dist.metr="euclidean"
-        #col.trans="standardize"
+        col.trans=NULL
         norm.count.task=NULL
         data.descr="normalized counts"
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
         trans.clust=NULL
-        stand.clust="standardize"
+        stand.clust=NULL
         dist.metr="euclidian"
         trans.show=NULL
         stand.show="range"
@@ -322,14 +321,14 @@ gen.tasks.t1d <- function() {
     test.counts.task = within(test.counts.task, {
       
       do.deseq2 = T
-      do.adonis = F
+      do.adonis = T
       do.genesel = F
       do.stabsel = T
       do.glmer = F
-      do.divrich = c()
+      #do.divrich = c()
       
       do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -516,8 +515,6 @@ gen.tasks.t1d <- function() {
           )
         }
         norm.count.task.extra = within(norm.count.task, {
-          method="norm.clr"
-          #drop.features = list()
         })
         
       })

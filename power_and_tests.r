@@ -235,7 +235,7 @@ norm.clr <- function(x, ...) {
 
 #' @method clr default
 #' @export
-norm.clr.default <- function(x.f, offset=1, base=2, tol=.Machine$double.eps) {
+norm.clr.default <- function(x.f, offset=0, base=2, tol=.Machine$double.eps) {
   ## this is invariant to a constant multiplier (well, not quite becase of the
   ## offset), so there is no need to combine it with normalization to simple
   ## proportions
@@ -1944,6 +1944,67 @@ balanced.sample <- function(x, grouped = TRUE, reps = 0) {
   return(seq2)
 }
 
+
+## If hill=T (default) return Hill numbers, otherwise - 
+## Renyi entropies. Column names are prepended with N for Hill and
+## with H for Renyi (to make them work nicely in formulas etc where naked numbers
+## as column names cause problems). For evenness, E is also appended (e.g. NE_0.25).
+mgsat.hill <- function(count,
+                       scales = c(0,0.25, 0.5, 1, 2, 4, 8, Inf), 
+                       evenness = F,
+                       hill = T,
+                       ...) {
+  require(vegan)
+  result <- renyi(count, scales = scales, ...)
+  if (attributes(result)$class[2] == "numeric") {
+    result <- as.matrix(result)
+  }
+  sep="_"
+  if (evenness == T) {
+    ## Jost 2010 http://dx.doi.org/10.3390/d2020207
+    ## taking into an account that Hill = exp(Renyi)
+    result = result[,colnames(result) != "0"] - renyi(count, scales = c(0))
+    colnames(result) = paste("E",colnames(result),sep=sep)
+    sep=""
+  }
+  if(hill == T) {
+    result = exp(result)
+    ##note that for q=Inf, this is a reciprocal of the frequency of most common
+    ##species, and for q=-Inf - most rare species (PMC3470749)
+    colnames(result) = paste("N",colnames(result),sep=sep)
+  }
+  else {
+    colnames(result) = paste("H",colnames(result),sep=sep)    
+  }
+  return(result)
+}
+
+mgsat.diversity.hill.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T,do.rarefy=T,
+                                        hill.args=list()) { 
+  require(vegan)
+  n.rar = min(rowSums(m_a$count))
+  plus_here = function(x,y) (x+y)
+  if(is.raw.count.data && do.rarefy) {
+    x = foreach(seq(n.rar.rep),.packages=c("vegan"), .export=c("mgsat.hill"), .combine=plus_here,
+                .final=function(x) (x/n.rar.rep)) %dopar% 
+{
+  do.call(
+    mgsat.hill,c(
+      list(rrarefy(m_a$count,n.rar)),
+                       hill.args)
+    )
+}
+  }
+else {
+  x = do.call(mgsat.hill,c(
+    list(m_a$count),
+    hill.args)
+  )
+}
+return(list(e=x))
+}
+
+
 mgsat.richness.counts <- function(m_a,
                                   n.rar.rep=400,
                                   do.rarefy=T,
@@ -1987,6 +2048,7 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   else {
     pool = m_a$attr[,group.attr]
     do.stratify = T
+    n.rar.rep = n.rar.rep * min(nrow(m_a$count),20)
   }
   count = m_a$count
   if(!(do.stratify || do.rarefy)) {
@@ -2160,6 +2222,121 @@ mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T,do.rarefy=T) {
              using method 'exact'.%s",rar.descr))
 }
 
+## Comparison of multiple correlated variables between two or more groups
+## with Westfall & Young correction for multiple testing.
+## Taken from simboot:::mcpHill. The original simboot function computes
+## Hill numbers describing ecological diversity. In the present modified function, the variables (e.g.
+## Hill numbers) must be supplied in a matrix `data` (observations are rows).
+## The meaning of the remaining parameters and assumptions are the same as
+## in the mcpHill - see its help page as well as the original Pallmann, P. et al. (2012)
+## paper. In particular, the permutation based test assumes homoscedasticity.
+mcp.wy <- function (data, fact, align = FALSE, block, boots = 5000, udmat = FALSE, 
+          usermat, mattype = "Dunnett", dunbase = 1, opt = "two.sided") 
+{
+  require(simboot) #or multicomp
+  data = as.matrix(data)
+  if (!is.matrix(data)) {
+    stop("data must be an object of class 'matrix'.")
+  }
+  if (length(fact) != dim(data)[1]) {
+    stop("The length of fact must equal the number of rows in dataf.")
+  }
+  if (length(levels(fact)) <= 1) {
+    stop("The factor variable fact should have at least 2 levels to be compared.")
+  }
+  ni <- as.vector(summary(fact))
+  if (udmat == FALSE) {
+    if (mattype == "Dunnett") {
+      cmat <- contrMat(ni, type = "Dunnett", base = dunbase)
+    }
+    else {
+      cmat <- contrMat(ni, type = mattype)
+    }
+  }
+  else {
+    cmat <- usermat
+  }
+  qval = colnames(data)
+  tabtab <- data
+  group <- factor(fact)
+  tabelle <- cbind(tabtab, group)
+  if (align == TRUE) {
+    alignfunc <- function(aliblock) {
+      tfit <- lm(tabelle[, c(1:length(qval))] ~ aliblock)
+      tabelleneu <- tabelle[, c(1:length(qval))] - predict(tfit)
+    }
+    tabelle2 <- alignfunc(block)
+  }
+  else {
+    tabelle2 <- tabelle
+  }
+  funcA <- function(f) {
+    fit <- lm(tabelle2[, c(1:length(qval))] ~ f - 1)
+    epsilon <- residuals(fit)
+  }
+  epstabelle <- funcA(f = group)
+  tstatshort <- function(mytab, i, f, cmat, ni) {
+    mytab <- mytab[i]
+    ni <- ni
+    FIT <- lm(mytab ~ f - 1)
+    mi <- coefficients(FIT)
+    res <- residuals(FIT)
+    varpool <- sum(res^2)/(sum(ni) - length(mi))
+    estC <- (cmat %*% mi)
+    varC <- (cmat^2) %*% (varpool/ni)
+    ti <- estC/sqrt(varC)
+    return(ti)
+  }
+  if (length(qval) == 1) {
+    funcfunc <- function(abc, i, f, cmat, ni) {
+      tstatshort(mytab = abc, f = f, i = i, cmat = cmat, 
+                 ni = ni)
+    }
+  }
+  else {
+    funcfunc <- function(abc, i, f, cmat, ni) {
+      apply(abc, 2, FUN = function(xx) {
+        tstatshort(mytab = xx, f = f, i = i, cmat = cmat, 
+                   ni = ni)
+      })
+    }
+  }
+  wyboot <- boot(epstabelle, funcfunc, R = boots, stype = "i", 
+                 f = group, cmat = cmat, ni = ni)
+  laenge <- 1:(length(qval) * dim(cmat)[1])
+  tact <- as.vector(funcfunc(abc = tabelle2[, c(1:length(qval))], 
+                             i = 1:sum(ni), f = group, cmat = cmat, ni = ni))
+  bothfunc <- function(bobo) {
+    apply(bobo, 1, function(huhu) max(abs(huhu)))
+  }
+  tboth <- bothfunc(wyboot$t)
+  bothpval <- function(k) {
+    tact <- tact[k]
+    sapply(k, function(ka) sum(tboth > abs(tact[ka]))/boots)
+  }
+  maxfunc <- function(mama) {
+    apply(mama, 1, max)
+  }
+  tmax <- maxfunc(wyboot$t)
+  grpval <- function(k) {
+    tact <- tact[k]
+    sapply(k, function(ka) sum(tmax > tact[ka])/boots)
+  }
+  minfunc <- function(mimi) {
+    apply(mimi, 1, min)
+  }
+  tmin <- minfunc(wyboot$t)
+  lepval <- function(k) {
+    tact <- tact[k]
+    sapply(k, function(ka) sum(tmin < tact[ka])/boots)
+  }
+  allqs <- rep(qval, each = dim(cmat)[1])
+  names(allqs) <- rep(rownames(cmat), times = length(qval))
+  switch(opt, two.sided = cbind(q = allqs, `p-value` = bothpval(laenge)), 
+         greater = cbind(q = allqs, `p-value` = grpval(laenge)), 
+         less = cbind(q = allqs, `p-value` = lepval(laenge)))
+}
+
 mgsat.divrich.counts.glm.test <- function(m_a.divrich,
                                           divrich.names=NULL,                                          
                                           formula.rhs,
@@ -2176,17 +2353,13 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
     form.str = sprintf("%s~%s",divrich.name,formula.rhs)
     do.model = F
     
-    if(divrich.name=="N1") {
-      descr = "Hill number N~1~ (equals exp(Shannon index)"
-      do.model = T
-    }
-    else if(divrich.name=="N2") {
-      descr = "Hill number N~2~ (equals Inverted Simpson index)"
-      do.model = T
-    }
-    else if(divrich.name %in% c("S.obs","S.chao1","S.ACE")) {
+    if(divrich.name %in% c("S.obs","S.chao1","S.ACE")) {
       descr = paste("Richness estimate",divrich.name)
       do.model = T
+    }
+    else {
+      descr = paste("Hill number of order",divrich.name)
+      do.model = T      
     }
     
     if(do.model) {
@@ -2304,7 +2477,7 @@ mgsat.divrich.report <- function(m_a,
   
   res = new_mgsatres()
   
-  if(do.incidence) {
+  if(F && do.incidence) {
     ##even if we filtered singletons, incidence based estimators are probably still fine - singletons
     ##for them means a species that was observed only in a single sample, and filtering out singletons
     ##merely changes our definition of "observed"
@@ -2335,22 +2508,31 @@ mgsat.divrich.report <- function(m_a,
       }
     }
     
-    res$div.counts = mgsat.diversity.alpha.counts(m_a,n.rar.rep=n.rar.rep,
-                                                  is.raw.count.data=is.raw.count.data,
-                                                  do.rarefy=do.rarefy)
-    
-    if(do.plot.profiles) {
-      do.call(plot.profiles,
-              c(list(m_a=list(count=as.matrix(res$div.counts$e[,c("N1","N2")]),attr=m_a$attr),
-                     feature.descr=sprintf("Abundance-based diversity indices (Hill numbers) %s",rar.descr.short),
-                     value.name="index"),
-                plot.profiles.task
-              )
-      )
+    res$div.counts = list()
+    for(div.task in list(list(id.task="diversity",evenness=F,descr="diversity indices (Hill numbers)"),
+                      list(id.task="evenness",evenness=T,descr="evenness indices (Hill numbers / Observed 'species')")
+    )
+    ) {
+      div.counts = mgsat.diversity.hill.counts(m_a,n.rar.rep=n.rar.rep,
+                                               is.raw.count.data=is.raw.count.data,
+                                               do.rarefy=do.rarefy,
+                                               hill.args=list(evenness=div.task$evenness))
+      make.global(div.counts)
+      stop("DEBUG")
+      if(do.plot.profiles) {
+        do.call(plot.profiles,
+                c(list(m_a=list(count=div.counts$e,attr=m_a$attr),
+                       feature.descr=sprintf("Abundance-based %s %s",
+                                             div.task$descr, rar.descr.short),
+                       value.name="index"),
+                  plot.profiles.task
+                )
+        )
+      }
+      res$div.counts[[div.task$id.task]] = div.counts
     }
     
-    
-    divrich.counts = res$div.counts$e
+    divrich.counts = cbind(res$div.counts[["diversity"]]$e,res$div.counts[["evenness"]]$e)
     if(is.raw.count.data) {
       divrich.counts = cbind(divrich.counts,res$rich.counts$e)
     }
@@ -2886,6 +3068,8 @@ mgsat.16s.task.template = within(list(), {
     do.glmer=T
     do.adonis=T
     do.divrich=c("otu",6)
+    do.divrich.pre.filter=T
+    do.divrich.post.filter=F    
     do.plot.profiles.abund=T
     do.heatmap.abund=T
     do.select.samples=c()
@@ -3202,7 +3386,7 @@ proc.project <- function(
         
         export.taxa.meta(m_a,
                          label=label,
-                         descr=descr,
+                         descr=paste(descr,"After initial filtering",sep="."),
                          row.proportions=T,
                          row.names=F)
         
@@ -4303,24 +4487,29 @@ test.counts.project <- function(m_a,
     m_a = report.count.filter.m_a(m_a,
                                   count.filter.options=count.filter.feature.options,
                                   "feature")
+    export.taxa.meta(m_a,
+                     label=label,
+                     descr="After final feature filtering",
+                     row.proportions=T,
+                     row.names=F)    
   }
   if(is.null(count.filter.feature.options) || length(count.filter.feature.options)==0) {
     divrich.post.filter=F
   }
   
   make.global(m_a)
-
+  
   if(do.divrich && do.divrich.post.filter) {
     tryCatchAndWarn({ 
       res$divrich <- do.call(mgsat.divrich.report,
-                           c(list(m_a,
-                                  plot.profiles.task=plot.profiles.task,
-                                  extra.header="After count filtering"),
-                             divrich.task)
+                             c(list(m_a,
+                                    plot.profiles.task=plot.profiles.task,
+                                    extra.header="After count filtering"),
+                               divrich.task)
       )
     })
   }
-
+  
   if(do.deseq2) {
     tryCatchAndWarn({ 
       res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
@@ -4639,7 +4828,9 @@ environment(plot.annHeatmap2AT) <- asNamespace('Heatplus')
 heatmap.counts <- function(m_a,attr.annot.names=NULL,
                            attr.row.labels=NULL,
                            caption="Heatmap",
-                           max.species.show=30, 
+                           max.species.show=30,
+                           do.row.clust=T,
+                           do.col.clust=T,
                            stand.clust=NULL,
                            trans.clust=NULL,
                            dist.metr="euclidean",
@@ -4668,6 +4859,7 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
   }
   
   attr = m_a$attr[perm.ind,]
+  if(do.row.clust) {
   data.dist.samp <- vegdist(count, method = dist.metr)
   row.clus <- hclust(data.dist.samp, "ward.D2")
   row.dendro = as.dendrogram(row.clus)
@@ -4680,7 +4872,10 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
   }
   row.dendro = reorder(row.dendro, wgts, agglo.FUN=agglo.fun.order)
   #row.ind = order.dendrogram(row.dendro)
-  
+  }
+  else {
+    row.dendro=NA
+  }
   if(!is.null(attr.annot.names)) {
     attr.annot = attr[,attr.annot.names,drop=F]
   }
@@ -4688,12 +4883,17 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
     attr.annot = NULL
   }
   
+  if(do.col.clust) {
   ## cluster on normalized columns
   count.sub = count[,1:min(ncol(count),max.species.show)]
   # you have to transpose the dataset to get the taxa as rows
   data.dist.taxa <- vegdist(t(count.sub), method = dist.metr)
   col.clus <- hclust(data.dist.taxa, "ward.D2")
-  
+  col.dendro = as.dendrogram(col.clus)
+  }
+  else {
+    col.dendro=NA
+  }
   ## go back to un-normalized
   count.sub = count.src[,1:min(ncol(count),max.species.show)]
   if(!is.null(trans.show)) {
@@ -4710,12 +4910,12 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
                           scale = "none", # we get false bands with default standartization
                           legend = F,
                           dendrogram = list(status="yes",
-                                            Row = list(dendro = row.dendro), 
-                                            Col = list(dendro = as.dendrogram(col.clus))),
+                                            Row = list(dendro = row.dendro, status = ifelse(do.row.clust,"yes","no")), 
+                                            Col = list(dendro = col.dendro, status = ifelse(do.col.clust,"yes","no"))),
                           labels = list(Col = list(nrow = 20),
                                         Row = if(is.null(attr.row.labels)) list(status="no") 
                                         else list(nrow=6,labels=attr[,attr.row.labels])), #cex=0.8
-                          ann = list(Row = list(data = attr.annot)),
+                          ann = list(Row = list(data = attr.annot,control=list(hbuff=0,vbuff=0))),
                           cluster = list(Row = list(cuth = cluster.row.cuth, 
                                                     col = function(n) {brewer.pal(n, "Set2")})) 
                           # cuth gives the height at which the dedrogram should be cut to form 
