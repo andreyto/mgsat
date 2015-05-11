@@ -1,6 +1,6 @@
 # MGSAT semi-automated differential abundance analysis of omics datasets #
 
-![Within-between dissimilarity plot example](http://andreyto.bitbucket.org/mgsat/example_project_01/plots/10584217153b.png "Within-between dissimilarity plot example")
+![Within-between dissimilarity plot example](http://andreyto.bitbucket.org/mgsat/example_project_01/plots/9354f4ca029.png "Within-between dissimilarity plot example")
 
 ##Overview##
 MGSAT is written in R. It applies several types of statistical tests, normalizations and plotting routines to the abundance count matrices that are typically the output of annotating (meta)omics datasets, and generates a [structured HTML report](http://andreyto.bitbucket.org/mgsat/example_project_01/0-report.html) that, in addition to results, shows method parameters and versions of the external packages. 
@@ -20,7 +20,7 @@ The easiest way to start using this package is to study the inputs and outputs o
 
 The project is a made-up 16S sequencing study that looked at the association of a gut microbiome with some diet regimen. Samples were taken at several longitudinal points (called "visits" here), each visit coming after the next phase of diet regimen. Visit 1 was before the start of treatment. At Visit 1 (and a few at Visit 2), samples were also taken from healthy control individuals, each of which was matched with a corresponding patient. Some patients received a separate incidental drug treatment before coming for visit 1, which was reflected in a corresponding metadata variable. Note that because the enrollment was ongoing throughout  the study period, and the treatment was taking more than a year, there are progressively fewer samples at the higher visit numbers. There were no study drop-outs.
 
-The input driver script [examples/example_project_01/example_project.r](/andreyto/mgsat/src/master/examples/example_project_01/example_project.r) that the hypothetical user has created to run the analysis is included into the code repository along with the required Mothur count files and clinical metadata table. Comments within the script also describe how to install required R dependencies. You should also edit the location of the directory into which you checked out the MGSAT code. The analysis should run both on Linux and Windows. SNOW package is used for parallelization, with a default number of processes set to four.
+The input driver script [examples/example_project_01/example_project.r](examples/example_project_01/example_project.r) that the hypothetical user has created to run the analysis is included into the code repository along with the required Mothur count files and clinical metadata table. Comments within the script also describe how to install required R dependencies. You should also edit the location of the directory into which you checked out the MGSAT code. The analysis should run both on Linux and Windows. SNOW package is used for parallelization, with a default number of processes set to four.
 The driver script expects to find its input files in the current working directory, and will generate the output report files in the same directory. The top-level HTML report file is called 0-report.html. This file can be opened directly from disk (use Firefox or Chrome; Internet Explorer has compatibility issues). The same directory also contains Markdown files that served as source of the HTML files. They can be converted to other formats such as Microsoft Word by using [Pandoc](http://johnmacfarlane.net/pandoc/).
 
 You can open the [pre-computed HTML report](http://andreyto.bitbucket.org/mgsat/example_project_01/0-report.html) generated from running the example driver script (use Firefox or Chrome; Internet Explorer has compatibility issues).
@@ -36,4 +36,4 @@ Andrey Tovchigrechko `<andreyto AT gmail.com>`
 ##License##
 GPLv3. See also COPYING file that accompanies the source code.
 
-![Abundance profile patients across visits with and without drug treatment before dieting](http://andreyto.bitbucket.org/mgsat/example_project_01/plots/105879431cf3.png "Abundance profile patients across visits with and without drug treatment before dieting")
+![Abundance profile patients across visits with and without drug treatment before dieting](http://andreyto.bitbucket.org/mgsat/example_project_01/plots/935528b3081.png "Abundance profile patients across visits with and without drug treatment before dieting")
