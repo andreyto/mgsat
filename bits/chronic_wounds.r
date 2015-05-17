@@ -14,3 +14,11 @@ Heatmap(log(as.matrix(div.counts$e)),name="Renyi Ind",
   Heatmap(SampleType,name="SampleType")+
   Heatmap(m_a.norm$count,name="Norm. counts")
 })
+
+m_a.div = m_a.norm
+m_a.div$count = log(as.matrix(div.counts$e))
+ph = m_a.to.phyloseq(m_a.div)
+print(plot_ordination(ph, ordinate(ph,method="RDA",distance="euclidean",formula=~WP.collection), 
+                      type = "biplot", color = "WP.collection", title = "taxa",label="Feature",
+                      axes=c(1,2)) + 
+        geom_text(aes(label=Feature),size=rel(6)))
