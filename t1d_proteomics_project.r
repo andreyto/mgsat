@@ -290,7 +290,50 @@ gen.tasks.t1d.prot <- function() {
     })
     
   })
-  
+
+  task.assoc.power = within( task1, {
+    
+    descr = "All samples, aggregated by UnitID (family/condition), power analysis for association study"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    test.counts.task = within(test.counts.task, {  
+      
+      do.genesel=F
+      do.stabsel=F
+      do.adonis=F
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      do.extra.method = taxa.levels
+      
+      count.filter.feature.options=list(min_incidence_frac=0.25)
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,id.markers) {
+          wilcox.power(m_a=m_a.norm,
+                             group.attr="Group",
+                             id.markers=id.markers,R=2000,n=200)
+        }
+        
+        id.markers = c("P17050","O00754","P53634",
+                       "P20774","Q9BTY2","P02750",
+                       "Q14393","P40197","Q96HD9",
+                       "P14151","Q13421","Q6UXB8",
+                       "P19320","Q9BYF1","P08195",
+                       "Q13740","P33151","P04066",
+                       "P13473","Q9H0E2")
+        
+      })
+    })
+    
+  })  
+
+  return (list(task.assoc.power))
   return (list(task.verify.biomarkers.power))
   return (list(task1,task2))
 }

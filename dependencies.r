@@ -47,7 +47,11 @@ vanilla_packages = c(
   ##ROC curve power analysis for biomarker verification
   "pROC",
   ##interpolation and numerical derivatives (including for ROC analysis)
-  "pspline"
+  "pspline",
+  ##permutation test with multiple testing correction for dependent tests
+  ##to be used for testing series of Hill numbers (use our modified function
+  ##mcp.wy, but it depends on one other method from simboot for now)
+  "simboot"
 )
 
 bio_packages = c(
@@ -55,7 +59,13 @@ bio_packages = c(
   "GeneSelector",
   "RColorBrewer",
   "Heatplus",
-  "DESeq2"
+  "DESeq2",
+  "ComplexHeatmap",
+  "phyloseq",
+  ##third-party R implementation of Holmes 2012 model-based 
+  ##and classification clustering algorithm.
+  ##Needs GSL installed on the system in order to build
+  "DirichletMultinomial"
 )
 
 install_required_packages <- function() {

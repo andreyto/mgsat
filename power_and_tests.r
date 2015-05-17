@@ -850,7 +850,7 @@ wilcox.test.multi <- function(mat,group=NULL,
   return (pvals)
 }
 
-wilcox.test.multi.fast <- function(mat,group=NULL,type="unpaired",pval=T,only.pval=T) {
+wilcox.test.multi.fast <- function(mat,group=NULL,type="unpaired",pval=T,only.pval=T,pvalues.impl="genesel") {
   tr.mat=t(mat)
   if(is.null(group)) {
     stopifnot(type=="onesample")
@@ -1392,7 +1392,9 @@ read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitiz
                                       count.basis="seq", otu.count.filter.options=NULL) {
   otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
   taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level)
-  stopifnot(all(colnames(otu.df) == taxa.df$OTU))
+  #make.global(name="otu.fr")
+  stopifnot(ncol(otu.df) == nrow(taxa.df))
+  stopifnot(all(colnames(otu.df) %in% taxa.df$OTU))
   otu.df = new.m_a(count=otu.df)
   otu.df = report.count.filter.m_a(otu.df,count.filter.options=otu.count.filter.options)$count
   otu.name.ind = match(colnames(otu.df),taxa.df$OTU)
@@ -2517,8 +2519,6 @@ mgsat.divrich.report <- function(m_a,
                                                is.raw.count.data=is.raw.count.data,
                                                do.rarefy=do.rarefy,
                                                hill.args=list(evenness=div.task$evenness))
-      make.global(div.counts)
-      stop("DEBUG")
       if(do.plot.profiles) {
         do.call(plot.profiles,
                 c(list(m_a=list(count=div.counts$e,attr=m_a$attr),
@@ -6466,7 +6466,7 @@ power.pieper.t1d <- function(
   feat.sig.names=NULL,
   targeted=F
 ) {
-  if(F) {
+  if(T) {
     taxa.meta = read.pieper.t1d(file.name=data.file)
     aggr_var = "SubjectID"
     taxa.meta = aggregate.by.meta.data(taxa.meta$data,
@@ -6628,6 +6628,20 @@ power.pieper.prostate.cancer.2014<-function() {
   print(power.res)
 }
 
+power.proteom.bladder.cancer.probiotic <-function() {
+  power.res = power.pieper.t1d(
+    n = 170,
+    ## this is under the proposal directory
+    data.file = "data/T1D_proteome/Original Collapesed APEX (All information).AT.tsv",
+    min.mean = 1200,
+    alpha.sim = 0.05,
+    alpha.orig = 0.05,
+    R = 400
+  )
+  print("Power results:")
+  print(power.res)
+}
+
 power.madupu.kidney_diabetes<-function() {
   prot.ids = as.data.frame(
     matrix(
@@ -6659,4 +6673,87 @@ power.madupu.kidney_diabetes<-function() {
   )
   print("Power results:")
   print(power.res)  
+}
+
+
+wilcox.power <- function(m_a,
+                         group.attr="Group",
+                         alpha=0.05,
+                         power.target=0.8,
+                         n = 300,
+                         R = 100,
+                         mult.adj="BH",
+                         id.markers)
+{
+  
+  orig.res = genesel.stability(m_a,
+                                group.attr=group.attr,
+                                block.attr=NULL,
+                                type="unpaired",
+                                replicates=0,
+                                samp.fold.ratio=0.5,
+                                maxrank=20,
+                                comp.log.fold.change=T,
+                                ret.data.contrasts=T
+  )
+  
+  m = m_a$count
+  group = m_a$attr[,group.attr]
+  
+  ind.ob = seq(nrow(m))
+  plus = function(x,y) (x + y)
+  fin = function(x) (x/R)
+  power = foreach(i.rep = seq(R),
+                       .combine=plus,
+                       .final=fin,
+          .packages=c("GeneSelector","fdrtool"),
+          .export=c("wilcox.test.multi.fast","RankingWilcoxonAT")) %dopar% {
+    ##replace=TRUE to select more samples than in original dataset
+    ##TODO: apply strata to keep group count ratio
+    ind.n = sample(ind.ob, n, replace = TRUE, prob = NULL)
+    d <- m[ind.n,,drop=F]
+    g <- group[ind.n]
+    #print(summary(g))
+    pvals = wilcox.test.multi.fast(d,g,pvalues.impl="wilcox.exact")    
+    if(mult.adj=="fdrtool") {
+      pvals.adj = fdrtool(pvals,statistic="pvalue",plot=F,verbose=F)$qval
+    }
+    else {
+      pvals.adj = p.adjust(pvals,method=mult.adj)
+    }
+    as.numeric(pvals.adj <= alpha)
+  }
+  #colnames(pvals.boot.adj) = colnames(m)
+  #power = colMeans(pvals.boot.adj <= alpha)
+  power = data.frame(power=power)
+  rownames(power) = colnames(m)
+  #power$name = rownames(power)
+  res = merge(orig.res$stab_feat,power,by="row.names")
+  stopifnot(nrow(res)==nrow(power))
+  rownames(res) = res$name
+  res$selection = F
+  res$selection[rownames(res) %in% id.markers] = T
+  report$add.table(res)
+  
+  require(splines)
+  pl = ggplot(res, aes(abs(r.eff.size),power)) + geom_point(aes(color=selection))
+  if(max(res$power)>=0.95) {
+    pl = pl + geom_smooth(method = "gam", se=T, color="black",family="betar")
+  }
+  else {
+    pl = pl + geom_smooth(method="lm",formula = y ~ ns(x,df=100), se=T, color="black")
+  }
+  pl = pl + 
+    geom_hline(y=power.target,color="blue") +
+    xlab("Abs value of Cohen's r")
+  #geom_smooth(method = "gam", se=T, color="black",family="betar")
+  report$add(pl,
+             caption=sprintf("Power of Wilcoxon rank-sum test as a function of absolute 
+                             value of standardized r effect size at %s significance cutoff
+                             and sample size %s (total in both groups). 
+                             Each point represents one feature. 
+                             Externally selected features are colored.
+                             Blue line represents target power value of %s", alpha,n,power.target)
+  )
+  return (res)
 }
