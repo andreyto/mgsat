@@ -2543,7 +2543,7 @@ mgsat.divrich.report <- function(m_a,
                                 name.base="divrich.counts",
                                 descr="Abundance based richness and diversity")
     
-    if(!is.null(counts.glm.task)) {
+    if(!(is.null(counts.glm.task) || is.null(counts.glm.task$formula.rhs))) {
       
       res$glm.res = do.call(mgsat.divrich.counts.glm.test,
                             c(list(m_a.dr),
@@ -3072,6 +3072,7 @@ mgsat.16s.task.template = within(list(), {
     do.divrich.post.filter=F    
     do.plot.profiles.abund=T
     do.heatmap.abund=T
+    do.ordination=T
     do.select.samples=c()
     do.extra.method=c()
     
@@ -3220,7 +3221,23 @@ mgsat.16s.task.template = within(list(), {
       trans.show="norm.boxcox"
       stand.show="range"
     })
-    
+
+    ordination.task = within(list(), {
+      distance="bray"
+      ord.tasks = list(
+        list(
+          ordinate.task=list(
+            method="RDA"
+            ##other arguments to phyloseq:::ordinate
+          ),
+          plot.task=list(
+            type="samples"
+            ##other arguments to phyloseq:::plot_ordination
+          )
+        )
+      )
+    })
+        
     extra.method.task = within(list(), {
       func = function(m_a,m_a.norm,res.tests,...) {}
       ##possibly other arguments to func()
@@ -3603,7 +3620,7 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) 
   if (!is.null(seed) ) { set.seed(seed) }
   # Setting the number of folds to the number of samples (leave one out)
   #is not recommended by cv.glmnet help page
-  numfolds <- min(15,dim(x)[1])
+  numfolds <- min(15,max(2,round(nrow(x)/10)))
   # Grid for alpha crossvalidation
   alphas <- c(0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 0.95, 0.99, 0.999,1.0)
   # In a k fold crossvalidation, fold ID gives the iteration in which the sample would be in the test set.
@@ -3618,6 +3635,7 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) 
   else {
     dfmax = ncol(x) + 1
   }
+
   lassomodels <- foreach(i = c(1:length(alphas)),.packages=c("glmnet")) %dopar% {
     #re-import required for windows parallelism with doSNOW
     library(glmnet)
@@ -3952,6 +3970,9 @@ stabsel.report <- function(m_a,
   )
   
   resp = m_a$attr[,resp.attr]
+  if(is.factor(resp)) {
+    resp = factor(resp) #remove levels without observations
+  }
   count = m_a$count
   
   if(is.null(args.stabsel$q)) {
@@ -4426,6 +4447,7 @@ test.counts.project <- function(m_a,
                                 do.divrich.post.filter=T,
                                 do.plot.profiles.abund=T,
                                 do.heatmap.abund=T,
+                                do.ordination=T,
                                 do.extra.method=F,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
@@ -4439,6 +4461,7 @@ test.counts.project <- function(m_a,
                                 plot.profiles.task=NULL,
                                 plot.profiles.abund.task=NULL,
                                 heatmap.abund.task=NULL,
+                                ordination.task=NULL,
                                 alpha=0.05,
                                 do.return.data=T,
                                 feature.ranking="stabsel",
@@ -4612,6 +4635,18 @@ test.counts.project <- function(m_a,
       
     })
   }
+
+  if (do.ordination) {
+    
+    tryCatchAndWarn({
+      do.call(ordination.report,
+              c(list(m_a=m_a.norm,res=res),
+                ordination.task
+              )
+      )
+      
+    })
+  }  
   
   if(do.extra.method && !is.null(extra.method.task)) {
     extra.method.func = extra.method.task$func
@@ -4950,8 +4985,33 @@ heatmap.t1d <- function(meta.data,attr.names,caption="Heatmap") {
   }
 }
 
-
-
+ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T) {
+  require(phyloseq)
+  report.section = report$add.header("Ordinations",section.action="push",sub=sub.report)  
+  report$add.package.citation("phyloseq")  
+  report$add.package.citation("vegan")  
+  ph = m_a.to.phyloseq(m_a)
+  for(ord.task in ord.tasks) {
+    if(!is.null(ord.task$ordinate.task$formula)) {
+      ord.task$ordinate.task$formula = as.formula(sprintf("~%s",ord.task$ordinate.task$formula))
+    }
+    ord = do.call(ordinate,
+                  c(list(ph,distance=distance),
+                    ord.task$ordinate.task
+                    ))
+    pl = do.call(plot_ordination,
+                 c(list(ph,ord),
+                   ord.task$plot.task
+                   ))
+    report$add(pl,
+               caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
+               Plot used parameters %s.",
+               arg.list.as.str(ord.task$ordinate.task),
+               arg.list.as.str(ord.task$plot.task))
+    )
+  }
+  report$pop.section()  
+}
 
 plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.samples=T,show.species=T) {
   ##https://stat.ethz.ch/pipermail/r-help/2008-April/159351.html
@@ -5836,6 +5896,10 @@ test.dist.matr.within.between <- function(m_a,
   report$add.header(sprintf('Comparison and test of significant difference for profile
 dissimilarities within and between blocks defined
 by attribute %s across groups defined by attribute %s',block.attr,group.attr))
+  
+  s.c = sample.contrasts(m_a, group.attr = group.attr, block.attr = block.attr)
+  
+  m_a = s.c$m_a.groups
   
   if(!is.null(norm.count.task)) {
     m_a <- norm.count.report(m_a,

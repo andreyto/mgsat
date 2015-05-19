@@ -5,6 +5,17 @@
 load.meta.caries <- function(file.name,batch=NULL,aggr.var=NULL) {
   
   meta =read.delim(file.name, header=TRUE,stringsAsFactors=T, sep="\t")
+  
+  allnames = replace.col.names(names(meta),
+                               c("zygosity","jcvi_sex","sample_site","collection_date","jcvi_twin_id"),
+                               c("Zygosity","Gender","OralSite","CollectionDate","TwinIndex"))
+  
+  names(meta) = allnames  
+  
+  meta = within(meta,{
+    OralSite = factor(substr(OralSite,1,2))
+  })
+  
   row.names(meta) = meta$SampleID
   
   ##pass filter argument and filter here before aggregation 
@@ -24,7 +35,6 @@ load.meta.caries <- function(file.name,batch=NULL,aggr.var=NULL) {
 ## relation to the abundance profiles. You can write it to do nothing (empty body).
 
 summary.meta.caries <- function(m_a) {
-  return(0)
   
   report$add.header("Summary of metadata variables")
   
@@ -35,23 +45,22 @@ summary.meta.caries <- function(m_a) {
   
   report$add.printed(summary(meta),caption="Summary of metadata variables")
   
-  xtabs.formulas = list("~WP.collection","~WP.one.month","~WP.collection+WP.one.month",
-                        "~Hidradenitis+WP.one.month","~PatientID+SampleID",
-                        "~Hidradenitis+Region","~SampleType","~Diabetes")
+  xtabs.formulas = list("~OralSite","~Gender","~Zygosity",
+                        "~Gender+Zygosity")
   for(xtabs.formula in xtabs.formulas) {
     fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
     report$add(fact.xtabs,caption=paste("Sample cross tabulation",xtabs.formula))
     report$add.printed(summary(fact.xtabs))
   }
   
-#   with(meta,{
-#     
-#     report$add(aov(Healing.rate.one.month~Hidradenitis),
-#                caption="ANOVA for rate of healing and Hidradenitis")
-#     report$add(qplot(Hidradenitis,Healing.rate.one.month,geom="violin"),
-#                caption="Violin plot for healing and Hidradenitis")
-#     
-#   })
+  with(meta,{
+    
+    report$add(aov(age~OralSite),
+               caption="ANOVA for age and collection site")
+    report$add(qplot(OralSite,age,geom="violin"),
+               caption="Violin plot for age and collection site")
+    
+  })
   
 }
 
@@ -65,12 +74,12 @@ gen.tasks.caries <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(6,"otu")
+    taxa.levels = c(2,3,4,5,6,"otu")
     #taxa.levels = c(2)
     
     descr = "All samples"
     
-    main.meta.var = "Site"
+    main.meta.var = "OralSite"
     
     read.data.task.yap = within(read.data.task, {
       taxa.summary.file = NA
@@ -132,11 +141,42 @@ gen.tasks.caries <- function() {
         cluster.row.cuth=10
       })
       
+      ordination.task = within(ordination.task, {
+        distance="euclidean"
+        ord.tasks = list(
+          list(
+            ordinate.task=list(
+              method="RDA"
+              ##other arguments to phyloseq:::ordinate
+            ),
+            plot.task=list(
+              type="samples",
+              color=main.meta.var
+              ##other arguments to phyloseq:::plot_ordination
+            )
+          ),
+          list(
+            ordinate.task=list(
+              method="RDA",
+              formula=main.meta.var
+              ##other arguments to phyloseq:::ordinate
+            ),
+            plot.task=list(
+              type="samples",
+              color=main.meta.var
+              ##other arguments to phyloseq:::plot_ordination
+            )
+          )          
+        )
+      })
+            
     })
     
   })
-  
+
   task1 = within( task0, {
+    
+    descr = "All samples, general review"
     
     do.summary.meta = T
     
@@ -149,62 +189,32 @@ gen.tasks.caries <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.deseq2 = T
-      do.adonis = T
+      do.deseq2 = F
+      do.adonis = F
       do.genesel = F
-      do.stabsel = T
+      do.stabsel = F
       do.glmer = F
       do.divrich = c(6,"otu")
       
       do.plot.profiles.abund=T
       do.heatmap.abund=T
+      do.ordination=T
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
         is.raw.count.data=T
         group.attr = main.meta.var
         counts.glm.task = within(counts.glm.task,{
-          formula.rhs = main.meta.var
+          formula.rhs = NULL
         })      
         do.plot.profiles=T
-      })
-      
-      deseq2.task = within(deseq2.task, {
-        formula.rhs = main.meta.var
-      })
-      
-      genesel.task = within(genesel.task, {
-        group.attr = main.meta.var
-      })
-      
-      stabsel.task = within(stabsel.task, {
-        resp.attr=main.meta.var
-      })
-      
-      adonis.task = within(adonis.task, {
-        
-        tasks = list(
-          list(formula.rhs=main.meta.var,
-               strata=NULL,
-               descr="Association with the site")
-        )
-        
-      })
-      
-      glmer.task = within(glmer.task, {
-        
-        tasks = list(list(
-          descr.extra = "",
-          formula.rhs = paste(main.meta.var,"(1|PatientID/SampleID)",sep="+"),
-          linfct=c("WP.one.monthH = 0")
-        ))
-      })
+      })      
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c(main.meta.var),c("zygosity"),c(main.meta.var,"zygosity"))
-        feature.meta.x.vars=c("collection_date","age")
+        id.vars.list = list(c(),c(main.meta.var),c("Zygosity"),c(main.meta.var,"Zygosity"))
+        feature.meta.x.vars=c("CollectionDate","age")
         do.profile=T
-        do.feature.meta=F
+        do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -215,8 +225,141 @@ gen.tasks.caries <- function() {
     
   })
   
-  return (list(task1))
-  #return (list(task1,task2))
+  
+  task1.1 = within( task1, {
+    
+    descr = "All samples, aggregated by SubjectID"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      m_a = aggregate.by.meta.data.m_a(m_a,group_col="SubjectID")
+      m_a$OralSite = factor(m_a$OralSite)
+      return(m_a)
+    }    
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      
+      do.divrich = c()
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      do.extra.method = taxa.levels
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests) {
+          test.dist.matr.within.between(m_a=m_a.norm,
+                                        group.attr="TwinIndex",
+                                        block.attr="FamilyID",
+                                        col.trans=NULL,
+                                        dist.metr="euclidian",
+                                        n.perm=4000)
+        }
+      })
+      
+    })
+    
+  })
+
+  task1.2 = within( task1, {
+    
+    descr = "Only samples with defined mouth quarters"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      m_a = subset.m_a(m_a,subset=(substr(m_a$attr$OralSite,1,1) == "Q"))
+      return(m_a)
+    }    
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = T
+      do.glmer = F
+      
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      
+      do.extra.method = taxa.levels
+      
+      divrich.task = within(divrich.task,{
+        counts.glm.task = within(counts.glm.task,{
+          formula.rhs = main.meta.var
+        })      
+        do.plot.profiles = F
+      })
+      
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = sprintf("SubjectID+%s",main.meta.var)
+      })
+      
+      genesel.task = within(genesel.task, {
+        group.attr = main.meta.var
+        genesel.param = within(genesel.param, {
+          block.attr = "SubjectID"
+          type="paired"
+        })        
+      })
+      
+      stabsel.task = within(stabsel.task, {
+        resp.attr=main.meta.var
+      })
+      
+      adonis.task = within(adonis.task, {
+        
+        tasks = list(
+          list(formula.rhs=main.meta.var,
+               strata="SubjectID",
+               descr="Association with the site")
+        )
+        
+      })
+      
+      glmer.task = within(glmer.task, {
+        
+        tasks = list(list(
+          descr.extra = "",
+          formula.rhs = paste(main.meta.var,"(1|SubjectID/SampleID)",sep="+"),
+          linfct=c("OralSiteQ4 = 0")
+        ))
+      })
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests) {
+          test.dist.matr.within.between(m_a=m_a.norm,
+                                        group.attr=main.meta.var,
+                                        block.attr="SubjectID",
+                                        col.trans=NULL,
+                                        dist.metr="euclidian",
+                                        n.perm=4000)
+        }
+      })
+      
+    })
+    
+  })
+  
+  
+  return (list(task1,task1.1,task1.2))
+  #return (list(task1))
 }
 
 
@@ -258,7 +401,7 @@ set_trace_options(try.debug=F)
 ## a long run. But then incremental.save=T, you can open HTML report file in
 ## a Web browser and refresh it periodically to see it grow.
 report <- PandocAT$new(author="atovtchi@jcvi.org",
-                       title="Analysis of 16S data for chronic wound microbiome",
+                       title="Analysis of 16S data for oral microbiome",
                        incremental.save=F)
 
 
