@@ -20,7 +20,7 @@ load.meta.gwu_cw <- function(file.name,batch=NULL,aggr.var=NULL) {
     meta[,field] = as.numeric(as.character(meta[,field]))
     meta[,paste(field,"quant",sep=".")] = quantcut.ordered(meta[,field])
   }
-
+  
   meta$PatientID = paste("P",as.character(meta$PatientID),sep="")
   
   meta = arrange(meta,PatientID,age,SampleType)
@@ -71,14 +71,14 @@ summary.meta.gwu_cw <- function(m_a) {
     report$add.printed(summary(fact.xtabs))
   }
   
-#   with(meta,{
-#     
-#     report$add(aov(Healing.rate.one.month~Hidradenitis),
-#                caption="ANOVA for rate of healing and Hidradenitis")
-#     report$add(qplot(Hidradenitis,Healing.rate.one.month,geom="violin"),
-#                caption="Violin plot for healing and Hidradenitis")
-#     
-#   })
+  #   with(meta,{
+  #     
+  #     report$add(aov(Healing.rate.one.month~Hidradenitis),
+  #                caption="ANOVA for rate of healing and Hidradenitis")
+  #     report$add(qplot(Hidradenitis,Healing.rate.one.month,geom="violin"),
+  #                caption="Violin plot for healing and Hidradenitis")
+  #     
+  #   })
   
 }
 
@@ -92,8 +92,8 @@ gen.tasks.gwu_cw <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    #taxa.levels = c(2,3,6,"otu")
-    taxa.levels = c(6)
+    taxa.levels = c(2,3,6,"otu")
+    #taxa.levels = c(6)
     
     descr = "One sample per patient"
     
@@ -123,6 +123,9 @@ gen.tasks.gwu_cw <- function() {
     summary.meta.method=summary.meta.gwu_cw
     
     test.counts.task = within(test.counts.task, {
+      
+      do.extra.method = c(2,3,4,5,6,"otu")
+      do.ordination = T
       
       count.filter.feature.options = within(count.filter.feature.options, {
         #min_mean_frac=0.00005
@@ -159,6 +162,81 @@ gen.tasks.gwu_cw <- function() {
         cluster.row.cuth=10
       })
       
+      ordination.task = within(ordination.task, {
+        distance="euclidean"
+        ord.tasks = list(
+          list(
+            ordinate.task=list(
+              method="RDA"
+              ##other arguments to phyloseq:::ordinate
+            ),
+            plot.task=list(
+              type="samples",
+              color=main.meta.var
+              ##other arguments to phyloseq:::plot_ordination
+            )
+          ),
+          list(
+            ordinate.task=list(
+              method="RDA",
+              formula=main.meta.var
+              ##other arguments to phyloseq:::ordinate
+            ),
+            plot.task=list(
+              type="samples",
+              color=main.meta.var
+              ##other arguments to phyloseq:::plot_ordination
+            )
+          )          
+        )
+      })      
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          require(fpc)
+          hmap.width = 1200
+          hmap.height = hmap.width * 0.8
+          split = pamk(m_a.norm$count, metric="pearson")$pamobject$clustering
+          h = Heatmap(m_a.norm$count,name="Abundance",
+                      cluster_columns=T,
+                      show_row_names = T, 
+                      clustering_distance_rows = "pearson", 
+                      split=split,
+                      column_names_gp = gpar(fontsize = 8),
+                      row_names_gp = gpar(fontsize = 8)) +  
+            ComplexHeatmap.add.attr(c(main.meta.var,"Year","Region","Diabetes",
+                                      "WP.one.month","Hidradenitis",
+                                      "SampleType","Healing.rate.collection.quant"),m_a.norm$attr,
+                                    show_row_names=F,
+                                    row_names_gp = gpar(fontsize = 8))
+          report$add(h,caption="Clustered heatmap of normalized abundance values",
+                     width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
+          g.t = g.test(m_a.norm$attr[,main.meta.var],split)
+          report$add(g.t)
+          
+          if(!is.null(get.diversity(res.tests,type="diversity"))) {
+            div = log(get.diversity(res.tests,type="diversity")$e)
+            split = pam(div, k=3, metric="pearson")$clustering
+            h.d = Heatmap(div,name="Renyi diversity indices",
+                          cluster_columns=F,
+                          show_row_names = F, 
+                          clustering_distance_rows = "pearson", 
+                          split=split,
+                          column_names_gp = gpar(fontsize = 8))
+            h = h.d + h
+            report$add(h,caption="Clustered heatmap of of diversity and normalized abundance values",
+                       width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
+            g.t = g.test(m_a.norm$attr[,main.meta.var],split)
+            report$add(g.t)
+          }
+        }
+        
+        norm.count.task.extra = within(norm.count.task, {
+        })
+        
+      })      
+      
     })
     
   })
@@ -176,14 +254,14 @@ gen.tasks.gwu_cw <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.deseq2 = F
-      do.adonis = F
-      do.genesel = F
-      do.stabsel = F
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = T
       do.glmer = F
       #do.divrich = c(6,"otu")
       
-      do.plot.profiles.abund=F
+      do.plot.profiles.abund=T
       do.heatmap.abund=F
       
       divrich.task = within(divrich.task,{
@@ -253,6 +331,7 @@ gen.tasks.gwu_cw <- function() {
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
+      m_a = subset.m_a(m_a,subset = (!is.na(m_a$attr$Healing.rate.collection)))
       return (m_a)
     }
     
@@ -273,6 +352,7 @@ gen.tasks.gwu_cw <- function() {
       do.genesel = F
       do.stabsel = T
       do.glmer = F
+      do.extra.method = c()
       #do.divrich = c()
       
       do.plot.profiles.abund=T
@@ -308,12 +388,41 @@ gen.tasks.gwu_cw <- function() {
           list(formula.rhs=main.meta.var.cont,
                strata=NULL,
                descr=sprintf("Association with %s",main.meta.var.cont))
-#           ,
-#           list(formula.rhs=paste(main.meta.var.cont,"Hidradenitis",sep="*"),
-#                strata=NULL,
-#                descr=sprintf("Association with the %s and Hidradenitis status",main.meta.var.cont)) 
+          #           ,
+          #           list(formula.rhs=paste(main.meta.var.cont,"Hidradenitis",sep="*"),
+          #                strata=NULL,
+          #                descr=sprintf("Association with the %s and Hidradenitis status",main.meta.var.cont)) 
         )
       })
+      
+      ordination.task = within(ordination.task, {
+        distance="euclidean"
+        ord.tasks = list(
+          list(
+            ordinate.task=list(
+              method="RDA"
+              ##other arguments to phyloseq:::ordinate
+            ),
+            plot.task=list(
+              type="samples",
+              color=main.meta.var.cont
+              ##other arguments to phyloseq:::plot_ordination
+            )
+          ),
+          list(
+            ordinate.task=list(
+              method="RDA",
+              formula=main.meta.var.cont
+              ##other arguments to phyloseq:::ordinate
+            ),
+            plot.task=list(
+              type="samples",
+              color=main.meta.var.cont
+              ##other arguments to phyloseq:::plot_ordination
+            )
+          )          
+        )
+      })            
       
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var))
@@ -329,8 +438,8 @@ gen.tasks.gwu_cw <- function() {
     })
     
   })
-  return (list(task1))
-  #return (list(task1,task2))
+  #return (list(task1))
+  return (list(task1,task2))
 }
 
 
@@ -363,9 +472,10 @@ load_required_packages()
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
+source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down

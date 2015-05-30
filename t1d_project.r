@@ -211,6 +211,37 @@ summary.meta.t1d <- function(m_a) {
   
 }
 
+new_ordination.task <- function(main.meta.var) {
+  within(mgsat.16s.task.template$test.counts.task$ordination.task, {
+    distance="euclidean"
+    ord.tasks = list(
+      list(
+        ordinate.task=list(
+          method="RDA"
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      ),
+      list(
+        ordinate.task=list(
+          method="RDA",
+          formula=main.meta.var
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      )          
+    )
+  })            
+}
+
 ## This function must generate a lits with analysis tasks
 
 gen.tasks.t1d <- function() {
@@ -230,8 +261,8 @@ gen.tasks.t1d <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(6,"otu")
-    #taxa.levels = c(6)
+    taxa.levels = c(2,3,4,5,6,"otu")
+    #taxa.levels = c(2)
     
     descr = "All samples, aggregated by AliquotID"
     
@@ -301,6 +332,18 @@ gen.tasks.t1d <- function() {
         cluster.row.cuth=10
       })
       
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        hmap.width=1000
+        hmap.height=hmap.width*0.8
+        attr.annot.names=c(main.meta.var,"age","TimestampMonth")
+        clustering_distance_rows="pearson"
+        km.abund=0
+        km.diversity=0
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var)
+      
     })
     
   })
@@ -314,7 +357,7 @@ gen.tasks.t1d <- function() {
     do.tests = T
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = c("Timestamp")
+      meta.x.vars = c("TimestampMonth")
       group.vars = c(main.meta.var)
     })
     
@@ -322,12 +365,12 @@ gen.tasks.t1d <- function() {
       
       do.deseq2 = T
       do.adonis = T
-      do.genesel = F
+      do.genesel = T
       do.stabsel = T
       do.glmer = F
       #do.divrich = c()
       
-      do.plot.profiles.abund=F
+      do.plot.profiles.abund=T
       do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
@@ -405,7 +448,7 @@ gen.tasks.t1d <- function() {
     do.tests = T
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = c("Timestamp")
+      meta.x.vars = c("TimestampMonth")
       group.vars = c(main.meta.var)
     })
     
@@ -413,7 +456,7 @@ gen.tasks.t1d <- function() {
       
       do.deseq2 = T
       do.adonis = F
-      do.genesel = F
+      do.genesel = T
       do.stabsel = F
       do.glmer = F
       #do.divrich = c()
@@ -448,7 +491,8 @@ gen.tasks.t1d <- function() {
         do.profile=T
         do.feature.meta=F
       })
-      
+
+      ordination.task = new_ordination.task("TimestampMonth")
       
     })
     
@@ -458,8 +502,8 @@ gen.tasks.t1d <- function() {
     
     descr = "All samples, aggregated by AliquotID, Within/Between distance test"
     
-    #taxa.levels = c(2,3,6,"otu")
-    taxa.levels = c(2)
+    taxa.levels = c(2,3,6,"otu")
+    #taxa.levels = c(2)
     
     do.summary.meta = F
     
@@ -578,7 +622,7 @@ gen.tasks.t1d <- function() {
     
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = c("Timestamp")
+      meta.x.vars = c("TimestampMonth")
       group.var = c(main.meta.var)
     })
     
@@ -638,6 +682,12 @@ gen.tasks.t1d <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var.cont)
       })
+
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var,"age","A1C")
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var)
       
     })
     
@@ -691,6 +741,8 @@ gen.tasks.t1d <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var.cont)
       })
+      
+      ordination.task = new_ordination.task(main.meta.var)
       
     })
     
@@ -802,6 +854,12 @@ gen.tasks.t1d <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var)
       })
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var,"age")
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var)
       
     })
     
@@ -943,6 +1001,12 @@ gen.tasks.t1d <- function() {
           attr.annot.names=c(main.meta.var)
         })
         
+        heatmap.combined.task = within(heatmap.combined.task, {
+          attr.annot.names=c(main.meta.var,"age")
+        })
+        
+        ordination.task = new_ordination.task(main.meta.var)
+        
       })
       
     })
@@ -988,8 +1052,8 @@ gen.tasks.t1d <- function() {
     
   })
   
-  return (list(task1))
-  #return (list(task1,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
+  #return (list(task1))
+  return (list(task1,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
 }
 
 
@@ -1022,6 +1086,7 @@ load_required_packages()
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
+source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
 set_trace_options(try.debug=F)

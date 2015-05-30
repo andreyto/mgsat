@@ -474,6 +474,13 @@ subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL) {
   m_a$count = m_a$count[subset,select.count,drop=F]
   m_a$attr = m_a$attr[subset,select.attr,drop=F]
   
+  ## remove no longer used levels from all factors
+  for(colnam in colnames(m_a$attr)) {
+    if(is.factor(m_a$attr[,colnam])) {
+      m_a$attr[,colnam] = factor(m_a$attr[,colnam])
+    }
+  }
+  
   return(m_a)
 }
 
@@ -1993,8 +2000,8 @@ mgsat.diversity.hill.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T,do
   do.call(
     mgsat.hill,c(
       list(rrarefy(m_a$count,n.rar)),
-                       hill.args)
-    )
+      hill.args)
+  )
 }
   }
 else {
@@ -2050,7 +2057,7 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   else {
     pool = m_a$attr[,group.attr]
     do.stratify = T
-    n.rar.rep = n.rar.rep * min(nrow(m_a$count),20)
+    n.rar.rep = min(10000,n.rar.rep * min(nrow(m_a$count),20))
   }
   count = m_a$count
   if(!(do.stratify || do.rarefy)) {
@@ -2233,7 +2240,7 @@ mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T,do.rarefy=T) {
 ## in the mcpHill - see its help page as well as the original Pallmann, P. et al. (2012)
 ## paper. In particular, the permutation based test assumes homoscedasticity.
 mcp.wy <- function (data, fact, align = FALSE, block, boots = 5000, udmat = FALSE, 
-          usermat, mattype = "Dunnett", dunbase = 1, opt = "two.sided") 
+                    usermat, mattype = "Dunnett", dunbase = 1, opt = "two.sided") 
 {
   require(simboot) #or multicomp
   data = as.matrix(data)
@@ -2419,6 +2426,11 @@ mgsat.plot.richness.samples <- function(rich,var.names=c("chao","jack1","boot"))
   return(pl)
 }
 
+new_divrich <- function(...) {
+  x = new_mgsatres(...)
+  class(x) <- append(class(x),"divrich",0)
+  return(x)
+}
 
 mgsat.divrich.report <- function(m_a,
                                  n.rar.rep=400,
@@ -2436,7 +2448,7 @@ mgsat.divrich.report <- function(m_a,
                                  do.accum=T,
                                  extra.header="") {
   
-  report.section = report$add.header(sprintf("Abundance and diversity estimates %s",extra.header),
+  report.section = report$add.header(sprintf("Richness and diversity estimates %s",extra.header),
                                      section.action="push", sub=T)
   group.descr = " Samples are not grouped."
   group.descr.short = " for all samples"
@@ -2477,9 +2489,9 @@ mgsat.divrich.report <- function(m_a,
   
   report$add.package.citation("vegan")
   
-  res = new_mgsatres()
+  res = new_divrich()
   
-  if(F && do.incidence) {
+  if( do.incidence) {
     ##even if we filtered singletons, incidence based estimators are probably still fine - singletons
     ##for them means a species that was observed only in a single sample, and filtering out singletons
     ##merely changes our definition of "observed"
@@ -2512,7 +2524,7 @@ mgsat.divrich.report <- function(m_a,
     
     res$div.counts = list()
     for(div.task in list(list(id.task="diversity",evenness=F,descr="diversity indices (Hill numbers)"),
-                      list(id.task="evenness",evenness=T,descr="evenness indices (Hill numbers / Observed 'species')")
+                         list(id.task="evenness",evenness=T,descr="evenness indices (Hill numbers / Observed 'species')")
     )
     ) {
       div.counts = mgsat.diversity.hill.counts(m_a,n.rar.rep=n.rar.rep,
@@ -2530,8 +2542,19 @@ mgsat.divrich.report <- function(m_a,
         )
       }
       res$div.counts[[div.task$id.task]] = div.counts
+      if(!is.null(group.attr)) {
+        attr = factor(m_a$attr[,group.attr])
+        lev.descr = data.frame(level=seq_along(levels(attr)),label=levels(attr))
+        mcp.res = mcp.wy(div.counts$e,attr)
+        report$add.package.citation("simboot")
+        report$add.table(mcp.res,caption=sprintf("Comparison of %s
+                         with Westfall and Young correction for multiple testing
+                          across levels of attribute %s",div.task$descr,group.attr),
+                         show.row.names=T)
+        report$add.table(lev.descr,caption="Levels that defined contrasts 
+                         in the previous table")
+      }
     }
-    
     divrich.counts = cbind(res$div.counts[["diversity"]]$e,res$div.counts[["evenness"]]$e)
     if(is.raw.count.data) {
       divrich.counts = cbind(divrich.counts,res$rich.counts$e)
@@ -2925,6 +2948,14 @@ load.meta.default <- function(file.name) {
   return (meta)
 }
 
+load.meta.american.gut <- function(file.name) {
+  meta = read.delim(file.name,header=T,stringsAsFactors=T)
+  ##header starts with #, which gets replaced with `X.`
+  meta$SampleID = as.factor(meta$X.SampleID)
+  row.names(meta) = meta$SampleID
+  return (meta)
+}
+
 
 read.data.project.yap <- function(taxa.summary.file,
                                   otu.shared.file,
@@ -3005,6 +3036,24 @@ m_a.to.phyloseq <- function(m_a,attr.taxa=NULL) {
   tax = tax_table(as.matrix(tax))
   attr = sample_data(m_a$attr)
   phyloseq(otu,tax,attr)
+}
+
+read.american.gut.m_a <- function(biom.file,meta.file,taxa.level) {
+  ph = import_biom(biom.file)
+  meta = sample_data(load.meta.american.gut(meta.file))
+  ph = merge_phyloseq(ph,meta)
+  stopifnot(as.character(taxa.level) != "otu")
+  taxa.level.ind = as.numeric(taxa.level)
+  ph = tax_glom(ph,taxrank=rank_names(ph)[taxa.level.ind])
+  count = otu_table(ph)
+  taxa = substring(tax_table(ph)[,taxa.level.ind],4)
+  taxa[str_blank(taxa)] = "Unclassified"
+  rownames(count) = taxa
+  count = t(count)
+  attr = sample_data(ph)
+  stopifnot(nrow(count)==nrow(attr))
+  stopifnot(all(rownames(count)==rownames(attr)))
+  list(count=count,attr=attr)
 }
 
 summary.meta.method.default <- function(taxa.meta) {
@@ -3221,7 +3270,18 @@ mgsat.16s.task.template = within(list(), {
       trans.show="norm.boxcox"
       stand.show="range"
     })
-
+    
+    heatmap.combined.task = within(list(), {
+      norm.count.task=NULL
+      hmap.width=1000
+      hmap.height=hmap.width*0.8
+      attr.annot.names=c()
+      clustering_distance_rows="pearson"
+      km.abund=0
+      km.diversity=0
+      show_row_names=F
+    })
+    
     ordination.task = within(list(), {
       distance="bray"
       ord.tasks = list(
@@ -3237,7 +3297,7 @@ mgsat.16s.task.template = within(list(), {
         )
       )
     })
-        
+    
     extra.method.task = within(list(), {
       func = function(m_a,m_a.norm,res.tests,...) {}
       ##possibly other arguments to func()
@@ -3308,6 +3368,34 @@ get.feature.ranking.mgsatres <- function(x.f,method="stabsel",...) {
   return (res)
 }
 
+## extract results of diversity analysis
+get.diversity <- function(x, ...) {
+  UseMethod('get.diversity', x)
+}
+
+get.diversity.default <- function(x.f) {
+  stop("Not defined for arbitrary objects")
+}
+
+get.diversity.divrich <- function(x.f,type) {
+  if(type %in% c("diversity","evenness")) {
+    x.f$div.counts[[type]]
+  }
+  else {
+    stop(paste("Unknown diversity type",type))    
+  }
+}
+
+get.diversity.mgsatres <- function(x.f,type=NULL,...) {
+  dr = x.f[["divrich"]]
+  if(is.null(dr)) return (NULL)
+  if(is.null(type)) {
+    return (dr)
+  }
+  else {
+    return (get.diversity(dr,type=type,...))
+  }
+}
 
 report.count.filter.m_a <- function(m_a,count.filter.options=NULL,descr="") {
   if(is.null(count.filter.options)) {
@@ -3386,9 +3474,12 @@ proc.project <- function(
         
         report$add.p(paste("After aggregating/subsetting, sample count is:",nrow(m_a$count)))
         
-        m_a = report.count.filter.m_a(m_a,
-                                      count.filter.options=count.filter.sample.options,
-                                      "sample")
+        ## wrap in list to test variable itself rather than its elements
+        if(!is.na(list(count.filter.sample.options))) {
+          m_a = report.count.filter.m_a(m_a,
+                                        count.filter.options=count.filter.sample.options,
+                                        "sample")
+        }
         
         if(do.summary.meta) {
           summary.meta.method(m_a)
@@ -3635,7 +3726,7 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) 
   else {
     dfmax = ncol(x) + 1
   }
-
+  
   lassomodels <- foreach(i = c(1:length(alphas)),.packages=c("glmnet")) %dopar% {
     #re-import required for windows parallelism with doSNOW
     library(glmnet)
@@ -4000,7 +4091,7 @@ stabsel.report <- function(m_a,
   )$param
   
   args.fitfun = c(args.fitfun,param.fit)
-  
+  make.global(name="st.en")
   stab.res = do.call(stabsel,c(
     list(x=count,y=resp,
          fitfun=fitfun,
@@ -4461,6 +4552,7 @@ test.counts.project <- function(m_a,
                                 plot.profiles.task=NULL,
                                 plot.profiles.abund.task=NULL,
                                 heatmap.abund.task=NULL,
+                                heatmap.combined.task=NULL,
                                 ordination.task=NULL,
                                 alpha=0.05,
                                 do.return.data=T,
@@ -4634,8 +4726,20 @@ test.counts.project <- function(m_a,
       )
       
     })
+    
+    tryCatchAndWarn({
+      do.call(heatmap.combined.report,
+              c(list(m_a=m_a,
+                     m_a.norm=m_a.norm,
+                     res.tests=res),
+                heatmap.combined.task
+              )
+      )
+      
+    })
+    
   }
-
+  
   if (do.ordination) {
     
     tryCatchAndWarn({
@@ -4860,7 +4964,8 @@ plot.annHeatmap2AT <-
 environment(plot.annHeatmap2AT) <- asNamespace('Heatplus')
 
 ## taxa count columns in meta.data must be already sorted by some abundance metrics
-heatmap.counts <- function(m_a,attr.annot.names=NULL,
+heatmap.counts <- function(m_a,
+                           attr.annot.names=NULL,
                            attr.row.labels=NULL,
                            caption="Heatmap",
                            max.species.show=30,
@@ -4876,7 +4981,6 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
                            cluster.row.cuth=2) {
   
   library(RColorBrewer)
-  library(Heatplus)
   library(vegan)
   
   ##permute samples to make sure that our dendrogram
@@ -4895,18 +4999,18 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
   
   attr = m_a$attr[perm.ind,]
   if(do.row.clust) {
-  data.dist.samp <- vegdist(count, method = dist.metr)
-  row.clus <- hclust(data.dist.samp, "ward.D2")
-  row.dendro = as.dendrogram(row.clus)
-  
-  if(is.null(attr.order)) {
-    wgts = rowMeans(count, na.rm = TRUE)
-  }
-  else {
-    wgts = attr[,c(attr.order)]
-  }
-  row.dendro = reorder(row.dendro, wgts, agglo.FUN=agglo.fun.order)
-  #row.ind = order.dendrogram(row.dendro)
+    data.dist.samp <- vegdist(count, method = dist.metr)
+    row.clus <- hclust(data.dist.samp, "ward.D2")
+    row.dendro = as.dendrogram(row.clus)
+    
+    if(is.null(attr.order)) {
+      wgts = rowMeans(count, na.rm = TRUE)
+    }
+    else {
+      wgts = attr[,c(attr.order)]
+    }
+    row.dendro = reorder(row.dendro, wgts, agglo.FUN=agglo.fun.order)
+    #row.ind = order.dendrogram(row.dendro)
   }
   else {
     row.dendro=NA
@@ -4919,12 +5023,12 @@ heatmap.counts <- function(m_a,attr.annot.names=NULL,
   }
   
   if(do.col.clust) {
-  ## cluster on normalized columns
-  count.sub = count[,1:min(ncol(count),max.species.show)]
-  # you have to transpose the dataset to get the taxa as rows
-  data.dist.taxa <- vegdist(t(count.sub), method = dist.metr)
-  col.clus <- hclust(data.dist.taxa, "ward.D2")
-  col.dendro = as.dendrogram(col.clus)
+    ## cluster on normalized columns
+    count.sub = count[,1:min(ncol(count),max.species.show)]
+    # you have to transpose the dataset to get the taxa as rows
+    data.dist.taxa <- vegdist(t(count.sub), method = dist.metr)
+    col.clus <- hclust(data.dist.taxa, "ward.D2")
+    col.dendro = as.dendrogram(col.clus)
   }
   else {
     col.dendro=NA
@@ -4985,6 +5089,87 @@ heatmap.t1d <- function(meta.data,attr.names,caption="Heatmap") {
   }
 }
 
+ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,...) {
+  n.h = length(attr.names)
+  h = Heatmap(data[,attr.names[1],drop=F],name=attr.names[1],
+              show_row_names = ifelse(n.h>1,F,show_row_names),
+              ...)
+  n.h = n.h - 1
+  if (n.h > 0) {
+    for(attr.name in attr.names[2:length(attr.names)]) {
+      h = h + Heatmap(data[,attr.name,drop=F],name=attr.name,
+                      show_row_names = ifelse(n.h>1,F,show_row_names),
+                      ...) 
+      n.h = n.h - 1
+    }
+  }
+  return (h)
+}
+
+heatmap.combined.report <- function(m_a,
+                                    m_a.norm,
+                                    res.tests,
+                                    norm.count.task=NULL,
+                                    hmap.width,
+                                    hmap.height=hmap.width*0.8,
+                                    attr.annot.names=c(),
+                                    clustering_distance_rows="pearson",
+                                    km.abund=0,
+                                    km.diversity=0,
+                                    show_row_names = F) {
+  require(fpc)
+  main.meta.var = NULL
+  if(length(attr.annot.names)>0) {
+    main.meta.var = attr.annot.names[[1]]
+  }
+  if(km.abund<1) {
+    split = pamk(m_a.norm$count, metric=clustering_distance_rows)$pamobject$clustering
+  }
+  else {
+    split = pam(m_a.norm$count, k=km.abund, metric=clustering_distance_rows)$clustering
+  }
+  h = Heatmap(m_a.norm$count,name="Abundance",
+              cluster_columns=T,
+              show_row_names = show_row_names, 
+              clustering_distance_rows = clustering_distance_rows, 
+              split=split,
+              column_names_gp = gpar(fontsize = 8),
+              row_names_gp = gpar(fontsize = 8)) +  
+    ComplexHeatmap.add.attr(attr.annot.names,
+                            m_a.norm$attr,
+                            show_row_names=F,
+                            row_names_gp = gpar(fontsize = 8))
+  report$add(h,caption="Clustered heatmap of normalized abundance values",
+             width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
+  if(!is.null(main.meta.var)) {
+    g.t = g.test(m_a.norm$attr[,main.meta.var],split)
+    report$add(g.t)
+  }
+  
+  if(!is.null(get.diversity(res.tests,type="diversity"))) {
+    div = log(get.diversity(res.tests,type="diversity")$e)
+    if(km.diversity<1) {
+      split = pamk(div, metric="pearson")$pamobject$clustering
+    }
+    else {
+      split = pam(div, k=km.diversity, metric="pearson")$clustering
+    }    
+    h.d = Heatmap(div,name="Renyi diversity indices",
+                  cluster_columns=F,
+                  show_row_names = F, 
+                  clustering_distance_rows = "pearson", 
+                  split=split,
+                  column_names_gp = gpar(fontsize = 8))
+    h = h.d + h
+    report$add(h,caption="Clustered heatmap of of diversity and normalized abundance values",
+               width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
+    if(!is.null(main.meta.var)) {
+      g.t = g.test(m_a.norm$attr[,main.meta.var],split)
+      report$add(g.t)
+    }
+  }
+}
+
 ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T) {
   require(phyloseq)
   report.section = report$add.header("Ordinations",section.action="push",sub=sub.report)  
@@ -4998,16 +5183,16 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     ord = do.call(ordinate,
                   c(list(ph,distance=distance),
                     ord.task$ordinate.task
-                    ))
+                  ))
     pl = do.call(plot_ordination,
                  c(list(ph,ord),
                    ord.task$plot.task
-                   ))
+                 ))
     report$add(pl,
                caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
                Plot used parameters %s.",
-               arg.list.as.str(ord.task$ordinate.task),
-               arg.list.as.str(ord.task$plot.task))
+                               arg.list.as.str(ord.task$ordinate.task),
+                               arg.list.as.str(ord.task$plot.task))
     )
   }
   report$pop.section()  
@@ -6751,14 +6936,14 @@ wilcox.power <- function(m_a,
 {
   
   orig.res = genesel.stability(m_a,
-                                group.attr=group.attr,
-                                block.attr=NULL,
-                                type="unpaired",
-                                replicates=0,
-                                samp.fold.ratio=0.5,
-                                maxrank=20,
-                                comp.log.fold.change=T,
-                                ret.data.contrasts=T
+                               group.attr=group.attr,
+                               block.attr=NULL,
+                               type="unpaired",
+                               replicates=0,
+                               samp.fold.ratio=0.5,
+                               maxrank=20,
+                               comp.log.fold.change=T,
+                               ret.data.contrasts=T
   )
   
   m = m_a$count
@@ -6768,25 +6953,25 @@ wilcox.power <- function(m_a,
   plus = function(x,y) (x + y)
   fin = function(x) (x/R)
   power = foreach(i.rep = seq(R),
-                       .combine=plus,
-                       .final=fin,
-          .packages=c("GeneSelector","fdrtool"),
-          .export=c("wilcox.test.multi.fast","RankingWilcoxonAT")) %dopar% {
-    ##replace=TRUE to select more samples than in original dataset
-    ##TODO: apply strata to keep group count ratio
-    ind.n = sample(ind.ob, n, replace = TRUE, prob = NULL)
-    d <- m[ind.n,,drop=F]
-    g <- group[ind.n]
-    #print(summary(g))
-    pvals = wilcox.test.multi.fast(d,g,pvalues.impl="wilcox.exact")    
-    if(mult.adj=="fdrtool") {
-      pvals.adj = fdrtool(pvals,statistic="pvalue",plot=F,verbose=F)$qval
-    }
-    else {
-      pvals.adj = p.adjust(pvals,method=mult.adj)
-    }
-    as.numeric(pvals.adj <= alpha)
-  }
+                  .combine=plus,
+                  .final=fin,
+                  .packages=c("GeneSelector","fdrtool"),
+                  .export=c("wilcox.test.multi.fast","RankingWilcoxonAT")) %dopar% {
+                    ##replace=TRUE to select more samples than in original dataset
+                    ##TODO: apply strata to keep group count ratio
+                    ind.n = sample(ind.ob, n, replace = TRUE, prob = NULL)
+                    d <- m[ind.n,,drop=F]
+                    g <- group[ind.n]
+                    #print(summary(g))
+                    pvals = wilcox.test.multi.fast(d,g,pvalues.impl="wilcox.exact")    
+                    if(mult.adj=="fdrtool") {
+                      pvals.adj = fdrtool(pvals,statistic="pvalue",plot=F,verbose=F)$qval
+                    }
+                    else {
+                      pvals.adj = p.adjust(pvals,method=mult.adj)
+                    }
+                    as.numeric(pvals.adj <= alpha)
+                  }
   #colnames(pvals.boot.adj) = colnames(m)
   #power = colMeans(pvals.boot.adj <= alpha)
   power = data.frame(power=power)
