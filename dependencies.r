@@ -51,7 +51,11 @@ vanilla_packages = c(
   ##permutation test with multiple testing correction for dependent tests
   ##to be used for testing series of Hill numbers (use our modified function
   ##mcp.wy, but it depends on one other method from simboot for now)
-  "simboot"
+  "simboot",
+  ## automatic selection of the number of clusters for pam
+  "fpc",
+  ## descriptive statistics and multinomial confidence intervals
+  "DescTools"
 )
 
 bio_packages = c(

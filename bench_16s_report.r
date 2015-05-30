@@ -119,7 +119,7 @@ multinom.ci.matrix <- function(x,conf.level=0.95,...) {
   aaply(x,1,function(y) MultinomCI(y,conf.level=conf.level,...))
 }
 
-load.ground.thruth.m_a <- function(abund.file,
+load.ground.truth.m_a <- function(abund.file,
                                    aggr.type=c("genus.abund","genus.otus","otu"),
                                    pseudo.sum=50000) {
   x = read.delim(abund.file,header=T,sep="\t")
@@ -206,17 +206,17 @@ benchmark.load.data <- function(otu.count.filter.options,
   res = with(mgsat.16s.task.template,{
     
     runs.files = list(
-            list(
-              RunID="YAP.comm.V13",
-              run.descr="YAP currently deployed in common area; V13",
-              read.data.task=within(read.data.task, {
-                taxa.summary.file = "yap/bei/v13/common/7913675baaa4dd38c5ad2c19b10bdda5.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
-                otu.shared.file="yap/bei/v13/common/5f44040ee0ae9f533d83e48deded4bac.files_x1.sorted.0.03.shared"
-                cons.taxonomy.file="yap/bei/v13/common/dce008a0990dc67e8148b3a31fb0bb02.files_x1.sorted.0.03.cons.taxonomy"
-                taxa.summary.file.otu = "yap/bei/v13/common/0211bc387719c7e0a4dc9d4ea0eccee9.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
-                meta.file=meta.file.samples
-              })
-            )
+#             list(
+#               RunID="YAP.comm.V13",
+#               run.descr="YAP currently deployed in common area; V13",
+#               read.data.task=within(read.data.task, {
+#                 taxa.summary.file = "yap/bei/v13/common/7913675baaa4dd38c5ad2c19b10bdda5.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary"
+#                 otu.shared.file="yap/bei/v13/common/5f44040ee0ae9f533d83e48deded4bac.files_x1.sorted.0.03.shared"
+#                 cons.taxonomy.file="yap/bei/v13/common/dce008a0990dc67e8148b3a31fb0bb02.files_x1.sorted.0.03.cons.taxonomy"
+#                 taxa.summary.file.otu = "yap/bei/v13/common/0211bc387719c7e0a4dc9d4ea0eccee9.files_x1.sorted.0.03.cons.tax.summary.otu.taxsummary"
+#                 meta.file=meta.file.samples
+#               })
+#             )
       #       ,  
       #   list(
       #     RunID="YAP.base",
@@ -331,7 +331,7 @@ benchmark.load.data <- function(otu.count.filter.options,
 #           meta.file=meta.file.samples
 #         })
 #       )
-      ,
+#      ,
       list(
         RunID="YAP.rc.2015-04-18.V13",
         run.descr="YAP RC 2015-04-18 V13",    
@@ -343,34 +343,46 @@ benchmark.load.data <- function(otu.count.filter.options,
           meta.file=meta.file.samples
         })
       )
-      ,
-      list(
-        RunID="YAP.rc.2015-04-18.V4",
-        run.descr="YAP RC 2015-04-18 V4",    
-        read.data.task=within(read.data.task, {
-          taxa.summary.file = NA
-          otu.shared.file="yap/bei/v4/rc.2015-04-18/*.shared"
-          cons.taxonomy.file="yap/bei/v4/rc.2015-04-18/*.seq.taxonomy"
-          taxa.summary.file.otu = NA
-          meta.file=meta.file.samples
-        })
-      )           
-      ,
-      list(
-        RunID="YAP.rc.2015-04-18.no_prefilt.V4",
-        run.descr="YAP RC 2015-04-18 singletons ARE NOT dropped after pre-clustering; V4",    
-        read.data.task=within(read.data.task, {
-          taxa.summary.file = NA
-          otu.shared.file="yap/bei/v4/rc.2015-04-18.no_prefilt/*.shared"
-          cons.taxonomy.file="yap/bei/v4/rc.2015-04-18.no_prefilt/*.seq.taxonomy"
-          taxa.summary.file.otu = NA
-          meta.file=meta.file.samples
-        })
-      )           
 #       ,
 #       list(
-#         RunID="YAP.rc.2015-04-18.V4.no_pcr_ref",
-#         run.descr="YAP RC 2015-04-18 V4 No reference PCR",    
+#         RunID="YAP.rc.2015-04-18.V4.Bill",
+#         run.descr="Bill's dataset; YAP RC 2015-04-18 V4",    
+#         read.data.task=within(read.data.task, {
+#           taxa.summary.file = NA
+#           otu.shared.file="yap/bei/v4/rc.2015-04-18/*.shared"
+#           cons.taxonomy.file="yap/bei/v4/rc.2015-04-18/*.seq.taxonomy"
+#           taxa.summary.file.otu = NA
+#           meta.file=meta.file.samples
+#         })
+#       )           
+,
+list(
+  RunID="YAP.rc.2015-05-30.V4.Bill",
+  run.descr="Bill's dataset; YAP RC 2015-05-30 V4",    
+  read.data.task=within(read.data.task, {
+    taxa.summary.file = NA
+    otu.shared.file="yap/bei/v4/rc.2015-05-30/*.shared"
+    cons.taxonomy.file="yap/bei/v4/rc.2015-05-30/*.seq.taxonomy"
+    taxa.summary.file.otu = NA
+    meta.file=meta.file.samples
+  })
+)           
+#       ,
+#       list(
+#         RunID="YAP.rc.2015-04-18.no_prefilt.V4.Bill",
+#         run.descr="Bill's dataset; YAP RC 2015-04-18 singletons ARE NOT dropped after pre-clustering; V4",    
+#         read.data.task=within(read.data.task, {
+#           taxa.summary.file = NA
+#           otu.shared.file="yap/bei/v4/rc.2015-04-18.no_prefilt/*.shared"
+#           cons.taxonomy.file="yap/bei/v4/rc.2015-04-18.no_prefilt/*.seq.taxonomy"
+#           taxa.summary.file.otu = NA
+#           meta.file=meta.file.samples
+#         })
+#       )           
+#       ,
+#       list(
+#         RunID="YAP.rc.2015-04-18.V4.Bill.no_pcr_ref",
+#         run.descr="Bill's dataset; YAP RC 2015-04-18 V4 No reference PCR",    
 #         read.data.task=within(read.data.task, {
 #           taxa.summary.file = NA
 #           otu.shared.file="yap/bei/v4/rc.2015-04-18.no_pcr_ref/*.shared"
@@ -379,7 +391,43 @@ benchmark.load.data <- function(otu.count.filter.options,
 #           meta.file=meta.file.samples
 #         })
 #       )           
-      ,     
+      ,
+      list(
+        RunID="YAP.rc.2015-05-30.V4.default.Alex",
+        run.descr="Alex's dataset one pair of samples; YAP RC 2015-05-30 V4 Default",    
+        read.data.task=within(read.data.task, {
+          taxa.summary.file = NA
+          otu.shared.file="alex/v4/yap/4_4/default/*.shared"
+          cons.taxonomy.file="alex/v4/yap/4_4/default/*.seq.taxonomy"
+          taxa.summary.file.otu = NA
+          meta.file=meta.file.samples
+        })
+      )
+,
+list(
+  RunID="YAP.rc.2015-05-30.V4.default.pooled.Alex",
+  run.descr="Alex's dataset all samples pooled by community type; YAP RC 2015-05-30 V4 Default",    
+  read.data.task=within(read.data.task, {
+    taxa.summary.file = NA
+    otu.shared.file="alex/v4/yap/pooled/default/*.shared"
+    cons.taxonomy.file="alex/v4/yap/pooled/default/*.seq.taxonomy"
+    taxa.summary.file.otu = NA
+    meta.file=meta.file.samples
+  })
+)           
+# ,
+# list(
+#   RunID="YAP.rc.2015-05-30.V4.Alex.no_prefilt",
+#   run.descr="Alex's dataset; YAP RC 2015-05-30 V4 No singleton removal",    
+#   read.data.task=within(read.data.task, {
+#     taxa.summary.file = NA
+#     otu.shared.file="alex/v4/yap/4_4/no_sing_remove/*.shared"
+#     cons.taxonomy.file="alex/v4/yap/4_4/no_sing_remove/*.seq.taxonomy"
+#     taxa.summary.file.otu = NA
+#     meta.file=meta.file.samples
+#   })
+# )           
+,     
       list(
         RunID="Mothur.01.V13",
         run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP by Andrey (reference-based chimera removal) V13",
@@ -391,46 +439,46 @@ benchmark.load.data <- function(otu.count.filter.options,
           meta.file=meta.file.samples
         })
       )
-      #       ,
-      #      list(
-      #        RunID="Mothur.prefilt",
-      #        run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP but singletons dropped after pre.cluster()",
-      #        read.data.task=within(read.data.task, {
-      #          taxa.summary.file = "bei/v13.prefilt/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.tax.summary"
-      #          otu.shared.file="bei/v13.prefilt/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.shared"
-      #          cons.taxonomy.file="bei/v13.prefilt/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.taxonomy"
-      #          taxa.summary.file.otu = NA
-      #          meta.file=meta.file.samples
-      #        })
-      #      )
-      ,
-      list(
-        RunID="Mothur.auto.V13",
-        run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons dropped after pre.cluster(), automated most parameter selection V13",
-        read.data.task=within(read.data.task, {
-          taxa.summary.file = "sop/v13/v13.oligos/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.tax.summary"
-          otu.shared.file="sop/v13/v13.oligos/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.shared"
-          cons.taxonomy.file="sop/v13/v13.oligos/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.taxonomy"
-          taxa.summary.file.otu = NA
-          meta.file=meta.file.samples
-        })
-      )
+#       #       ,
+#       #      list(
+#       #        RunID="Mothur.prefilt.V13",
+#       #        run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP but singletons dropped after pre.cluster()",
+#       #        read.data.task=within(read.data.task, {
+#       #          taxa.summary.file = "bei/v13.prefilt/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.tax.summary"
+#       #          otu.shared.file="bei/v13.prefilt/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.shared"
+#       #          cons.taxonomy.file="bei/v13.prefilt/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.taxonomy"
+#       #          taxa.summary.file.otu = NA
+#       #          meta.file=meta.file.samples
+#       #        })
+#       #      )
 #       ,
 #       list(
-#         RunID="Mothur.auto.V4",
-#         run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons dropped after pre.cluster(), automated most parameter selection V4",
+#         RunID="Mothur.auto.V13",
+#         run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons dropped after pre.cluster(), automated most parameter selection V13",
 #         read.data.task=within(read.data.task, {
-#           taxa.summary.file = NA
-#           otu.shared.file="sop/v4/auto/*.shared"
-#           cons.taxonomy.file="sop/v4/auto/*.0.03.cons.taxonomy"
+#           taxa.summary.file = "sop/v13/v13.oligos/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.tax.summary"
+#           otu.shared.file="sop/v13/v13.oligos/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.shared"
+#           cons.taxonomy.file="sop/v13/v13.oligos/input.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.an.unique_list.0.03.cons.taxonomy"
 #           taxa.summary.file.otu = NA
 #           meta.file=meta.file.samples
 #         })
 #       )
+# #       ,
+# #       list(
+# #         RunID="Mothur.auto.V4.Bill",
+# #         run.descr="Bill's dataset; Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons dropped after pre.cluster(), automated most parameter selection V4",
+# #         read.data.task=within(read.data.task, {
+# #           taxa.summary.file = NA
+# #           otu.shared.file="sop/v4/auto/*.shared"
+# #           cons.taxonomy.file="sop/v4/auto/*.0.03.cons.taxonomy"
+# #           taxa.summary.file.otu = NA
+# #           meta.file=meta.file.samples
+# #         })
+# #       )
 ,
 list(
-  RunID="Mothur.no_prefilt.V4",
-  run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons ARE NOT dropped after pre.cluster(), hand-tuned parameter selection; V4",
+  RunID="Mothur.no_prefilt.V4.Bill",
+  run.descr="Bill's dataset; Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons ARE NOT dropped after pre.cluster(), hand-tuned parameter selection; V4",
   read.data.task=within(read.data.task, {
     taxa.summary.file = NA
     otu.shared.file="sop/v4/manual.no_prefilt/*.shared"
@@ -438,19 +486,43 @@ list(
     taxa.summary.file.otu = NA
     meta.file=meta.file.samples
   })
-)           
+)
 ,
 list(
-  RunID="Mothur.prefilt.V4",
-  run.descr="Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons ARE dropped after pre.cluster(), hand-tuned parameter selection; V4",
+  RunID="Mothur.no_prefilt.V4.Alex",
+  run.descr="Alex's dataset one pair of samples; Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons ARE NOT dropped after pre.cluster(), hand-tuned parameter selection; V4",
   read.data.task=within(read.data.task, {
     taxa.summary.file = NA
-    otu.shared.file="sop/v4/manual/*.shared"
-    cons.taxonomy.file="sop/v4/manual/*.0.03.cons.taxonomy"
+    otu.shared.file="alex/v4/sop/4_4/default/*.shared"
+    cons.taxonomy.file="alex/v4/sop/4_4/default/*.0.03.cons.taxonomy"
     taxa.summary.file.otu = NA
     meta.file=meta.file.samples
   })
-)           
+)
+,
+list(
+  RunID="Mothur.no_prefilt.V4.pooled.Alex",
+  run.descr="Alex's dataset samples pooled by community profile; Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons ARE NOT dropped after pre.cluster(), hand-tuned parameter selection; V4",
+  read.data.task=within(read.data.task, {
+    taxa.summary.file = NA
+    otu.shared.file="alex/v4/sop/pooled/default/*.shared"
+    cons.taxonomy.file="alex/v4/sop/pooled/default/*.0.03.cons.taxonomy"
+    taxa.summary.file.otu = NA
+    meta.file=meta.file.samples
+  })
+)
+# ,
+# list(
+#   RunID="Mothur.prefilt.V4.Bill",
+#   run.descr="Bill's dataset; Mothur 1.34.4 with Mothur reference DB v.10 ran through SOP, singletons ARE dropped after pre.cluster(), hand-tuned parameter selection; V4",
+#   read.data.task=within(read.data.task, {
+#     taxa.summary.file = NA
+#     otu.shared.file="sop/v4/manual/*.shared"
+#     cons.taxonomy.file="sop/v4/manual/*.0.03.cons.taxonomy"
+#     taxa.summary.file.otu = NA
+#     meta.file=meta.file.samples
+#   })
+# )           
 
       #     ,     
       #   list(
@@ -506,32 +578,32 @@ so this dataset can be used in diversity and abundance estimates together with a
     
     m_a = cbind.m_a(runs.data,batch.attr="RunID",col.match=col.match)
     
-    m_a.gt = load.ground.thruth.m_a(ground.truth.WGS.file,aggr.type=aggr.type)
+    m_a.gt = load.ground.truth.m_a(ground.truth.WGS.file,aggr.type=aggr.type)
     
     m_a.gt$attr$SampleID = m_a.gt$attr$ProfileID
     m_a.gt$attr$RunID = ground.truth.run.id
     m_a.gt$attr$run.descr = ground.truth.run.descr
     m_a.gt$attr$IdSfx = m_a.gt$attr$RunID
     
-    m_a.wl = load.wl.cdhit.m_a(data.file="wl-cdhit/bei/v13/wl-cdhit.bei.v13.0.00005.txt",
-                               meta.file=meta.file.samples,
-                               aggr.type=aggr.type)
-    m_a.wl$attr$RunID = "WL.00005.V13"
-    m_a.wl$attr$run.descr = "Weizhong's CD-HIT-OTU pipeline that discarded OTUs below relative abundance of 0.00005 V13"
-    m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
-    m_a.wl.1 = m_a.wl
-    m_a.wl = load.wl.cdhit.m_a(data.file="wl-cdhit/bei/v13/wl-cdhit.bei.v13.0.0001.txt",
-                               meta.file=meta.file.samples,
-                               aggr.type=aggr.type)
-    m_a.wl$attr$RunID = "WL.0001.V13"
-    m_a.wl$attr$run.descr = "Weizhong's CD-HIT-OTU pipeline that discarded OTUs below relative abundance of 0.0001 V13"
-    m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
-    m_a.wl.2 = m_a.wl
+#     m_a.wl = load.wl.cdhit.m_a(data.file="wl-cdhit/bei/v13/wl-cdhit.bei.v13.0.00005.txt",
+#                                meta.file=meta.file.samples,
+#                                aggr.type=aggr.type)
+#     m_a.wl$attr$RunID = "WL.00005.V13"
+#     m_a.wl$attr$run.descr = "Weizhong's CD-HIT-OTU pipeline that discarded OTUs below relative abundance of 0.00005 V13"
+#     m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
+#     m_a.wl.1 = m_a.wl
+#     m_a.wl = load.wl.cdhit.m_a(data.file="wl-cdhit/bei/v13/wl-cdhit.bei.v13.0.0001.txt",
+#                                meta.file=meta.file.samples,
+#                                aggr.type=aggr.type)
+#     m_a.wl$attr$RunID = "WL.0001.V13"
+#     m_a.wl$attr$run.descr = "Weizhong's CD-HIT-OTU pipeline that discarded OTUs below relative abundance of 0.0001 V13"
+#     m_a.wl$attr$IdSfx = m_a.wl$attr$RunID
+#     m_a.wl.2 = m_a.wl
     
     m_a$attr$IdSfx = ""
     #m_a.norm = norm.count.m_a(m_a,method=norm.method.basic)
     #make.global(m_a.norm)
-    m_a.abs = cbind.m_a(list(m_a.gt,m_a,m_a.wl.1,m_a.wl.2),batch.attr="IdSfx",col.match=col.match)
+    m_a.abs = cbind.m_a(list(m_a.gt,m_a),batch.attr="IdSfx",col.match=col.match)
     m_a.abs$attr$IdSfx = NULL
     
     list(m_a.abs=m_a.abs,ground.truth.run.id=ground.truth.run.id)
@@ -750,7 +822,7 @@ benchmark.project <- function() {
   otu.count.filter.options = mgsat.16s.task.template$read.data.task$otu.count.filter.options
   otu.count.filter.options$min_max_frac = 0.0001
   
-  do.plot.profiles = T
+  do.plot.profiles = F
   
   true.taxa.only = T
   contrasts.methods = c("lfc","diff")
@@ -794,10 +866,10 @@ benchmark.project <- function() {
         list(aggr.type="genus.otus",
              aggr.descr="OTU relative counts per genus",
              norm.count.task=norm.count.task.prop)
-        ,
-        list(aggr.type="otu",
-             aggr.descr="OTU abundance",
-             norm.count.task=norm.count.task.prop)
+#         ,
+#         list(aggr.type="otu",
+#              aggr.descr="OTU abundance",
+#              norm.count.task=norm.count.task.prop)
   )) {
     
     
@@ -1013,6 +1085,9 @@ source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
 set_trace_options(try.debug=T)
+
+evalsOptions("width",800)
+evalsOptions("height",600)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
