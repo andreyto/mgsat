@@ -285,7 +285,13 @@ gen.tasks.t1d <- function() {
       load.meta.method=load.meta.t1d
       load.meta.options=list(aggr.var="AliquotID")
       
-      count.filter.options = list()    
+      #count.filter.options = list()    
+      count.filter.options = within(list(), {
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
+        #min_max=30
+        min_mean=10
+      })
       
       otu.count.filter.options=list()
       
@@ -299,12 +305,7 @@ gen.tasks.t1d <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      count.filter.feature.options = within(list(), {
-        min_quant_mean_frac=0.25
-        min_quant_incidence_frac=0.25
-        #min_max=30
-        min_mean=10
-      })
+      count.filter.feature.options = list()
       
       norm.count.task = within(norm.count.task, {
         #method="norm.ihs.prop"
@@ -351,8 +352,10 @@ gen.tasks.t1d <- function() {
   task1 = within( task0, {
     
     descr = "All samples, aggregated by AliquotID"
+  
+    #taxa.levels = c(2)
     
-    do.summary.meta = T
+    do.summary.meta = F
     
     do.tests = T
     
@@ -364,14 +367,14 @@ gen.tasks.t1d <- function() {
     test.counts.task = within(test.counts.task, {
       
       do.deseq2 = T
-      do.adonis = T
-      do.genesel = T
-      do.stabsel = T
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
       do.glmer = F
-      #do.divrich = c()
+      do.divrich = c()
       
-      do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -1052,7 +1055,7 @@ gen.tasks.t1d <- function() {
     
   })
   
-  #return (list(task1))
+  return (list(task1))
   return (list(task1,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
 }
 
