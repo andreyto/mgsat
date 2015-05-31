@@ -822,7 +822,7 @@ benchmark.project <- function() {
   otu.count.filter.options = mgsat.16s.task.template$read.data.task$otu.count.filter.options
   otu.count.filter.options$min_max_frac = 0.0001
   
-  do.plot.profiles = F
+  do.plot.profiles = T
   
   true.taxa.only = T
   contrasts.methods = c("lfc","diff")
@@ -866,10 +866,10 @@ benchmark.project <- function() {
         list(aggr.type="genus.otus",
              aggr.descr="OTU relative counts per genus",
              norm.count.task=norm.count.task.prop)
-#         ,
-#         list(aggr.type="otu",
-#              aggr.descr="OTU abundance",
-#              norm.count.task=norm.count.task.prop)
+        ,
+        list(aggr.type="otu",
+             aggr.descr="OTU abundance",
+             norm.count.task=norm.count.task.prop)
   )) {
     
     
