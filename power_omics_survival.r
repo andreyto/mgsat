@@ -5,7 +5,7 @@ library(Hmisc)
 cpower.example <- function(
   morts = seq(40,65,length=50),
   mort.n = 50,
-  red = c(10,15,20,25),
+  red = c(25,35,45,60),
   tref = 3,
   accrual = 1,
   tmin = NULL,
@@ -13,7 +13,7 @@ cpower.example <- function(
   n.power = 200,
   power.n = 0.8,
   noncomps = c(0,3,5,10),
-  noncomp.n = 3,
+  noncomp.n = 10,
   event.name = "Recurrence"
   ) {
   #In this example, 4 plots are drawn on one page, one plot for each

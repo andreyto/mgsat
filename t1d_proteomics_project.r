@@ -317,7 +317,7 @@ gen.tasks.t1d.prot <- function() {
         func = function(m_a,m_a.norm,res.tests,id.markers) {
           wilcox.power(m_a=m_a.norm,
                              group.attr="Group",
-                             id.markers=id.markers,R=2000,n=200)
+                             id.markers=id.markers,R=2000,n=85)
         }
         
         id.markers = c("P17050","O00754","P53634",
