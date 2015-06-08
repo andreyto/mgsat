@@ -55,7 +55,15 @@ vanilla_packages = c(
   ## automatic selection of the number of clusters for pam
   "fpc",
   ## descriptive statistics and multinomial confidence intervals
-  "DescTools"
+  "DescTools",
+  ## to install development versions of packages from GitHub
+  "devtools"
+  ## Matrix of ggplots and other extensions
+  ##GGally
+)
+
+vanilla_packages_github = c(
+  "zdk123/SpiecEasi"
 )
 
 bio_packages = c(
@@ -74,6 +82,9 @@ bio_packages = c(
 
 install_required_packages <- function() {
   install.packages(vanilla_packages)
+  for(pkg in vanilla_packages_github) {
+    install_github(pkg)
+  }
   source("http://bioconductor.org/biocLite.R")
   biocLite(bio_packages)
 }

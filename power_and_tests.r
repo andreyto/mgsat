@@ -74,6 +74,13 @@ replace.col.names<-function(allnames,oldnames,newnames) {
   return(allnames)
 }
 
+## Update fields in named list x with fields in named list y
+## The semantics as in Python dict.update()
+update.list <- function(x,y) {
+  x[names(y)] = y
+  x
+}
+
 ## Return a copy of data frames or matrix with selected columns removed
 drop.columns <- function(df,drop_names=c()) {
   mask_col_ignore = colnames(df) %in% drop_names
@@ -653,7 +660,7 @@ count.filter.m_a <- function(m_a,
     if (!all(abs(cnt_col_other[,1,drop=F])<=sqrt(.Machine$double.eps)) && !is.null(other_cnt)) {
       colnames(cnt_col_other) = c(other_cnt)
       if (other_cnt %in% colnames(cnt)) {
-        cnt[,other_cnt,drop=F] = cnt[,other_cnt,drop=F] + cnt_col_other[,other_cnt,drop=F]
+        cnt[,other_cnt] = cnt[,other_cnt] + cnt_col_other[,other_cnt]
       }
       else {
         cnt = cbind(cnt,cnt_col_other)
@@ -3018,6 +3025,7 @@ read.data.project.yap <- function(taxa.summary.file,
   return (m_a)
 }
 
+## Note that physeq constructor will convert all fields in attr.taxa to strings
 m_a.to.phyloseq <- function(m_a,attr.taxa=NULL) {
   require(phyloseq)
   otu = otu_table(m_a$count, taxa_are_rows = F)
@@ -3122,6 +3130,7 @@ mgsat.16s.task.template = within(list(), {
     do.plot.profiles.abund=T
     do.heatmap.abund=T
     do.ordination=T
+    do.spiec.easi=T
     do.select.samples=c()
     do.extra.method=c()
     
@@ -3298,6 +3307,16 @@ mgsat.16s.task.template = within(list(), {
       )
     })
     
+    spiec.easi.task = within(list(), {
+      count.filter.options=NULL
+      method='mb' 
+      lambda.min.ratio=1e-2 
+      nlambda=15
+      vertex.label.cex=1
+      vertex.size=8
+      label.tasks=list()
+    })
+    
     extra.method.task = within(list(), {
       func = function(m_a,m_a.norm,res.tests,...) {}
       ##possibly other arguments to func()
@@ -3397,15 +3416,17 @@ get.diversity.mgsatres <- function(x.f,type=NULL,...) {
   }
 }
 
-report.count.filter.m_a <- function(m_a,count.filter.options=NULL,descr="") {
+report.count.filter.m_a <- function(m_a,count.filter.options=NULL,descr="",warn.richness=T) {
   if(is.null(count.filter.options)) {
     count.filter.options = list()
   }
   report$add.p(sprintf("Filtering abundance matrix with arguments %s. %s",
                        arg.list.as.str(count.filter.options),
                        descr))
-  report$add.p("Note that some community richness estimators will not work correctly 
+  if(warn.richness) {
+    report$add.p("Note that some community richness estimators will not work correctly 
                if provided with abundance-filtered counts")
+  }
   m_a = do.call(count.filter.m_a,c(list(m_a),count.filter.options))
   report$add.p(sprintf("After filtering, left %i records for %i features",
                        nrow(m_a$count),ncol(m_a$count)))
@@ -4539,6 +4560,7 @@ test.counts.project <- function(m_a,
                                 do.plot.profiles.abund=T,
                                 do.heatmap.abund=T,
                                 do.ordination=T,
+                                do.spiec.easi=T,
                                 do.extra.method=F,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
@@ -4554,6 +4576,7 @@ test.counts.project <- function(m_a,
                                 heatmap.abund.task=NULL,
                                 heatmap.combined.task=NULL,
                                 ordination.task=NULL,
+                                spiec.easi.task=NULL,
                                 alpha=0.05,
                                 do.return.data=T,
                                 feature.ranking="stabsel",
@@ -4751,6 +4774,18 @@ test.counts.project <- function(m_a,
       
     })
   }  
+  
+  if (do.spiec.easi) {
+    
+    tryCatchAndWarn({
+      do.call(network.spiec.easi.report,
+              c(list(m_a=m_a,res=res),
+                spiec.easi.task
+              )
+      )
+      
+    })
+  }    
   
   if(do.extra.method && !is.null(extra.method.task)) {
     extra.method.func = extra.method.task$func
@@ -5191,6 +5226,147 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     report$add(pl,
                caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
                Plot used parameters %s.",
+                               arg.list.as.str(ord.task$ordinate.task),
+                               arg.list.as.str(ord.task$plot.task))
+    )
+  }
+  report$pop.section()  
+}
+
+make.geom <- function(geom,data,params,params.data=list(),params.fixed=list(),include.data=F) {
+  data.names = colnames(data)
+  params = params[!sapply(params,is.null)]
+  params.data.mask = params %in% data.names
+  params.data = c(params[params.data.mask],params.data)
+  params.fixed = c(params[!params.data.mask],params.fixed)
+  if(include.data) {
+    params.fixed$data = data
+  }
+  make.global(name="gm")
+  do.call(geom,
+          c(
+            ifelse(length(params.data)>0,list(mapping=do.call(aes_string,params.data)),list(mapping=NULL)),
+            params.fixed
+          )
+  )
+}
+
+mgsat.plot.igraph.vertex.params = list(size=4,alpha=0.75)
+mgsat.plot.igraph.vertex.text.params = list(label = "vertex.name", hjust = 0, vjust = 1.5, size = 4)
+mgsat.plot.igraph.edge.params = list(size = 0.5, color = "black", alpha = 0.4)
+
+## Plot igraph object with ggplot2.
+## Based on code from phyloseq:::plot_network
+## *.params must be named lists, where any specified element will override default value set in
+## corresponding mgsat.plot.igraph.*.params package veriable. Provide NULL element value to remove
+## default value.
+## vertex.data, if set, must be a data frame with row names matching values of vertices 'name' attribute,
+## which can be referenced as 'vertex.name' in aesthetic parameters.
+## *.params elements must match arguments to geom_point for vertex, geom_text for vertex.text 
+## and geom_line for edge. Elements will be checked against vertex.data, and if matching column names,
+## will be mapped within aes_string() function, otherwise provided as fixed values outside of aes in
+## geom constructor.
+## Value: ggplot object.
+mgsat.plot.igraph <- function (g, vertex.data = NULL, 
+                               vertex.params = mgsat.plot.igraph.vertex.params,
+                               vertex.text.params = mgsat.plot.igraph.vertex.text.params, 
+                               edge.params = mgsat.plot.igraph.edge.params,
+                               layout = layout.fruchterman.reingold) 
+{
+  vertex.params = update.list(mgsat.plot.igraph.vertex.params,vertex.params)
+  vertex.text.params = update.list(mgsat.plot.igraph.vertex.text.params,vertex.text.params)
+  edge.params = update.list(mgsat.plot.igraph.edge.params,edge.params)
+  if (vcount(g) < 2) {
+    stop("The graph you provided, `g`, has too few vertices.")
+  }
+  edgeDF <- data.frame(get.edgelist(g))
+  edgeDF$id <- 1:length(edgeDF[, 1])
+  if(is.function(layout) || is.character(layout)) {
+    vertDF <- do.call(layout,list(g))
+  }
+  else {
+    vertDF = layout
+  }
+  colnames(vertDF) <- c("x", "y")
+  vertDF <- data.frame(vertex.name = get.vertex.attribute(g, "name"), 
+                       vertDF)
+  if (!is.null(vertex.data)) {
+    vertDF <- data.frame(vertDF, vertex.data[as.character(vertDF$vertex.name), 
+                                           , drop = FALSE])
+  }
+  graphDF <- merge(melt(edgeDF, id = "id", value.name = "vertex.name"), vertDF, by = "vertex.name")
+  p <- ggplot(vertDF, aes(x, y))
+  p <- p + theme_bw() + theme(panel.grid.major = element_blank(), 
+                              panel.grid.minor = element_blank(), axis.text.x = element_blank(), 
+                              axis.text.y = element_blank(), axis.title.x = element_blank(), 
+                              axis.title.y = element_blank(), axis.ticks = element_blank(), 
+                              panel.border = element_blank())
+  p <- p + make.geom(geom_point,data=vertDF,
+                     params=vertex.params,
+                     params.fixed=list(na.rm=T))
+  if (!is.null(vertex.text.params$label)) {
+    p <- p + make.geom(geom_text,data=vertDF,
+                       params=vertex.text.params,
+                       params.fixed=list(na.rm = TRUE))
+  }
+  p <- p + make.geom(geom_line,data=graphDF,
+                     params=edge.params,
+                     params.data=list(group="id"),
+                     params.fixed=list(na.rm=T),
+                     include.data=T)
+  return(p)
+}
+
+network.spiec.easi.report <- function(m_a,
+                                      res=NULL,
+                                      count.filter.options=NULL,
+                                      label.tasks,
+                                      sub.report=T,
+                                      drop.unclassified=T,
+                                      method='mb', 
+                                      lambda.min.ratio=1e-2, 
+                                      nlambda=15,
+                                      vertex.label.cex=1,
+                                      vertex.size=8) {
+  require(SpiecEasi)
+  report.section = report$add.header("Network Analysis",section.action="push",sub=sub.report)  
+  report$add.package.citation("SpiecEasi")
+  if(drop.unclassified) {
+    drop.names = count.filter.options$drop.names
+    drop.names = c(drop.names,"other",colnames(m_a$count)[grepl("Unclassified.*",colnames(m_a$count),ignore.case=T)])
+    if(is.null(count.filter.options)) {
+      count.filter.options = list()
+    }
+    count.filter.options$drop.names = drop.names
+  }
+  m_a = report.count.filter.m_a(m_a=m_a,
+                                count.filter.options=count.filter.options,
+                                descr="SpiecEasy",warn.richness=F)
+  se.est <- spiec.easi(m_a$count, method=method, lambda.min.ratio=lambda.min.ratio, nlambda=nlambda)
+  rownames(se.est$refit) = colnames(se.est$data)
+  colnames(se.est$refit) = colnames(se.est$data)
+  gr = graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
+  layout = layout.fruchterman.reingold(gr)
+  gp = mgsat.plot.igraph(gr,
+                    vertex.data=data.frame(depth=colMeans(m_a$count)),
+                    vertex.params=list(color="depth")
+                    ) 
+  report$add(gp,caption="SpiecEasi Network")
+  if(F) for(ord.task in ord.tasks) {
+    if(!is.null(ord.task$ordinate.task$formula)) {
+      ord.task$ordinate.task$formula = as.formula(sprintf("~%s",ord.task$ordinate.task$formula))
+    }
+    ord = do.call(ordinate,
+                  c(list(ph,distance=distance),
+                    ord.task$ordinate.task
+                  ))
+    pl = do.call(plot_ordination,
+                 c(list(ph,ord),
+                   ord.task$plot.task
+                 ))
+    report$add(pl,
+               caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
+                               Plot used parameters %s.",
                                arg.list.as.str(ord.task$ordinate.task),
                                arg.list.as.str(ord.task$plot.task))
     )
