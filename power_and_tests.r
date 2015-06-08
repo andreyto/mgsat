@@ -5233,49 +5233,49 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
   report$pop.section()  
 }
 
-make.geom <- function(geom,data,params,params.data=list(),params.fixed=list(),include.data=F) {
+make.geom <- function(geom,data,options,options.data=list(),options.fixed=list(),include.data=F) {
   data.names = colnames(data)
-  params = params[!sapply(params,is.null)]
-  params.data.mask = params %in% data.names
-  params.data = c(params[params.data.mask],params.data)
-  params.fixed = c(params[!params.data.mask],params.fixed)
+  options = options[!sapply(options,is.null)]
+  options.data.mask = options %in% data.names
+  options.data = c(options[options.data.mask],options.data)
+  options.fixed = c(options[!options.data.mask],options.fixed)
   if(include.data) {
-    params.fixed$data = data
+    options.fixed$data = data
   }
   make.global(name="gm")
   do.call(geom,
           c(
-            ifelse(length(params.data)>0,list(mapping=do.call(aes_string,params.data)),list(mapping=NULL)),
-            params.fixed
+            ifelse(length(options.data)>0,list(mapping=do.call(aes_string,options.data)),list(mapping=NULL)),
+            options.fixed
           )
   )
 }
 
-mgsat.plot.igraph.vertex.params = list(size=4,alpha=0.75)
-mgsat.plot.igraph.vertex.text.params = list(label = "vertex.name", hjust = 0.5, vjust = 1.5, size = 4)
-mgsat.plot.igraph.edge.params = list(size = 0.5, color = "black", alpha = 0.4)
+mgsat.plot.igraph.vertex.options = list(size=4,alpha=0.75)
+mgsat.plot.igraph.vertex.text.options = list(label = "vertex.name", hjust = 0.5, vjust = 1.5, size = 4)
+mgsat.plot.igraph.edge.options = list(size = 0.5, color = "black", alpha = 0.4)
 
 ## Plot igraph object with ggplot2.
 ## Based on code from phyloseq:::plot_network
-## *.params must be named lists, where any specified element will override default value set in
-## corresponding mgsat.plot.igraph.*.params package veriable. Provide NULL element value to remove
+## *.options must be named lists, where any specified element will override default value set in
+## corresponding mgsat.plot.igraph.*.options package veriable. Provide NULL element value to remove
 ## default value.
 ## vertex.data, if set, must be a data frame with row names matching values of vertices 'name' attribute,
 ## which can be referenced as 'vertex.name' in aesthetic parameters.
-## *.params elements must match arguments to geom_point for vertex, geom_text for vertex.text 
+## *.options elements must match arguments to geom_point for vertex, geom_text for vertex.text 
 ## and geom_line for edge. Elements will be checked against vertex.data, and if matching column names,
 ## will be mapped within aes_string() function, otherwise provided as fixed values outside of aes in
 ## geom constructor.
 ## Value: ggplot object.
 mgsat.plot.igraph <- function (g, vertex.data = NULL, 
-                               vertex.params = mgsat.plot.igraph.vertex.params,
-                               vertex.text.params = mgsat.plot.igraph.vertex.text.params, 
-                               edge.params = mgsat.plot.igraph.edge.params,
+                               vertex.options = mgsat.plot.igraph.vertex.options,
+                               vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
+                               edge.options = mgsat.plot.igraph.edge.options,
                                layout = layout.fruchterman.reingold) 
 {
-  vertex.params = update.list(mgsat.plot.igraph.vertex.params,vertex.params)
-  vertex.text.params = update.list(mgsat.plot.igraph.vertex.text.params,vertex.text.params)
-  edge.params = update.list(mgsat.plot.igraph.edge.params,edge.params)
+  vertex.options = update.list(mgsat.plot.igraph.vertex.options,vertex.options)
+  vertex.text.options = update.list(mgsat.plot.igraph.vertex.text.options,vertex.text.options)
+  edge.options = update.list(mgsat.plot.igraph.edge.options,edge.options)
   if (vcount(g) < 2) {
     stop("The graph you provided, `g`, has too few vertices.")
   }
@@ -5292,7 +5292,7 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                        vertDF)
   if (!is.null(vertex.data)) {
     vertDF <- data.frame(vertDF, vertex.data[as.character(vertDF$vertex.name), 
-                                           , drop = FALSE])
+                                             , drop = FALSE])
   }
   graphDF <- merge(melt(edgeDF, id = "id", value.name = "vertex.name"), vertDF, by = "vertex.name")
   p <- ggplot(vertDF, aes(x, y))
@@ -5302,36 +5302,50 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                               axis.title.y = element_blank(), axis.ticks = element_blank(), 
                               panel.border = element_blank())
   p <- p + make.geom(geom_point,data=vertDF,
-                     params=vertex.params,
-                     params.fixed=list(na.rm=T))
-  if (!is.null(vertex.text.params$label)) {
+                     options=vertex.options,
+                     options.fixed=list(na.rm=T))
+  if (!is.null(vertex.text.options$label)) {
     p <- p + make.geom(geom_text,data=vertDF,
-                       params=vertex.text.params,
-                       params.fixed=list(na.rm = TRUE))
+                       options=vertex.text.options,
+                       options.fixed=list(na.rm = TRUE))
   }
   p <- p + make.geom(geom_line,data=graphDF,
-                     params=edge.params,
-                     params.data=list(group="id"),
-                     params.fixed=list(na.rm=T),
+                     options=edge.options,
+                     options.data=list(group="id"),
+                     options.fixed=list(na.rm=T),
                      include.data=T)
+  ## give bigger margins to avoid cutting off the point labels
   p = p + scale_x_continuous(expand=c(0.1,0))
   return(p)
 }
 
-network.spiec.easi.report <- function(m_a,
-                                      res=NULL,
-                                      count.filter.options=NULL,
-                                      label.tasks,
-                                      sub.report=T,
-                                      drop.unclassified=T,
-                                      method='mb', 
-                                      lambda.min.ratio=1e-2, 
-                                      nlambda=15,
-                                      vertex.label.cex=1,
-                                      vertex.size=8) {
+network.spiec.easi.options = list(
+  method='mb', 
+  lambda.min.ratio=1e-2, 
+  nlambda=15  
+)
+
+network.spiec.easi <- function(count,
+                               ...) {
   require(SpiecEasi)
-  report.section = report$add.header("Network Analysis",section.action="push",sub=sub.report)  
   report$add.package.citation("SpiecEasi")
+  options = update.list(network.spiec.easi.options,list(...))
+  se.est <- do.call(spiec.easi,c(list(count),options))
+  rownames(se.est$refit) = colnames(se.est$data)
+  colnames(se.est$refit) = colnames(se.est$data)
+  gr = graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
+  return (list(method.res=se.est,graph=gr))
+}  
+
+network.report <- function(m_a,
+                           count.filter.options=NULL,
+                           vertex.data=NULL,
+                           plot.tasks,
+                           sub.report=T,
+                           drop.unclassified=T,
+                           method="network.spiec.easi",
+                           method.options=list()) {
+  report.section = report$add.header("Network Analysis",section.action="push",sub=sub.report)  
   if(drop.unclassified) {
     drop.names = count.filter.options$drop.names
     drop.names = c(drop.names,"other",colnames(m_a$count)[grepl("Unclassified.*",colnames(m_a$count),ignore.case=T)])
@@ -5343,34 +5357,21 @@ network.spiec.easi.report <- function(m_a,
   m_a = report.count.filter.m_a(m_a=m_a,
                                 count.filter.options=count.filter.options,
                                 descr="SpiecEasy",warn.richness=F)
-  se.est <- spiec.easi(m_a$count, method=method, lambda.min.ratio=lambda.min.ratio, nlambda=nlambda)
-  rownames(se.est$refit) = colnames(se.est$data)
-  colnames(se.est$refit) = colnames(se.est$data)
-  gr = graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
+  
+  net.res = do.call(method,c(list(m_a$count),method.options))
+  
+  gr = net.res$gr
   layout = layout.fruchterman.reingold(gr)
-  gp = mgsat.plot.igraph(gr,
-                    vertex.data=data.frame(depth=colMeans(m_a$count)),
-                    vertex.params=list(color="depth")
-                    ) 
-  report$add(gp,caption="SpiecEasi Network")
-  if(F) for(ord.task in ord.tasks) {
-    if(!is.null(ord.task$ordinate.task$formula)) {
-      ord.task$ordinate.task$formula = as.formula(sprintf("~%s",ord.task$ordinate.task$formula))
-    }
-    ord = do.call(ordinate,
-                  c(list(ph,distance=distance),
-                    ord.task$ordinate.task
-                  ))
-    pl = do.call(plot_ordination,
-                 c(list(ph,ord),
-                   ord.task$plot.task
-                 ))
-    report$add(pl,
-               caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
-                               Plot used parameters %s.",
-                               arg.list.as.str(ord.task$ordinate.task),
-                               arg.list.as.str(ord.task$plot.task))
+  for(plot.task in plot.tasks) {
+    caption = plot.task$descr
+    caption = sprintf("Network analysis with method %s. %s",method,caption)
+    plot.task$descr = NULL
+    gp = do.call(mgsat.plot.igraph,
+                 c(list(gr,vertex.data=vertex.data,layout=layout),
+                   plot.task
+                 )
     )
+    report$add(gp,caption=caption)
   }
   report$pop.section()  
 }
