@@ -5252,7 +5252,7 @@ make.geom <- function(geom,data,params,params.data=list(),params.fixed=list(),in
 }
 
 mgsat.plot.igraph.vertex.params = list(size=4,alpha=0.75)
-mgsat.plot.igraph.vertex.text.params = list(label = "vertex.name", hjust = 0, vjust = 1.5, size = 4)
+mgsat.plot.igraph.vertex.text.params = list(label = "vertex.name", hjust = 0.5, vjust = 1.5, size = 4)
 mgsat.plot.igraph.edge.params = list(size = 0.5, color = "black", alpha = 0.4)
 
 ## Plot igraph object with ggplot2.
@@ -5314,6 +5314,7 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                      params.data=list(group="id"),
                      params.fixed=list(na.rm=T),
                      include.data=T)
+  p = p + scale_x_continuous(expand=c(0.1,0))
   return(p)
 }
 
