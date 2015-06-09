@@ -1018,7 +1018,7 @@ gen.tasks.t1d <- function() {
   
   task.test = within( task0, {
     
-    taxa.levels = c(2,"otu")
+    taxa.levels = c("otu")
     
     do.summary.meta = F
     
@@ -1030,16 +1030,19 @@ gen.tasks.t1d <- function() {
         method="norm.ihs.prop"
       })
       
-      do.deseq2 = F
+      do.deseq2 = T
       do.adonis = F
       do.genesel = F
       do.stabsel = F
       do.glmer = F
       do.divrich = c()
       
-      do.plot.profiles.abund=T
+      do.plot.profiles.abund=F
       do.heatmap.abund=F
-      
+
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = main.meta.var
+      })
       
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var))
@@ -1055,7 +1058,7 @@ gen.tasks.t1d <- function() {
     
   })
   
-  return (list(task1))
+  return (list(task.test))
   return (list(task1,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
 }
 
@@ -1092,7 +1095,7 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=F)
+set_trace_options(try.debug=T)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down

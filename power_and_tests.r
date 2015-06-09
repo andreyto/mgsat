@@ -3130,7 +3130,7 @@ mgsat.16s.task.template = within(list(), {
     do.plot.profiles.abund=T
     do.heatmap.abund=T
     do.ordination=T
-    do.spiec.easi=T
+    do.network.features.combined=T
     do.select.samples=c()
     do.extra.method=c()
     
@@ -3307,15 +3307,13 @@ mgsat.16s.task.template = within(list(), {
       )
     })
     
-    spiec.easi.task = within(list(), {
-      count.filter.options=NULL
-      method='mb' 
-      lambda.min.ratio=1e-2 
-      nlambda=15
-      vertex.label.cex=1
-      vertex.size=8
-      label.tasks=list()
-    })
+    network.features.combined.task = within(list(), { 
+      count.filter.options=NULL                                                
+      drop.unclassified=T
+      method="network.spiec.easi"
+      method.options=list()
+      descr=""
+    }) 
     
     extra.method.task = within(list(), {
       func = function(m_a,m_a.norm,res.tests,...) {}
@@ -3371,13 +3369,27 @@ get.feature.ranking.stabsel <- function(x.f,only.names=T) {
   return(list(ranked=ranked))
 }
 
+get.feature.ranking.deseq2 <- function(x.f,only.names=T,id.result=1) {
+  if(is.numeric(id.result) && id.result == 0) {
+    return (list(ranked=x.f))
+  }
+  else {
+    ranked = as.data.frame(x.f$results[[id.result]])
+    ranked = cbind(name=rownames(ranked),ranked)
+    if(only.names) {
+      ranked = ranked$name
+    }
+    return (list(ranked=ranked))
+  }
+}
+
 get.feature.ranking.mgsatres <- function(x.f,method="stabsel",...) {
   meth.res = x.f[[method]]
   if(is.null(meth.res)) {
     res = NULL
   }
   else {
-    if(method %in% c("stabsel","genesel")) {
+    if(method %in% c("stabsel","genesel","deseq2")) {
       res = get.feature.ranking(meth.res,...)
     }
     else {
@@ -3925,6 +3937,13 @@ plot.stability.selection.c060.at <- function (y,
   return (d)
 }
 
+
+new_deseq2 <- function(...) {
+  x = new_mgsatres(...)
+  class(x) <- append(class(x),"deseq2",0)
+  return(x)
+}
+
 deseq2.report <- function(m_a,
                           formula.rhs,
                           test.task=list(),
@@ -3958,7 +3977,7 @@ deseq2.report <- function(m_a,
                      show.row.names=F)
     res
   }
-  return (list(dds=dds,results=res.all))
+  return (new_deseq2(dds=dds,results=res.all))
 }
 
 glmnet.stabpath.c060.report <- function(m_a,
@@ -4560,7 +4579,7 @@ test.counts.project <- function(m_a,
                                 do.plot.profiles.abund=T,
                                 do.heatmap.abund=T,
                                 do.ordination=T,
-                                do.spiec.easi=T,
+                                do.network.features.combined=T,
                                 do.extra.method=F,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
@@ -4576,7 +4595,7 @@ test.counts.project <- function(m_a,
                                 heatmap.abund.task=NULL,
                                 heatmap.combined.task=NULL,
                                 ordination.task=NULL,
-                                spiec.easi.task=NULL,
+                                network.features.combined.task=NULL,
                                 alpha=0.05,
                                 do.return.data=T,
                                 feature.ranking="stabsel",
@@ -4775,12 +4794,12 @@ test.counts.project <- function(m_a,
     })
   }  
   
-  if (do.spiec.easi) {
+  if (do.network.features.combined) {
     
     tryCatchAndWarn({
-      do.call(network.spiec.easi.report,
-              c(list(m_a=m_a,res=res),
-                spiec.easi.task
+      do.call(network.features.combined.report,
+              c(list(m_a=m_a,res.tests=res),
+                network.features.combined.task
               )
       )
       
@@ -5271,7 +5290,8 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                                vertex.options = mgsat.plot.igraph.vertex.options,
                                vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
                                edge.options = mgsat.plot.igraph.edge.options,
-                               layout = layout.fruchterman.reingold) 
+                               layout = layout.fruchterman.reingold,
+                               extra.plot.operands=list()) 
 {
   vertex.options = update.list(mgsat.plot.igraph.vertex.options,vertex.options)
   vertex.text.options = update.list(mgsat.plot.igraph.vertex.text.options,vertex.text.options)
@@ -5316,6 +5336,9 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                      include.data=T)
   ## give bigger margins to avoid cutting off the point labels
   p = p + scale_x_continuous(expand=c(0.1,0))
+  for(extra.plot.operand in extra.plot.operands) {
+    p = p + extra.plot.operand
+  }
   return(p)
 }
 
@@ -5330,33 +5353,35 @@ network.spiec.easi <- function(count,
   require(SpiecEasi)
   report$add.package.citation("SpiecEasi")
   options = update.list(network.spiec.easi.options,list(...))
+  #se.est = dbg.cache$se.est
+  #if(is.null(se.est)) {
   se.est <- do.call(spiec.easi,c(list(count),options))
+  #}
+  #make.global(name="dbg.cache")
   rownames(se.est$refit) = colnames(se.est$data)
   colnames(se.est$refit) = colnames(se.est$data)
   gr = graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
   return (list(method.res=se.est,graph=gr))
 }  
 
+## vertex.data can be also provided inside all or some elements of plot.tasks,
+## in which case it takes precedence over the value provided at the function call level.
 network.report <- function(m_a,
                            count.filter.options=NULL,
                            vertex.data=NULL,
                            plot.tasks,
                            sub.report=T,
-                           drop.unclassified=T,
                            method="network.spiec.easi",
-                           method.options=list()) {
-  report.section = report$add.header("Network Analysis",section.action="push",sub=sub.report)  
-  if(drop.unclassified) {
-    drop.names = count.filter.options$drop.names
-    drop.names = c(drop.names,"other",colnames(m_a$count)[grepl("Unclassified.*",colnames(m_a$count),ignore.case=T)])
-    if(is.null(count.filter.options)) {
-      count.filter.options = list()
-    }
-    count.filter.options$drop.names = drop.names
-  }
+                           method.options=list(),
+                           descr="") {
+  report.section = report$add.header(sprintf("Network Analysis %s",descr),section.action="push",sub=sub.report) 
+  report$add.descr(sprintf("Build network of interactions between features or samples and plot it. 
+                           Network method is %s. Method parameters are: %s.",
+                           method,
+                           arg.list.as.str(method.options)))
   m_a = report.count.filter.m_a(m_a=m_a,
                                 count.filter.options=count.filter.options,
-                                descr="SpiecEasy",warn.richness=F)
+                                descr="Network Analysis",warn.richness=F)
   
   net.res = do.call(method,c(list(m_a$count),method.options))
   
@@ -5366,14 +5391,62 @@ network.report <- function(m_a,
     caption = plot.task$descr
     caption = sprintf("Network analysis with method %s. %s",method,caption)
     plot.task$descr = NULL
+    if(is.null(plot.task$vertex.data)) {
+      plot.task$vertex.data = vertex.data
+    }
     gp = do.call(mgsat.plot.igraph,
-                 c(list(gr,vertex.data=vertex.data,layout=layout),
+                 c(list(gr,layout=layout),
                    plot.task
                  )
     )
     report$add(gp,caption=caption)
   }
   report$pop.section()  
+}
+
+
+network.features.combined.report <- function(m_a,
+                                             res.tests=NULL,
+                                             count.filter.options=NULL,
+                                             sub.report=T,
+                                             drop.unclassified=T,
+                                             method="network.spiec.easi",
+                                             method.options=list(),
+                                             descr="") {
+  if(drop.unclassified) {
+    drop.names = count.filter.options$drop.names
+    drop.names = c(drop.names,"other",colnames(m_a$count)[grepl("Unclassified.*",colnames(m_a$count),ignore.case=T)])
+    if(is.null(count.filter.options)) {
+      count.filter.options = list()
+    }
+    count.filter.options$drop.names = drop.names
+  }
+  ds2.res = get.feature.ranking(res.tests,method="deseq2",only.names=F,id.result=0)
+  plot.tasks = foreach(res = ds2.res$ranked$results) %do% {
+    res.df = as.data.frame(res)
+    res.df$logBaseMean = log(res.df$baseMean+0.5)
+    res.df$statistics = res.df$stat
+    vertex.options = list(size="logBaseMean",color = "statistics", alpha=1)
+    vertex.text.options = list(size = 4)
+    list(vertex.data=res.df,
+         vertex.options=vertex.options,
+         vertex.text.options=vertex.text.options,
+         descr="DESeq2 results",
+         extra.plot.operands=list(
+           scale_colour_gradient2(midpoint=0,mid="grey",high="red",low="blue"),
+           scale_size(range = c(1, 8))
+           )
+         )
+  }
+  network.report(m_a,
+                 count.filter.options=count.filter.options,
+                 vertex.data=NULL,
+                 plot.tasks=plot.tasks,
+                 sub.report=T,
+                 method="network.spiec.easi",
+                 method.options=list(),
+                 descr="DESeq2 results")
+  
 }
 
 plot.features.mds <- function(m_a,species.sel=NULL,sample.group=NULL,show.samples=T,show.species=T) {
