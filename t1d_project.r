@@ -274,12 +274,19 @@ gen.tasks.t1d <- function() {
       cons.taxonomy.file="yap/*.seq.taxonomy"
       taxa.summary.file.otu = NA
     })
-    
+
+    read.data.task.yap.stirrups = within(read.data.task, {
+      taxa.summary.file = NA
+      otu.shared.file="yap/stirrups/*.shared"
+      cons.taxonomy.file="yap/stirrups/*.fixed.seq.taxonomy"
+      taxa.summary.file.otu = NA
+    })
+        
     read.data.task.mothur.cdhit = within(read.data.task, {
       taxa.summary.file = "stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
     })
     
-    read.data.task = within(read.data.task.yap, {
+    read.data.task = within(read.data.task.yap.stirrups, {
       #meta.file="aliq_id_to_metadata_20150403.tsv"
       meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922_batches.tsv"
       load.meta.method=load.meta.t1d
@@ -367,14 +374,14 @@ gen.tasks.t1d <- function() {
     test.counts.task = within(test.counts.task, {
       
       do.deseq2 = T
-      do.adonis = F
-      do.genesel = F
-      do.stabsel = F
+      do.adonis = T
+      do.genesel = T
+      do.stabsel = T
       do.glmer = F
-      do.divrich = c()
+      #do.divrich = c()
       
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -1016,9 +1023,21 @@ gen.tasks.t1d <- function() {
   }
   
   
-  task.test = within( task0, {
+  task.test = within( task1, {
     
-    taxa.levels = c("otu")
+    taxa.levels = c("7")
+    
+    read.data.task = within(read.data.task, {
+      #count.filter.options = list()    
+      count.filter.options = within(list(), {
+        #min_max=30
+        #min_mean=10
+      })
+      
+      otu.count.filter.options=list()
+      
+    })
+    
     
     do.summary.meta = F
     
@@ -1053,6 +1072,15 @@ gen.tasks.t1d <- function() {
           geoms=c("bar_stacked","bar")
         })
       })
+    
+      network.features.combined.task = within(network.features.combined.task, { 
+        count.filter.options=NULL                                                
+        drop.unclassified=F
+        method="network.spiec.easi"
+        method.options=list()
+        descr=""
+      }) 
+      
       
     })
     

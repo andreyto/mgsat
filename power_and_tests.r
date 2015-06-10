@@ -2064,7 +2064,7 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   else {
     pool = m_a$attr[,group.attr]
     do.stratify = T
-    n.rar.rep = min(10000,n.rar.rep * min(nrow(m_a$count),20))
+    n.rar.rep = round(max(min(10000*(3000/ncol(m_a$count)),n.rar.rep * min(nrow(m_a$count),20)),n.rar.rep))
   }
   count = m_a$count
   if(!(do.stratify || do.rarefy)) {
@@ -2128,12 +2128,22 @@ if(is.raw.count.data) {
 return(list(e=x))
 }
 
+mgsat.diversity.beta.dist.complexity <- function(n.r,n.c) {
+  n.c*(n.r**2)
+}
+
 mgsat.diversity.beta.dist <- function(m_a,n.rar.rep=400,method="-1",do.rarefy=T) {
   
   require(vegan)
-  
   n.rar = min(rowSums(m_a$count))
+  
   if(do.rarefy) {
+    
+    one.iter.compl = mgsat.diversity.beta.dist.complexity(nrow(m_a$count),ncol(m_a$count))
+    one.iter.compl.medium = mgsat.diversity.beta.dist.complexity(200,200)
+    
+    n.rar.rep = round(min(n.rar.rep,max(1,n.rar.rep * (one.iter.compl.medium / one.iter.compl))))
+    
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
 {
@@ -3944,6 +3954,10 @@ new_deseq2 <- function(...) {
   return(x)
 }
 
+get.deseq2.result.description <- function(x) {
+  paste(capture.output(head(x,0))[1:2],collapse=";")
+}
+
 deseq2.report <- function(m_a,
                           formula.rhs,
                           test.task=list(),
@@ -3965,8 +3979,8 @@ deseq2.report <- function(m_a,
                   c(list(object=dds),
                     result.task)
     )
-    res = res[order(res$padj),]  
-    res.descr = paste(capture.output(head(res,0))[1:2],collapse=";")
+    res = res[order(res$pvalue),]  
+    res.descr = get.deseq2.result.description(res)
     res.df = cbind(feature = rownames(res),as.data.frame(res))
     report$add.table(as.data.frame(res.df),
                      caption=paste("DESeq2 results for task:",
@@ -5290,6 +5304,7 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                                vertex.options = mgsat.plot.igraph.vertex.options,
                                vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
                                edge.options = mgsat.plot.igraph.edge.options,
+                               vertex.text.selection=NULL,
                                layout = layout.fruchterman.reingold,
                                extra.plot.operands=list()) 
 {
@@ -5299,8 +5314,6 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
   if (vcount(g) < 2) {
     stop("The graph you provided, `g`, has too few vertices.")
   }
-  edgeDF <- data.frame(get.edgelist(g))
-  edgeDF$id <- 1:length(edgeDF[, 1])
   if(is.function(layout) || is.character(layout)) {
     vertDF <- do.call(layout,list(g))
   }
@@ -5314,7 +5327,6 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
     vertDF <- data.frame(vertDF, vertex.data[as.character(vertDF$vertex.name), 
                                              , drop = FALSE])
   }
-  graphDF <- merge(melt(edgeDF, id = "id", value.name = "vertex.name"), vertDF, by = "vertex.name")
   p <- ggplot(vertDF, aes(x, y))
   p <- p + theme_bw() + theme(panel.grid.major = element_blank(), 
                               panel.grid.minor = element_blank(), axis.text.x = element_blank(), 
@@ -5325,15 +5337,29 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                      options=vertex.options,
                      options.fixed=list(na.rm=T))
   if (!is.null(vertex.text.options$label)) {
-    p <- p + make.geom(geom_text,data=vertDF,
-                       options=vertex.text.options,
-                       options.fixed=list(na.rm = TRUE))
+    text.data = vertDF
+    text.include.data = F
+    if(!is.null(vertex.text.selection)) {
+      text.data = text.data[text.data$vertex.name %in% vertex.text.selection,,drop=F]
+      text.include.data = T
+    }
+    if(nrow(text.data)>0) {
+      p <- p + make.geom(geom_text,data=text.data,
+                         options=vertex.text.options,
+                         options.fixed=list(na.rm = TRUE),
+                         include.data=text.include.data)
+    }
   }
-  p <- p + make.geom(geom_line,data=graphDF,
-                     options=edge.options,
-                     options.data=list(group="id"),
-                     options.fixed=list(na.rm=T),
-                     include.data=T)
+  edgeDF <- data.frame(get.edgelist(g))
+  if(nrow(edgeDF) > 0) {
+    edgeDF$id <- 1:length(edgeDF[, 1])
+    graphDF <- merge(melt(edgeDF, id = "id", value.name = "vertex.name"), vertDF, by = "vertex.name")
+    p <- p + make.geom(geom_line,data=graphDF,
+                       options=edge.options,
+                       options.data=list(group="id"),
+                       options.fixed=list(na.rm=T),
+                       include.data=T)
+  }
   ## give bigger margins to avoid cutting off the point labels
   p = p + scale_x_continuous(expand=c(0.1,0))
   for(extra.plot.operand in extra.plot.operands) {
@@ -5410,9 +5436,11 @@ network.features.combined.report <- function(m_a,
                                              count.filter.options=NULL,
                                              sub.report=T,
                                              drop.unclassified=T,
+                                             max.vertex.labels=30,
                                              method="network.spiec.easi",
                                              method.options=list(),
                                              descr="") {
+  descr = sprintf("Feature correlation with overlaid differential abundance results %s",descr)
   if(drop.unclassified) {
     drop.names = count.filter.options$drop.names
     drop.names = c(drop.names,"other",colnames(m_a$count)[grepl("Unclassified.*",colnames(m_a$count),ignore.case=T)])
@@ -5423,29 +5451,33 @@ network.features.combined.report <- function(m_a,
   }
   ds2.res = get.feature.ranking(res.tests,method="deseq2",only.names=F,id.result=0)
   plot.tasks = foreach(res = ds2.res$ranked$results) %do% {
+    res.descr = get.deseq2.result.description(res)
     res.df = as.data.frame(res)
     res.df$logBaseMean = log(res.df$baseMean+0.5)
     res.df$statistics = res.df$stat
     vertex.options = list(size="logBaseMean",color = "statistics", alpha=1)
-    vertex.text.options = list(size = 4)
+    vertex.text.options = list(size = rel(3))
+    vertex.text.selection = rownames(res.df)[1:min(max.vertex.labels,nrow(res.df))]
     list(vertex.data=res.df,
          vertex.options=vertex.options,
          vertex.text.options=vertex.text.options,
-         descr="DESeq2 results",
+         vertex.text.selection=vertex.text.selection,
+         descr=sprintf("Vertices are labeled by DESeq2 results for %s. Showing names for the maximum of %s top-ranked features.",res.descr,max.vertex.labels),
          extra.plot.operands=list(
            scale_colour_gradient2(midpoint=0,mid="grey",high="red",low="blue"),
            scale_size(range = c(1, 8))
-           )
          )
+    )
   }
+  
   network.report(m_a,
                  count.filter.options=count.filter.options,
                  vertex.data=NULL,
                  plot.tasks=plot.tasks,
-                 sub.report=T,
-                 method="network.spiec.easi",
-                 method.options=list(),
-                 descr="DESeq2 results")
+                 sub.report=sub.report,
+                 method=method,
+                 method.options=method.options,
+                 descr=descr)
   
 }
 
