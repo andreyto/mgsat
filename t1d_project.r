@@ -1029,11 +1029,14 @@ gen.tasks.t1d <- function() {
     
     read.data.task = within(read.data.task, {
       #count.filter.options = list()    
-      count.filter.options = within(list(), {
+      count.filter.options = within(count.filter.options, {
+        keep.names = function(count,count_norm,...) {
+          colnames(count)[grepl("^Streptococcus*",colnames(count))]
+        }
         #min_max=30
         #min_mean=10
       })
-      
+      taxa.levels.mix = 1  
       otu.count.filter.options=list()
       
     })

@@ -606,6 +606,18 @@ count.filter.m_a <- function(m_a,
   ## bitmask of columns to keep; start with keep all
   mask_col_sel = rep(T,ncol(cnt))
   
+  if(is.function(drop.except.names)) {
+    drop.except.names = do.call(drop.except.names,list(cnt,cnt_norm,attr))
+  }
+
+  if(is.function(drop.names)) {
+    drop.names = do.call(drop.names,list(cnt,cnt_norm,attr))
+  }
+
+  if(is.function(keep.names)) {
+    keep.names = do.call(keep.names,list(cnt,cnt_norm,attr))
+  }
+  
   ## if drop.except.names defined, only keep names provided where
   if(!is.null(drop.except.names)) {
     mask_col_sel = mask_col_sel & (colnames(cnt) %in% drop.except.names)
@@ -1381,17 +1393,20 @@ read.mothur.otu.shared <- function(file_name,sanitize=T) {
   return (as.matrix(data))
 }
 
-read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu") {
+read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu",taxa.levels.mix=0) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   row.names(data) = data$OTU
   data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),
                     function(x,taxa.level) {
                       if(!is.taxa.level.otu(taxa.level)) {
+                        ##only look that deep in lineage
                         x = x[1:as.integer(taxa.level)]
                       }
+                      ##pmatch returns the index of the first match, so the expression below
+                      ##returns the prefix of lineage till (excluding) the first "unclassified" element
                       no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
                       last = no.tail[length(no.tail)]
-                      if(length(no.tail) < length(x)) {
+                      if(length(no.tail) < (length(x) - taxa.levels.mix)) {
                         last = paste("Unclassified",last,sep="_")
                       }
                       last
@@ -1409,9 +1424,9 @@ is.taxa.level.otu <- function(taxa.level) {
 }
 
 read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T,taxa.level="otu",
-                                      count.basis="seq", otu.count.filter.options=NULL) {
+                                      count.basis="seq", otu.count.filter.options=NULL,taxa.levels.mix=0) {
   otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
-  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level)
+  taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level,taxa.levels.mix=taxa.levels.mix)
   #make.global(name="otu.fr")
   stopifnot(ncol(otu.df) == nrow(taxa.df))
   stopifnot(all(colnames(otu.df) %in% taxa.df$OTU))
@@ -2942,15 +2957,6 @@ power.choc<-function(taxa.meta.data,taxa.meta.attr.names) {
   write.csv(res.power,"res.power.csv")
 }
 
-read.choc <- function(taxa.level=3) {
-  #moth.taxa <- read.mothur.taxa.summary("X:/sszpakow/BATCH_03_16S/ab1ec.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary.txt")
-  moth.taxa <- read.mothur.taxa.summary("4b92c86afff1e8ed5443fd52f540eb60.files_x1.sorted.0.03.cons.tax.summary.seq.taxsummary")
-  taxa.lev.all = multi.mothur.to.abund.df(moth.taxa,taxa.level)
-  taxa.lev = count.filter(taxa.lev.all,col_ignore=c(),min_max_frac=0.001,min_row_sum=50,other_cnt="other")
-  meta = load.meta.choc("CHOC_MiSEQ_June2014.txt")
-  return (merge.counts.with.meta(taxa.lev,meta))
-}
-
 ## Default method for loading metadata file
 ## This will work OK if your file follows certain conventions:
 ## 1. Tab delimited with a header row
@@ -2992,7 +2998,8 @@ read.data.project.yap <- function(taxa.summary.file,
                                   sanitize=T,
                                   taxa.count.source=c("shared","summary"),
                                   otu.count.filter.options=NULL,
-                                  taxa.level=3) {
+                                  taxa.level=3,
+                                  taxa.levels.mix=0) {
   taxa.count.source = taxa.count.source[[1]]
   count.count.source.descr = sprintf(" with taxa count source %s",taxa.count.source)
   count.basis = count.basis[[1]]
@@ -3008,7 +3015,8 @@ read.data.project.yap <- function(taxa.summary.file,
                                                  sanitize=sanitize,
                                                  taxa.level=taxa.level,
                                                  count.basis=count.basis,
-                                                 otu.count.filter.options=otu.count.filter.options)
+                                                 otu.count.filter.options=otu.count.filter.options,
+                                                 taxa.levels.mix=taxa.levels.mix)
     report$add.p(sprintf("Loaded OTU taxonomy file %s.",
                          pandoc.link.verbatim.return(cons.taxonomy.file)
     ))
@@ -3508,7 +3516,7 @@ proc.project <- function(
         
         res.level = new_mgsatres(taxa.level=taxa.level)
         
-        label = paste(label.base,"l",taxa.level,sep=".",collapse=".")
+        label = paste(label.base,"l",paste(taxa.level,collapse="_"),sep=".",collapse=".")
         report$add.header(sprintf("Taxonomic level: %s of Subset: %s",taxa.level, descr),
                           report.section=report.section,sub=T) #4 {
         
