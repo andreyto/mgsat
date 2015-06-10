@@ -571,6 +571,7 @@ count.filter.m_a <- function(m_a,
                              max_row_sum=.Machine$integer.max,
                              other_cnt="other",
                              keep.names=NULL,
+                             drop.except.names=NULL,
                              drop.names=NULL,
                              n.top=0,
                              drop.zero=T) {
@@ -605,13 +606,13 @@ count.filter.m_a <- function(m_a,
   ## bitmask of columns to keep; start with keep all
   mask_col_sel = rep(T,ncol(cnt))
   
-  ## if keep.names defined, only keep names provided where
-  if(!is.null(keep.names)) {
-    mask_col_sel = mask_col_sel & (colnames(cnt) %in% keep.names)
+  ## if drop.except.names defined, only keep names provided where
+  if(!is.null(drop.except.names)) {
+    mask_col_sel = mask_col_sel & (colnames(cnt) %in% drop.except.names)
   }
   
   ## if drop.names defined, drop all names from it; this means drop.names
-  ## overrides keep.names
+  ## overrides drop.except.names
   if(!is.null(drop.names)) {
     mask_col_sel = mask_col_sel & !(colnames(cnt) %in% drop.names)
   }  
@@ -642,7 +643,12 @@ count.filter.m_a <- function(m_a,
     frac.inc = apply(cnt>0,2,mean)
     mask_col_sel = mask_col_sel & quant.mask(frac.inc,min_quant_incidence_frac,drop.zero=drop.zero)
   }
-  
+
+  ## if keep.names defined, keep all names listed in it; this means keep.names
+  ## overrides everything else
+  if(!is.null(keep.names)) {
+    mask_col_sel = mask_col_sel | (colnames(cnt) %in% keep.names)
+  } 
   
   ## drop all columns accumulated so far; not updating cnt_norm because not needed anymore
   cnt = cnt[,mask_col_sel,drop=F]
@@ -653,7 +659,7 @@ count.filter.m_a <- function(m_a,
     cnt = cnt[,1:min(n.top,ncol(cnt)),drop=F]
   }
   
-  if(is.null(drop.names) || ! (other_cnt %in% drop.names)) {
+  if(is.null(drop.names) || ! (other_cnt %in% drop.names) || (other_cnt %in% keep.names)) {
     
     cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
     

@@ -666,7 +666,7 @@ benchmark.abund <- function(m_a.abs,
   
   if(true.taxa.only) {
     m_a.abs = count.filter.m_a(m_a.abs,drop.zero=T,
-                               keep.names=true.taxa,
+                               drop.except.names=true.taxa,
                                other_cnt=other_cnt)
   }
   
