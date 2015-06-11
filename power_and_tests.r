@@ -580,7 +580,7 @@ count.filter.m_a <- function(m_a,
   ##and another group is 40% and has a large presence, then median filter will always throw this
   ##column away.
   #m.call = match.call()
-  #make.global(m.call)
+  ##make.global(m.call)
   #stop("DEBUG")
   x = m_a
   
@@ -609,11 +609,11 @@ count.filter.m_a <- function(m_a,
   if(is.function(drop.except.names)) {
     drop.except.names = do.call(drop.except.names,list(cnt,cnt_norm,attr))
   }
-
+  
   if(is.function(drop.names)) {
     drop.names = do.call(drop.names,list(cnt,cnt_norm,attr))
   }
-
+  
   if(is.function(keep.names)) {
     keep.names = do.call(keep.names,list(cnt,cnt_norm,attr))
   }
@@ -655,7 +655,7 @@ count.filter.m_a <- function(m_a,
     frac.inc = apply(cnt>0,2,mean)
     mask_col_sel = mask_col_sel & quant.mask(frac.inc,min_quant_incidence_frac,drop.zero=drop.zero)
   }
-
+  
   ## if keep.names defined, keep all names listed in it; this means keep.names
   ## overrides everything else
   if(!is.null(keep.names)) {
@@ -699,7 +699,7 @@ count.filter<-function(dat,
   ##and another group is 40% and has a large presence, then median filter will always throw this
   ##column away.
   #m.call = match.call()
-  #make.global(m.call)
+  ##make.global(m.call)
   #stop("DEBUG")
   x<-split_count_df(dat,col_ignore)
   x = count.filter.m_a(x,...)
@@ -1427,7 +1427,7 @@ read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitiz
                                       count.basis="seq", otu.count.filter.options=NULL,taxa.levels.mix=0) {
   otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
   taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level,taxa.levels.mix=taxa.levels.mix)
-  #make.global(name="otu.fr")
+  ##make.global(name="otu.fr")
   stopifnot(ncol(otu.df) == nrow(taxa.df))
   stopifnot(all(colnames(otu.df) %in% taxa.df$OTU))
   otu.df = new.m_a(count=otu.df)
@@ -3212,7 +3212,8 @@ mgsat.16s.task.template = within(list(), {
       args.stabsel = list(
         PFER=0.05,
         sampling.type="SS",
-        assumption="r-concave"
+        assumption="r-concave",
+        B=400
       )
     )
     
@@ -3520,6 +3521,9 @@ proc.project <- function(
         report$add.header(sprintf("Taxonomic level: %s of Subset: %s",taxa.level, descr),
                           report.section=report.section,sub=T) #4 {
         
+        report$add.header("Loading counts and metadata",
+                          report.section=report.section,sub=T)
+        
         m_a = do.call(read.data.method,
                       c(
                         list(taxa.level=taxa.level),
@@ -3538,6 +3542,15 @@ proc.project <- function(
                                         "sample")
         }
         
+        export.taxa.meta(m_a,
+                         label=label,
+                         descr=paste(descr,"After initial filtering",sep="."),
+                         row.proportions=T,
+                         row.names=F)
+        
+        
+        report$pop.section() # end loading counts
+        
         if(do.summary.meta) {
           summary.meta.method(m_a)
           do.call(report.sample.count.summary,c(
@@ -3548,12 +3561,6 @@ proc.project <- function(
           ##only do summary once
           do.summary.meta = F
         }
-        
-        export.taxa.meta(m_a,
-                         label=label,
-                         descr=paste(descr,"After initial filtering",sep="."),
-                         row.proportions=T,
-                         row.names=F)
         
         res.tests = NULL
         
@@ -3762,18 +3769,21 @@ show.feature.meta <- function(m_a,
 ##per the recipe from cv.glmnet help page.
 ##Extra argument q=dfmax+1 to make this function compatible with 
 ##the parameter list for stabs::stabsel (see how this is used in
-##stabsel.report).
-cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) {
+##stabsel.report to contrain the number of selected variables in the model).
+cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL,  n.cvs = 400, standardize=T,...) {
+  ##on a single fold set picking alpha is extremely unstable - returned alpha is all
+  ##over the place from one invocation to another. We run it on multiple sets
+  ##of splits, average the error curve (see cv.glmnet help page), and pick the best
+  ##parameters from the average.
   # This seed is taken from LASSO's example. 
   if (!is.null(seed) ) { set.seed(seed) }
   # Setting the number of folds to the number of samples (leave one out)
   #is not recommended by cv.glmnet help page
-  numfolds <- min(15,max(2,round(nrow(x)/10)))
+  numfolds <- min(30,max(3,round(nrow(x)/30)))
   # Grid for alpha crossvalidation
-  alphas <- c(0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 0.95, 0.99, 0.999,1.0)
-  # In a k fold crossvalidation, fold ID gives the iteration in which the sample would be in the test set.
+  alphas <- c(0.001, 0.005, 0.01, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7, 0.9, 0.95, 0.99, 0.999,1.0)
   
-  foldid <- sample(rep(seq(numfolds),length=dim(x)[1]))
+  foldids <- foreach(seq(n.cvs),.combine=rbind) %do% sample(rep(seq(numfolds),length=nrow(x)))
   # Go through alpha grid
   # Run crossvalidation for lambda.
   # Each model for each alpha is run by a parallel core and put into a list called lassomodels
@@ -3784,68 +3794,45 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL, standardize=T,...) 
     dfmax = ncol(x) + 1
   }
   
-  lassomodels <- foreach(i = c(1:length(alphas)),.packages=c("glmnet")) %dopar% {
-    #re-import required for windows parallelism with doSNOW
-    library(glmnet)
-    # set.seed(seed)
-    # the function finds the best lambda for a given alpha
-    # within each model there is cross-validation happening for lambda for each alpha.
-    # lambda1 = lambda*alpha 
-    # lambda2 = lambda*(1-alpha)
-    model <- try({cv.glmnet(x=x, y=y, family=family,
-                            nfolds=numfolds, 
-                            type.measure="deviance", 
-                            foldid=foldid,
-                            standardize=standardize, 
-                            alpha=alphas[i],
-                            dfmax=dfmax,
-                            ...)})
-  }
-  # there are two lambdas per model
-  # minimum lamda
-  # lambda within 1 standard deviation of the error
-  # find the best alpha
-  best_alpha_index <- 0
-  lowest_error <- 0
-  for (i in c(1:length(alphas))) {
-    # if a model fails, "try-error" will return true. "try-error" is an object that traps errors
-    # inherits is a function that will be true if try-error has collected an error from the model
-    # we want to avoid any errors recorded in "try-error" in the list of models we just generated
-    # example too small a dataset
-    if (!inherits(lassomodels[[i]], "try-error")) {
-      # First we will find the index of the lambda corresponding to the lambda.min
-      index <- which(lassomodels[[i]]$lambda.min == lassomodels[[i]]$lambda)
-      # high lambda means more penalty.
-      # lambdas are arranged from highest to lowest
-      # alpha = 1 ==> lasso
-      # alph = 0 ==> ridge
-      
-      #cvm is the cross-validated error, in this case, deviance.
-      error <- lassomodels[[i]]$cvm[index]
-      #print(error)
-      if (best_alpha_index == 0 || error < lowest_error) {
-        best_alpha_index <- i # picks an alpha from the grid of alphas
-        lowest_error <- error # picks the lowest deviance from the grid
-      }
-    }
-  }
-  #print(best_alpha_index)
-  
-  if (best_alpha_index != 0) {
-    # print the lassomodel at the best_alpha_index
-    lasso_model <- lassomodels[[best_alpha_index]]
-    alpha <- alphas[best_alpha_index]
-    # Use lambda which gives the lowest cross validated error
-    lambda <- lasso_model$lambda.min
-    out <- list(param=list(alpha=alpha),
-                glmnet.model=lasso_model, 
-                lambda=lambda
-    )
-  }
-  else {
-    out = list()
-  }
-  out
+  cv.res <- foreach(alpha=alphas,
+                    .packages=c("glmnet"),
+                    .combine=rbind) %do% {
+                      #re-import required for windows parallelism with doSNOW
+                      #library(glmnet)
+                      # set.seed(seed)
+                      # the function finds the best lambda for a given alpha
+                      # within each model there is cross-validation happening for lambda for each alpha.
+                      # lambda1 = lambda*alpha 
+                      # lambda2 = lambda*(1-alpha)
+                      cv.glmnet.args = list(x=x, y=y, family=family,
+                                        nfolds=numfolds, 
+                                        type.measure="deviance", 
+                                        standardize=standardize, 
+                                        alpha=alpha,
+                                        dfmax=dfmax,
+                                        ...)
+                      ## get a lambda vector here and pass it to all other cv.glmnet calls
+                      ## inside the loop below
+                      lambda = do.call(cv.glmnet,c(list(foldid=foldids[1,]),cv.glmnet.args))$lambda
+                      plus = function(x,y) {
+                        ## we do need to align lambdas here now that we pass a pre-computed lambda
+                        ## vector, but this shoud not hurt in any case
+                        lambda.common = intersect(x$lambda,y$lambda)
+                        x = x[x$lambda %in% lambda.common,]
+                        x$cvm = x$cvm + y$cvm[y$lambda %in% lambda.common]
+                        x
+                      }
+                      cvmeans = foreach(i.cv = seq(n.cvs),
+                                       .combine=plus,
+                                       .final=function(x) (x/n.cvs),
+                                       .packages=c("glmnet")) %dopar% {
+                                         cv.res = do.call(cv.glmnet,c(list(foldid=foldids[i.cv,]),cv.glmnet.args))
+                                         data.frame(lambda=cv.res$lambda,cvm=cv.res$cvm)
+                                       }
+                      data.frame(alpha=alpha,cvmin=min(cvmeans$cvm))
+                    }
+  alpha = cv.res$alpha[which.min(cv.res$cvmin)]
+  list(param=list(alpha=alpha))
 }
 
 stability.selection.c060.at <- function (x, fwer, pi_thr = 0.6) 
@@ -3931,7 +3918,7 @@ plot.stability.selection.c060.at <- function (y,
   linetype.values[rank.sel] = "dashed"
   linetype.values[fwer.sel] = "solid"
   #data.coef$prob = log10(data.coef$prob)
-  #make.global(data.coef)
+  ##make.global(data.coef)
   d <- ggplot() + 
     #geom_line(aes(x = xvar, 
     #              y = prob)) + 
@@ -3993,7 +3980,9 @@ deseq2.report <- function(m_a,
                   c(list(object=dds),
                     result.task)
     )
-    res = res[order(res$pvalue),]  
+    #DEBUG
+    res = res[order(res$padj),]  
+    #res = res[order(res$pvalue),]  
     res.descr = get.deseq2.result.description(res)
     res.df = cbind(feature = rownames(res),as.data.frame(res))
     report$add.table(as.data.frame(res.df),
@@ -4116,7 +4105,8 @@ stabsel.report <- function(m_a,
                              PFER=0.05,
                              sampling.type="SS",
                              assumption="r-concave",
-                             q=NULL
+                             q=NULL,
+                             B=200
                            )
 ) {
   
@@ -4152,14 +4142,13 @@ stabsel.report <- function(m_a,
     q = args.stabsel$q
   }
   
-  param.fit = do.call(parfitfun,
-                      c(list(x=count,y=resp,q=q),
-                        args.fitfun
-                      )
-  )$param
-  
+  param.fit.res = do.call(parfitfun,
+                          c(list(x=count,y=resp,q=q),
+                            args.fitfun
+                          )
+  )
+  param.fit = param.fit.res$param
   args.fitfun = c(args.fitfun,param.fit)
-  make.global(name="st.en")
   stab.res = do.call(stabsel,c(
     list(x=count,y=resp,
          fitfun=fitfun,
@@ -4632,7 +4621,7 @@ test.counts.project <- function(m_a,
   
   report.section = report$add.header("Data analysis",section.action="push")
   
-  make.global(m_a)
+  ##make.global(m_a)
   
   res = new_mgsatres()
   
@@ -4682,7 +4671,7 @@ test.counts.project <- function(m_a,
     divrich.post.filter=F
   }
   
-  make.global(m_a)
+  #make.global(m_a)
   
   if(do.divrich && do.divrich.post.filter) {
     tryCatchAndWarn({ 
@@ -4709,7 +4698,7 @@ test.counts.project <- function(m_a,
                                 descr="data analysis (unless modified by specific methods)",
                                 norm.count.task)
   
-  make.global(m_a.norm)
+  #make.global(m_a.norm)
   
   if(do.genesel) {
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
@@ -4722,12 +4711,12 @@ test.counts.project <- function(m_a,
   }
   
   if(do.stabsel) {
-    tryCatchAndWarn({ 
-      res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
-                                             stabsel.task
-      )
-      )
-    })
+      tryCatchAndWarn({ 
+        res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
+                                               stabsel.task
+        )
+        )
+      })
   }
   
   if(do.glmer) {  
@@ -5289,7 +5278,7 @@ make.geom <- function(geom,data,options,options.data=list(),options.fixed=list()
   if(include.data) {
     options.fixed$data = data
   }
-  make.global(name="gm")
+  #make.global(name="gm")
   do.call(geom,
           c(
             ifelse(length(options.data)>0,list(mapping=do.call(aes_string,options.data)),list(mapping=NULL)),
@@ -5397,7 +5386,7 @@ network.spiec.easi <- function(count,
   #if(is.null(se.est)) {
   se.est <- do.call(spiec.easi,c(list(count),options))
   #}
-  #make.global(name="dbg.cache")
+  ##make.global(name="dbg.cache")
   rownames(se.est$refit) = colnames(se.est$data)
   colnames(se.est$refit) = colnames(se.est$data)
   gr = graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
@@ -5649,9 +5638,9 @@ select.samples <- function(m_a,
   
   report$add.vector(colnames(m),name="feature",caption="Using these features for sample selection.")
   report$add.header("Models trained on the full dataset and their performance")  
-  #make.global(species.sel)
-  #make.global(m)
-  #make.global(sample.group)
+  ##make.global(species.sel)
+  ##make.global(m)
+  ##make.global(sample.group)
   bootControl <- trainControl(number = 40)
   #set.seed(2)
   scaled = F
@@ -5689,11 +5678,11 @@ select.samples <- function(m_a,
   report$add.printed(mod,caption="Best model trained on the full input set")  
   
   #mod.pred.prob = predict(mod, m, type = "probabilities")
-  #make.global(mod.pred.prob)
+  ##make.global(mod.pred.prob)
   #print(sum(mod.pred.prob[,"Control"]>0.5))
   mod.pred.score = predict(mod,m,type="decision")
   mod.pred = predict(mod,m)
-  #make.global(mod.pred.score)
+  ##make.global(mod.pred.score)
   
   report$push.section(report.section)
   show.pred.perf(mod.pred,mod.pred.score,sample.group)  
@@ -6266,9 +6255,9 @@ genesel.stability <- function(m_a,
       rnk.vals = cbind(rnk.vals,group.median)
     }
   }
-  #make.global(rnk.vals)
-  #make.global(y.relev)
-  #make.global(type)
+  ##make.global(rnk.vals)
+  ##make.global(y.relev)
+  ##make.global(type)
   
   if(replicates > 0) {
     #minclassize = min(table(y.relev))*samp.fold.ratio*0.9
@@ -6280,7 +6269,7 @@ genesel.stability <- function(m_a,
                                    type=type)
     
     rep_rnk = RepeatRankingAT(rnk,fold_matr,scheme="subsampling",pvalues=F)
-    #make.global(rep_rnk)
+    ##make.global(rep_rnk)
     #toplist(rep_rnk,show=F)
     #stab_ovr = GetStabilityOverlap(rep_rnk, scheme = "original", decay = "linear")
     ### for a short summary
@@ -6291,7 +6280,7 @@ genesel.stability <- function(m_a,
     #aggr_rnk = AggregateSimple(rep_rnk, measure="mode")
     aggr_rnk = AggregateMC(rep_rnk, maxrank=n_feat)
     #aggr_rnk = AggregateSVD(rep_rnk)
-    #make.global(aggr_rnk)
+    ##make.global(aggr_rnk)
     #toplist(aggr_rnk)
     #gsel = GeneSelector(list(aggr_rnk), threshold = "BH", maxpval=0.05)
     gsel = GeneSelector(list(aggr_rnk), threshold = "user", maxrank=n_feat)
@@ -6704,7 +6693,7 @@ read.t1d.mg <-function(annot.type,level) {
     counts = mgrast.to.abund.df(counts,level)
     counts = count.filter(counts,col_ignore=c(),min_max_frac=0,min_max=30,min_row_sum=0,other_cnt="other")
   }
-  #make.global(counts)
+  ##make.global(counts)
   
   meta = load.meta.t1d("annotation20130819.csv",as.merged=T)
   return (merge.counts.with.meta(counts,meta))
@@ -7059,7 +7048,7 @@ power.pieper.t1d <- function(
   eff.raw = group.mean.ratio(m.raw,group)
   
   pvals = wilcox.test.multi.fast(m,group)  
-  #make.global(pvals)
+  ##make.global(pvals)
   
   if(mult.adj=="fdrtool") {
     pvals.adj = fdrtool(pvals,statistic="pvalue",plot=F,verbose=F)$qval
@@ -7068,7 +7057,7 @@ power.pieper.t1d <- function(
     pvals.adj = p.adjust(pvals,method=mult.adj)
   }
   
-  #make.global(pvals.adj)
+  ##make.global(pvals.adj)
   
   group.mean = count_matr_from_df(count.summary(m,mean,group),c(".group"))
   group.sd = count_matr_from_df(count.summary(m,sd,group),c(".group"))

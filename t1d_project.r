@@ -286,7 +286,7 @@ gen.tasks.t1d <- function() {
       taxa.summary.file = "stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
     })
     
-    read.data.task = within(read.data.task.yap.stirrups, {
+    read.data.task = within(read.data.task.yap, {
       #meta.file="aliq_id_to_metadata_20150403.tsv"
       meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922_batches.tsv"
       load.meta.method=load.meta.t1d
@@ -444,6 +444,24 @@ gen.tasks.t1d <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
+    })
+    
+  })
+
+  task.species = within( task1, {
+    
+    taxa.levels = c("7")
+    
+    read.data.task = within(read.data.task, {
+      #count.filter.options = list()    
+      count.filter.options = within(count.filter.options, {
+        keep.names = function(count,count_norm,...) {
+          colnames(count)[grepl("^Streptococcus*",colnames(count))]
+        }
+        #min_max=30
+        #min_mean=10
+      })
+      taxa.levels.mix = 1  
     })
     
   })
@@ -1025,19 +1043,15 @@ gen.tasks.t1d <- function() {
   
   task.test = within( task1, {
     
-    taxa.levels = c("7")
+    taxa.levels = c("6")
     
     read.data.task = within(read.data.task, {
       #count.filter.options = list()    
       count.filter.options = within(count.filter.options, {
-        keep.names = function(count,count_norm,...) {
-          colnames(count)[grepl("^Streptococcus*",colnames(count))]
-        }
         #min_max=30
         #min_mean=10
       })
-      taxa.levels.mix = 1  
-      otu.count.filter.options=list()
+      #otu.count.filter.options=list()
       
     })
     
@@ -1048,15 +1062,13 @@ gen.tasks.t1d <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      norm.count.task = within(norm.count.task, {
-        method="norm.ihs.prop"
-      })
-      
-      do.deseq2 = T
+      do.deseq2 = F
       do.adonis = F
       do.genesel = F
-      do.stabsel = F
+      do.stabsel = T
       do.glmer = F
+      do.ordination = F
+      do.network.features.combined = F
       do.divrich = c()
       
       do.plot.profiles.abund=F
@@ -1090,7 +1102,7 @@ gen.tasks.t1d <- function() {
   })
   
   return (list(task.test))
-  return (list(task1,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
+  return (list(task1,task.species,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
 }
 
 
