@@ -5189,7 +5189,7 @@ heatmap.combined.report <- function(m_a,
                                     km.diversity=0,
                                     show_row_names = F) {
   require(fpc)
-  require(pam)
+  require(cluster)
   main.meta.var = NULL
   if(length(attr.annot.names)>0) {
     main.meta.var = attr.annot.names[[1]]
