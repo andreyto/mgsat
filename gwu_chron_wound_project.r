@@ -9,10 +9,11 @@ load.meta.gwu_cw <- function(file.name,batch=NULL,aggr.var=NULL) {
   names(meta) =
     replace.col.names(
       names(meta),
-      c("old_id","patient_id","sample_type","Hidradenitis.suppurativa"),
+      c("new_id","patient_id","sample_type","Hidradenitis.suppurativa"),
       c("SampleID","PatientID","SampleType","Hidradenitis")
     )
   
+  meta$SampleID = paste("S_",meta$SampleID,sep="")
   meta = meta[!duplicated(meta$SampleID),]
   
   to.num.fields = c("WSA.collection","WSA.one.month","Healing.rate.collection","Healing.rate.one.month")
@@ -28,10 +29,6 @@ load.meta.gwu_cw <- function(file.name,batch=NULL,aggr.var=NULL) {
   meta$Diabetes = toupper(as.character(meta$Diabetes))
   meta = meta[meta$Diabetes %in% c("YES","NO"),]
   meta$Diabetes = factor(meta$Diabetes)
-  #DEBUG: for now just take unique records
-  meta = meta[meta$Hidradenitis!="Yes",,drop=F]
-  meta = meta[meta$SampleType=="q",,drop=F]
-  meta = meta[!duplicated(meta$PatientID),,drop=F]  
   
   row.names(meta) = meta$SampleID
   
@@ -82,7 +79,7 @@ summary.meta.gwu_cw <- function(m_a) {
   
 }
 
-## This function must generate a lits with analysis tasks
+## This function must generate a list with analysis tasks
 
 gen.tasks.gwu_cw <- function() {
   
@@ -92,8 +89,8 @@ gen.tasks.gwu_cw <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(2,3,6,"otu")
-    #taxa.levels = c(6)
+    taxa.levels = c(2,3,4,6,"otu")
+    #taxa.levels = c(2)
     
     descr = "One sample per patient"
     
@@ -107,7 +104,7 @@ gen.tasks.gwu_cw <- function() {
     })
     
     read.data.task = within(read.data.task.yap, {
-      meta.file="simplified-wound-meta-Apr9.txt"
+      meta.file="new_id.data.merged.v7.txt" #"simplified-wound-meta-Apr9.txt"
       load.meta.method=load.meta.gwu_cw
       load.meta.options=list()
       
@@ -116,15 +113,22 @@ gen.tasks.gwu_cw <- function() {
       
     })
     
-    get.taxa.meta.aggr<-function(taxa.meta) { 
-      return (get.taxa.meta.aggr.base(taxa.meta))
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      meta = m_a$attr
+      #take unique records
+      meta = meta[meta$Hidradenitis!="Yes",,drop=F]
+      meta = meta[meta$SampleType=="q",,drop=F]
+      meta = meta[!duplicated(meta$PatientID),,drop=F]  
+      m_a = subset.m_a(m_a,subset = rownames(meta))
+      return (m_a)
     }
     
     summary.meta.method=summary.meta.gwu_cw
     
     test.counts.task = within(test.counts.task, {
       
-      do.extra.method = c(2,3,4,5,6,"otu")
+      do.extra.method = c()
       do.ordination = T
       
       count.filter.feature.options = within(count.filter.feature.options, {
@@ -162,6 +166,17 @@ gen.tasks.gwu_cw <- function() {
         cluster.row.cuth=10
       })
       
+      heatmap.combined.task = within(heatmap.combined.task, {
+        hmap.width=1000
+        hmap.height=hmap.width*0.8
+        attr.annot.names=c(main.meta.var,"Year","Region","Diabetes",
+                           "WP.one.month","Hidradenitis",
+                           "SampleType","Healing.rate.collection.quant")
+        clustering_distance_rows="pearson"
+        km.abund=0
+        km.diversity=3
+      })
+      
       ordination.task = within(ordination.task, {
         distance="euclidean"
         ord.tasks = list(
@@ -190,53 +205,7 @@ gen.tasks.gwu_cw <- function() {
           )          
         )
       })      
-      
-      extra.method.task = within(extra.method.task, {
-        
-        func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
-          require(fpc)
-          hmap.width = 1200
-          hmap.height = hmap.width * 0.8
-          split = pamk(m_a.norm$count, metric="pearson")$pamobject$clustering
-          h = Heatmap(m_a.norm$count,name="Abundance",
-                      cluster_columns=T,
-                      show_row_names = T, 
-                      clustering_distance_rows = "pearson", 
-                      split=split,
-                      column_names_gp = gpar(fontsize = 8),
-                      row_names_gp = gpar(fontsize = 8)) +  
-            ComplexHeatmap.add.attr(c(main.meta.var,"Year","Region","Diabetes",
-                                      "WP.one.month","Hidradenitis",
-                                      "SampleType","Healing.rate.collection.quant"),m_a.norm$attr,
-                                    show_row_names=F,
-                                    row_names_gp = gpar(fontsize = 8))
-          report$add(h,caption="Clustered heatmap of normalized abundance values",
-                     width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-          g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-          report$add(g.t)
-          
-          if(!is.null(get.diversity(res.tests,type="diversity"))) {
-            div = log(get.diversity(res.tests,type="diversity")$e)
-            split = pam(div, k=3, metric="pearson")$clustering
-            h.d = Heatmap(div,name="Renyi diversity indices",
-                          cluster_columns=F,
-                          show_row_names = F, 
-                          clustering_distance_rows = "pearson", 
-                          split=split,
-                          column_names_gp = gpar(fontsize = 8))
-            h = h.d + h
-            report$add(h,caption="Clustered heatmap of of diversity and normalized abundance values",
-                       width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-            g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-            report$add(g.t)
-          }
-        }
-        
-        norm.count.task.extra = within(norm.count.task, {
-        })
-        
-      })      
-      
+            
     })
     
   })
@@ -262,7 +231,7 @@ gen.tasks.gwu_cw <- function() {
       #do.divrich = c(6,"otu")
       
       do.plot.profiles.abund=T
-      do.heatmap.abund=F
+      do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -320,6 +289,44 @@ gen.tasks.gwu_cw <- function() {
     
   })
   
+  task1.with_repeats = within( task1, {
+
+    descr = "All samples per patient"
+
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      return (m_a)
+    }    
+    
+    do.summary.meta = T
+    
+    do.tests = T
+    
+    summary.meta.task = within(summary.meta.task, {
+      meta.x.vars = "Healing.rate.collection"
+      group.vars = c(main.meta.var)
+    })
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.deseq2 = T
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      #do.divrich = c(6,"otu")
+      
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        km.abund=0
+        km.diversity=0
+      })
+      
+    })
+    
+  })
   
   task2 = within( task0, {
     
@@ -439,7 +446,7 @@ gen.tasks.gwu_cw <- function() {
     
   })
   #return (list(task1))
-  return (list(task1,task2))
+  return (list(task1,task1.with_repeats,task2))
 }
 
 
