@@ -136,6 +136,13 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   meta$TimestampDate = as.Date(timeDate(meta$Timestamp))
   meta$TimestampMonth.quant = quantcut.ordered(meta$TimestampMonth)
   
+  meta$HLA_status = as.character(meta$HLA_status)
+  meta$HLA_status[meta$HLA_status=="UNKNOWN"] = NA
+  meta$HLA_status[meta$HLA_status=="NO RISK"] = "HLA_NO_RISK"
+  meta$HLA_status[meta$HLA_status=="RISK"] = "HLA_RISK"
+  meta$HLA_status = factor(meta$HLA_status)
+  meta$HLA_status = relevel(meta$HLA_status,"HLA_NO_RISK")
+  
   meta$FamilyID.T1D = paste(meta$FamilyID,meta$T1D,sep=".")
   
   row.names(meta) = meta$SampleID
@@ -286,19 +293,20 @@ gen.tasks.t1d <- function() {
       taxa.summary.file = "stability.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.tax.summary"
     })
     
-    read.data.task = within(read.data.task.yap, {
-      #meta.file="aliq_id_to_metadata_20150403.tsv"
-      meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922_batches.tsv"
+    read.data.task = within(read.data.task.yap.stirrups, {
+      meta.file="aliq_id_to_metadata_20150403.tsv"
+      #meta.file="aliq_id_to_metadata_for_T1D_YAP_run_20140922_batches.tsv"
       load.meta.method=load.meta.t1d
       load.meta.options=list(aggr.var="AliquotID")
       
-      #count.filter.options = list()    
-      count.filter.options = within(list(), {
-        min_quant_mean_frac=0.25
-        min_quant_incidence_frac=0.25
-        #min_max=30
-        min_mean=10
-      })
+      count.filter.options = list()    
+#       count.filter.options = within(list(), {
+#         drop.unclassified=T
+#         min_quant_mean_frac=0.25
+#         min_quant_incidence_frac=0.25
+#         #min_max=30
+#         min_mean=10
+#       })
       
       otu.count.filter.options=list()
       
@@ -312,7 +320,14 @@ gen.tasks.t1d <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      count.filter.feature.options = list()
+      #count.filter.feature.options = list()
+      count.filter.feature.options = within(list(), {
+        drop.unclassified=T
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
+        #min_max=30
+        min_mean=10
+      })
       
       norm.count.task = within(norm.count.task, {
         #method="norm.ihs.prop"
@@ -456,7 +471,7 @@ gen.tasks.t1d <- function() {
       #count.filter.options = list()    
       count.filter.options = within(count.filter.options, {
         keep.names = function(count,count_norm,...) {
-          colnames(count)[grepl("^Streptococcus*",colnames(count))]
+          colnames(count)[grepl("Streptococcus*",colnames(count))]
         }
         #min_max=30
         #min_mean=10
@@ -792,7 +807,7 @@ gen.tasks.t1d <- function() {
     test.counts.task = within(test.counts.task, {
       
       do.deseq2 = T
-      do.adonis = F
+      do.adonis = T
       do.genesel = F
       do.stabsel = F
       do.divrich = c()
@@ -827,7 +842,172 @@ gen.tasks.t1d <- function() {
     })
     
   })
+
+task3.2 = within( task3, {
   
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "Patient samples only, association with A1C, testing top quartile vs bottom quartile"
+  
+  main.meta.var = "A1C.quant"
+  main.meta.var.cont = "A1C"
+  control.meta.var = "age.quant"
+  control.meta.var.cont = "age"
+  
+  test.counts.task = within(test.counts.task, {
+    
+    do.deseq2 = T
+    do.adonis = F
+    do.genesel = F
+    do.stabsel = F
+    do.divrich = c()
+    
+    do.plot.profiles.abund=F
+    do.heatmap.abund=F
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var
+    })
+        
+  })
+  
+})
+
+task.hla = within( task0, {
+    
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "Association with HLA risk status"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=(!is.na(m_a$attr$HLA_status)))
+    return (m_a)
+  }
+  
+  main.meta.var = "HLA_status"
+
+  test.counts.task = within(test.counts.task, {
+    
+    do.deseq2 = T
+    do.adonis = T
+    do.genesel = T
+    do.stabsel = T
+    do.glmer = F
+    #do.divrich = c()
+    
+    do.plot.profiles.abund=F
+    do.heatmap.abund=T
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var
+    })
+
+    genesel.task = within(genesel.task, {
+      group.attr = main.meta.var
+    })
+    
+    stabsel.task = within(stabsel.task, {
+      resp.attr=main.meta.var
+      args.fitfun = within(args.fitfun, {
+        family="binomial"
+      })
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=main.meta.var.cont,
+             strata=NULL,
+             descr=sprintf("Association with %s",main.meta.var))        
+      )
+    })
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+    })
+    
+    heatmap.abund.task = within(heatmap.abund.task,{
+      attr.annot.names=c(main.meta.var)
+    })
+    
+    ordination.task = new_ordination.task(main.meta.var)    
+    
+  })
+  
+})
+
+task.hla.control = within( task0, {
+  
+  do.summary.meta = F
+  
+  do.tests = T
+  
+  descr = "Association with HLA risk status, controls only"
+  
+  get.taxa.meta.aggr<-function(m_a) { 
+    m_a = get.taxa.meta.aggr.base(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$T1D=="Control" & !is.na(m_a$attr$HLA_status)))
+    return (m_a)
+  }
+  
+  main.meta.var = "HLA_status"
+  
+  test.counts.task = within(test.counts.task, {
+    
+    do.deseq2 = T
+    do.adonis = T
+    do.genesel = T
+    do.stabsel = T
+    do.glmer = F
+    #do.divrich = c()
+    
+    do.plot.profiles.abund=F
+    do.heatmap.abund=T
+    
+    deseq2.task = within(deseq2.task, {
+      formula.rhs = main.meta.var
+    })
+    
+    genesel.task = within(genesel.task, {
+      group.attr = main.meta.var
+    })
+    
+    stabsel.task = within(stabsel.task, {
+      resp.attr=main.meta.var
+      args.fitfun = within(args.fitfun, {
+        family="binomial"
+      })
+    })
+    
+    adonis.task = within(adonis.task, {
+      
+      tasks = list(
+        list(formula.rhs=main.meta.var.cont,
+             strata=NULL,
+             descr=sprintf("Association with %s",main.meta.var))        
+      )
+    })
+    
+    plot.profiles.task = within(plot.profiles.task, {
+      id.vars.list = list(c(main.meta.var))
+    })
+    
+    heatmap.abund.task = within(heatmap.abund.task,{
+      attr.annot.names=c(main.meta.var)
+    })
+    
+    ordination.task = new_ordination.task(main.meta.var)    
+    
+  })
+  
+})
+
+
   task4 = within( task1, {
     
     do.summary.meta = F
@@ -1043,14 +1223,23 @@ gen.tasks.t1d <- function() {
   
   task.test = within( task1, {
     
-    taxa.levels = c("6")
+    taxa.levels = c("otu")
+    
+    filter.early = F
     
     read.data.task = within(read.data.task, {
-      #count.filter.options = list()    
-      count.filter.options = within(count.filter.options, {
+      if(!filter.early) {
+        count.filter.options = list()    
+      }
+      else {
+      count.filter.options = within(list(), {
+        drop.unclassified=T
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
         #min_max=30
-        #min_mean=10
+        min_mean=10
       })
+      }
       #otu.count.filter.options=list()
       
     })
@@ -1062,18 +1251,31 @@ gen.tasks.t1d <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.deseq2 = F
-      do.adonis = F
+      do.deseq2 = T
+      do.adonis = T
       do.genesel = F
-      do.stabsel = T
+      do.stabsel = F
       do.glmer = F
-      do.ordination = F
-      do.network.features.combined = F
+      do.ordination = T
+      do.network.features.combined = T
       do.divrich = c()
       
       do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.heatmap.abund=T
 
+      if(filter.early) {
+      count.filter.feature.options = list()
+      }
+      else {
+        count.filter.feature.options = within(list(), {
+          drop.unclassified=T
+          min_quant_mean_frac=0.25
+          min_quant_incidence_frac=0.25
+          #min_max=30
+          min_mean=10
+        })
+      }
+      
       deseq2.task = within(deseq2.task, {
         formula.rhs = main.meta.var
       })
@@ -1084,13 +1286,13 @@ gen.tasks.t1d <- function() {
         do.profile=T
         do.feature.meta=F
         show.profile.task=within(show.profile.task, {
-          geoms=c("bar_stacked","bar")
+          geoms=c("bar")
         })
       })
     
       network.features.combined.task = within(network.features.combined.task, { 
         count.filter.options=NULL                                                
-        drop.unclassified=F
+        drop.unclassified=T
         method="network.spiec.easi"
         method.options=list()
         descr=""
@@ -1101,8 +1303,8 @@ gen.tasks.t1d <- function() {
     
   })
   
-  return (list(task.test))
-  return (list(task1,task.species,task1.1,task2,task3,task3.1,task4,task4.1, task1.3))
+  #return (list(task.hla))
+  return (list(task1,task.species,task1.1,task2,task3,task3.1,task3.2,task.hla,task.hla.control,task4,task4.1, task1.3))
 }
 
 
@@ -1138,7 +1340,7 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down

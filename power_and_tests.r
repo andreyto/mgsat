@@ -574,7 +574,8 @@ count.filter.m_a <- function(m_a,
                              drop.except.names=NULL,
                              drop.names=NULL,
                              n.top=0,
-                             drop.zero=T) {
+                             drop.zero=T,
+                             drop.unclassified=F) {
   ##Note that filtering columns by a median value would not be a good idea - if we have a slightly
   ##unbalanced dataset where one group is 60% of samples and has zero presence in some column,
   ##and another group is 40% and has a large presence, then median filter will always throw this
@@ -621,6 +622,10 @@ count.filter.m_a <- function(m_a,
   ## if drop.except.names defined, only keep names provided where
   if(!is.null(drop.except.names)) {
     mask_col_sel = mask_col_sel & (colnames(cnt) %in% drop.except.names)
+  }
+  
+  if(drop.unclassified) {
+    drop.names = c(drop.names,colnames(cnt)[grepl("^Unclassified.*",colnames(cnt),ignore.case=T)])
   }
   
   ## if drop.names defined, drop all names from it; this means drop.names
@@ -671,7 +676,7 @@ count.filter.m_a <- function(m_a,
     cnt = cnt[,1:min(n.top,ncol(cnt)),drop=F]
   }
   
-  if(is.null(drop.names) || ! (other_cnt %in% drop.names) || (other_cnt %in% keep.names)) {
+  if(is.null(drop.names) || (! (other_cnt %in% drop.names) ) || (other_cnt %in% keep.names)) {
     
     cnt_col_other = as.matrix(row_cnt - rowSums(cnt))
     
@@ -3010,6 +3015,11 @@ read.data.project.yap <- function(taxa.summary.file,
     stopifnot(length(otu.shared.file)==1)
     cons.taxonomy.file = Sys.glob(cons.taxonomy.file)
     stopifnot(length(cons.taxonomy.file)==1)
+    if(taxa.level=="otu") {
+      ## Since we label taxa with OTU name anyway, just use the first deined rank name
+      ## for the prefix
+      taxa.levels.mix = Inf
+    }
     taxa.lev.all = read.mothur.otu.with.taxa.m_a(otu.shared.file=otu.shared.file,
                                                  cons.taxonomy.file=cons.taxonomy.file,
                                                  sanitize=sanitize,
@@ -3181,7 +3191,7 @@ mgsat.16s.task.template = within(list(), {
       do.plot.profiles = T
     })
     
-    count.filter.feature.options=list(min_mean_frac=0.0005)
+    count.filter.feature.options=list(drop.unclassified=T,min_mean_frac=0.0005)
     
     norm.count.task = within(list(), {
       method = "norm.ihs.prop"
@@ -3980,9 +3990,7 @@ deseq2.report <- function(m_a,
                   c(list(object=dds),
                     result.task)
     )
-    #DEBUG
-    res = res[order(res$padj),]  
-    #res = res[order(res$pvalue),]  
+    res = res[order(abs(res$stat),decreasing=T),]  
     res.descr = get.deseq2.result.description(res)
     res.df = cbind(feature = rownames(res),as.data.frame(res))
     report$add.table(as.data.frame(res.df),
@@ -4625,6 +4633,9 @@ test.counts.project <- function(m_a,
   
   res = new_mgsatres()
   
+  ##drop feature "other"
+  m_a.abs = norm.count.m_a(m_a,method="ident")
+  
   if(!is.null(genesel.task)) {
     if(is.null(genesel.task$plot.profiles.task)) {
       genesel.task$plot.profiles.task=plot.profiles.task
@@ -4649,7 +4660,7 @@ test.counts.project <- function(m_a,
   if(do.divrich && do.divrich.pre.filter) {
     tryCatchAndWarn({ 
       res$divrich <- do.call(mgsat.divrich.report,
-                             c(list(m_a,
+                             c(list(m_a=m_a.abs,
                                     plot.profiles.task=plot.profiles.task,
                                     extra.header="Before count filtering"),
                                divrich.task)
@@ -4657,16 +4668,17 @@ test.counts.project <- function(m_a,
     })
   }
   
-  if(!is.null(count.filter.feature.options)) {
     m_a = report.count.filter.m_a(m_a,
                                   count.filter.options=count.filter.feature.options,
-                                  "feature")
+                                  "Filtering features")
     export.taxa.meta(m_a,
                      label=label,
                      descr="After final feature filtering",
                      row.proportions=T,
                      row.names=F)    
-  }
+
+  m_a.abs = norm.count.m_a(m_a,method="ident")
+  
   if(is.null(count.filter.feature.options) || length(count.filter.feature.options)==0) {
     divrich.post.filter=F
   }
@@ -4676,7 +4688,7 @@ test.counts.project <- function(m_a,
   if(do.divrich && do.divrich.post.filter) {
     tryCatchAndWarn({ 
       res$divrich <- do.call(mgsat.divrich.report,
-                             c(list(m_a,
+                             c(list(m_a=m_a.abs,
                                     plot.profiles.task=plot.profiles.task,
                                     extra.header="After count filtering"),
                                divrich.task)
@@ -4686,7 +4698,8 @@ test.counts.project <- function(m_a,
   
   if(do.deseq2) {
     tryCatchAndWarn({ 
-      res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a),deseq2.task))
+      ##drop "other" category with norm method "ident"
+      res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a.abs),deseq2.task))
     })
   }
   
@@ -4723,7 +4736,7 @@ test.counts.project <- function(m_a,
     tryCatchAndWarn({ 
       res$glmer = do.call(test.counts.glmer.report,
                           c(
-                            list(m_a=m_a,
+                            list(m_a=m_a.abs,
                                  alpha=alpha),
                             glmer.task
                           )
@@ -4815,7 +4828,7 @@ test.counts.project <- function(m_a,
     
     tryCatchAndWarn({
       do.call(network.features.combined.report,
-              c(list(m_a=m_a,res.tests=res),
+              c(list(m_a=m_a.abs,res.tests=res),
                 network.features.combined.task
               )
       )
