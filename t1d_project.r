@@ -921,7 +921,7 @@ task.hla = within( task0, {
     adonis.task = within(adonis.task, {
       
       tasks = list(
-        list(formula.rhs=main.meta.var.cont,
+        list(formula.rhs=main.meta.var,
              strata=NULL,
              descr=sprintf("Association with %s",main.meta.var))        
       )
@@ -987,7 +987,7 @@ task.hla.control = within( task0, {
     adonis.task = within(adonis.task, {
       
       tasks = list(
-        list(formula.rhs=main.meta.var.cont,
+        list(formula.rhs=main.meta.var,
              strata=NULL,
              descr=sprintf("Association with %s",main.meta.var))        
       )
