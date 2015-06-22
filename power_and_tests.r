@@ -5230,6 +5230,13 @@ heatmap.combined.report <- function(m_a,
     g.t = g.test(m_a.norm$attr[,main.meta.var],split)
     report$add(g.t)
   }
+
+  m_a.norm$attr$.Heatmap.Cluster.Split = split
+  export.taxa.meta(m_a.norm,
+                   label="htmap",
+                   descr="Data used for heatmap with added row cluster splits (clustering by abundance profile)",
+                   row.proportions=F,
+                   row.names=F)
   
   if(!is.null(get.diversity(res.tests,type="diversity"))) {
     div = log(get.diversity(res.tests,type="diversity")$e)
@@ -5252,6 +5259,13 @@ heatmap.combined.report <- function(m_a,
       g.t = g.test(m_a.norm$attr[,main.meta.var],split)
       report$add(g.t)
     }
+    m_a.norm$attr$.Heatmap.Cluster.Split = split
+    m_a.norm$count = div
+    export.taxa.meta(m_a.norm,
+                     label="htmap",
+                     descr="Data used for heatmap with added row cluster splits (clustering by Renyi diversity indices)",
+                     row.proportions=F,
+                     row.names=F)
   }
 }
 

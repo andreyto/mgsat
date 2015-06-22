@@ -176,7 +176,7 @@ summary.meta.t1d <- function(m_a) {
   
   report$add.printed(summary(meta),caption="Summary of metadata variables")
   
-  xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID","~AA+T1D")
+  xtabs.formulas = list("~T1D","~T1D+FamilyID","~FamilyID","~SubjectID","~AA+T1D","~HLA_status+T1D")
   for(xtabs.formula in xtabs.formulas) {
     fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
     report$add(fact.xtabs,caption=paste("Sample cross tabulation",xtabs.formula))
@@ -268,7 +268,7 @@ gen.tasks.t1d <- function() {
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
-    taxa.levels = c(2,3,4,5,6,"otu")
+    taxa.levels = c(2,3,4,5,6,7,"otu")
     #taxa.levels = c(2)
     
     descr = "All samples, aggregated by AliquotID"
@@ -877,7 +877,9 @@ task3.2 = within( task3, {
 
 task.hla = within( task0, {
     
-  do.summary.meta = F
+  #taxa.levels = c(6)
+  
+  do.summary.meta = T
   
   do.tests = T
   
@@ -891,6 +893,10 @@ task.hla = within( task0, {
   
   main.meta.var = "HLA_status"
 
+  summary.meta.task = within(summary.meta.task, {
+    group.vars = c(main.meta.var)
+  })  
+  
   test.counts.task = within(test.counts.task, {
     
     do.deseq2 = T
@@ -900,8 +906,15 @@ task.hla = within( task0, {
     do.glmer = F
     #do.divrich = c()
     
-    do.plot.profiles.abund=F
+    do.plot.profiles.abund=T
     do.heatmap.abund=T
+
+    divrich.task = within(divrich.task,{
+      group.attr = main.meta.var
+      counts.glm.task = within(list(),{
+        formula.rhs = main.meta.var
+      })      
+    })    
     
     deseq2.task = within(deseq2.task, {
       formula.rhs = main.meta.var
@@ -928,13 +941,17 @@ task.hla = within( task0, {
     })
     
     plot.profiles.task = within(plot.profiles.task, {
-      id.vars.list = list(c(main.meta.var))
+      id.vars.list = list(c(main.meta.var),c(main.meta.var,"T1D"))
     })
     
     heatmap.abund.task = within(heatmap.abund.task,{
-      attr.annot.names=c(main.meta.var)
+      attr.annot.names=c(main.meta.var,"T1D")
     })
-    
+
+    heatmap.combined.task = within(heatmap.combined.task, {
+      attr.annot.names=c(main.meta.var,"T1D","age")
+    })
+        
     ordination.task = new_ordination.task(main.meta.var)    
     
   })
@@ -1303,8 +1320,8 @@ task.hla.control = within( task0, {
     
   })
   
-  #return (list(task.hla))
-  return (list(task1,task.species,task1.1,task2,task3,task3.1,task3.2,task.hla,task.hla.control,task4,task4.1, task1.3))
+  return (list(task.hla))
+  #return (list(task1,task.species,task1.1,task2,task3,task3.1,task3.2,task.hla,task.hla.control,task4,task4.1, task1.3))
 }
 
 

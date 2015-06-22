@@ -86,6 +86,38 @@ gen.tasks.gwu_cw <- function() {
   get.taxa.meta.aggr.base<-function(m_a) { 
     return (m_a)
   }
+
+  gen.ordination.task <- function(ordination.task=list(),main.meta.var,distance="euclidean",method="RDA") {
+  ordination.task = within(ordination.task, {
+    distance=distance
+    ord.tasks = list(
+      list(
+        ordinate.task=list(
+          method=method
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      ),
+      list(
+        ordinate.task=list(
+          method=method,
+          formula=main.meta.var
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      )          
+    )
+  })
+  ordination.task
+  }
   
   task0 = within( mgsat.16s.task.template, {
     #DEBUG: 
@@ -160,7 +192,7 @@ gen.tasks.gwu_cw <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         trans.clust=NULL
         stand.clust=NULL
-        dist.metr="euclidian"
+        dist.metr="euclidean"
         trans.show=NULL
         stand.show="range"
         cluster.row.cuth=10
@@ -175,43 +207,18 @@ gen.tasks.gwu_cw <- function() {
         clustering_distance_rows="pearson"
         km.abund=0
         km.diversity=3
+        show_row_names=T
       })
       
-      ordination.task = within(ordination.task, {
-        distance="euclidean"
-        ord.tasks = list(
-          list(
-            ordinate.task=list(
-              method="RDA"
-              ##other arguments to phyloseq:::ordinate
-            ),
-            plot.task=list(
-              type="samples",
-              color=main.meta.var
-              ##other arguments to phyloseq:::plot_ordination
-            )
-          ),
-          list(
-            ordinate.task=list(
-              method="RDA",
-              formula=main.meta.var
-              ##other arguments to phyloseq:::ordinate
-            ),
-            plot.task=list(
-              type="samples",
-              color=main.meta.var
-              ##other arguments to phyloseq:::plot_ordination
-            )
-          )          
-        )
-      })      
+      ordination.task = gen.ordination.task(ordination.task,main.meta.var=main.meta.var,
+                                            distance="euclidean")
             
     })
     
   })
   
   task1 = within( task0, {
-    
+        
     do.summary.meta = T
     
     do.tests = T
@@ -228,9 +235,10 @@ gen.tasks.gwu_cw <- function() {
       do.genesel = T
       do.stabsel = T
       do.glmer = F
+      do.network.features.combined=T
       #do.divrich = c(6,"otu")
       
-      do.plot.profiles.abund=T
+      do.plot.profiles.abund=F
       do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
@@ -293,6 +301,8 @@ gen.tasks.gwu_cw <- function() {
 
     descr = "All samples per patient"
 
+    taxa.levels = c(6)
+    
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
       return (m_a)
@@ -314,15 +324,29 @@ gen.tasks.gwu_cw <- function() {
       do.genesel = F
       do.stabsel = F
       do.glmer = F
-      #do.divrich = c(6,"otu")
+      do.network.features.combined=F
+      do.divrich = c() #c(6,"otu")
       
-      do.plot.profiles.abund=T
+      do.plot.profiles.abund=F
       do.heatmap.abund=T
+
+      norm.count.task = within(norm.count.task, {
+        method="norm.prop"
+        method.args = list()
+        #method="norm.rlog.dds"
+        #method.args=list(dds=NA) #signals to pull Deseq2 object
+        #method="norm.clr"
+        #method.args=list()
+      })      
       
       heatmap.combined.task = within(heatmap.combined.task, {
         km.abund=0
         km.diversity=0
-      })
+        clustering_distance_rows="manhattan"
+        })
+
+      ordination.task = gen.ordination.task(ordination.task,main.meta.var=main.meta.var,
+                                            distance="manhattan",method="NMDS")
       
     })
     
@@ -364,6 +388,15 @@ gen.tasks.gwu_cw <- function() {
       
       do.plot.profiles.abund=T
       do.heatmap.abund=T
+
+      norm.count.task = within(norm.count.task, {
+        method="norm.ihs.prop"
+        method.args = list(theta=2000)
+        #method="norm.rlog.dds"
+        #method.args=list(dds=NA) #signals to pull Deseq2 object
+        #method="norm.clr"
+        #method.args=list()
+      })
       
       divrich.task = within(divrich.task,{
         #n.rar.rep=4
@@ -402,34 +435,8 @@ gen.tasks.gwu_cw <- function() {
         )
       })
       
-      ordination.task = within(ordination.task, {
-        distance="euclidean"
-        ord.tasks = list(
-          list(
-            ordinate.task=list(
-              method="RDA"
-              ##other arguments to phyloseq:::ordinate
-            ),
-            plot.task=list(
-              type="samples",
-              color=main.meta.var.cont
-              ##other arguments to phyloseq:::plot_ordination
-            )
-          ),
-          list(
-            ordinate.task=list(
-              method="RDA",
-              formula=main.meta.var.cont
-              ##other arguments to phyloseq:::ordinate
-            ),
-            plot.task=list(
-              type="samples",
-              color=main.meta.var.cont
-              ##other arguments to phyloseq:::plot_ordination
-            )
-          )          
-        )
-      })            
+      ordination.task = gen.ordination.task(ordination.task,main.meta.var=main.meta.var.cont,
+                                            distance="euclidean")
       
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c(main.meta.var))
@@ -445,7 +452,7 @@ gen.tasks.gwu_cw <- function() {
     })
     
   })
-  #return (list(task1))
+  return (list(task1.with_repeats))
   return (list(task1,task1.with_repeats,task2))
 }
 
