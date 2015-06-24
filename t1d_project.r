@@ -60,7 +60,11 @@ load.meta.t1d <- function(file.name,batch=NULL,aggr.var=NULL) {
   meta$age.quant = quantcut.ordered(meta$age)
   meta$A1C = as.double(as.character(meta$A1C))
   #meta$A1C[is.na(meta$A1C)] = 6.2
-  meta$A1C.quant = quantcut.ordered(as.double(as.character(meta$A1C)))
+  meta$A1C.quant = quantcut.ordered(meta$A1C)
+  ##DESeq2 fails to automatically construct model matrix with ordered factor, so
+  ##we create a separate unordered factor for for DESeq2 (with with the same order
+  ##of levels)
+  meta$A1C.quart = factor(meta$A1C,ordered=F)
   
   meta = arrange(meta,SubjectID,Timestamp)
   
@@ -746,6 +750,12 @@ gen.tasks.t1d <- function() {
     
     main.meta.var = "A1C.quant"
     main.meta.var.cont = "A1C" 
+
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = task2$get.taxa.meta.aggr(m_a)
+      m_a = subset.m_a(m_a,subset=(!is.na(m_a$attr$A1C.quant)))
+      return (m_a)
+    }    
     
     test.counts.task = within(test.counts.task, {
       
@@ -868,7 +878,7 @@ task3.2 = within( task3, {
     do.heatmap.abund=F
     
     deseq2.task = within(deseq2.task, {
-      formula.rhs = main.meta.var
+      formula.rhs = "A1C.quart"
     })
         
   })
@@ -957,6 +967,27 @@ task.hla = within( task0, {
   })
   
 })
+
+
+task.hla.species = within( task.hla, {
+  
+  taxa.levels = c("7")
+  
+  read.data.task = within(read.data.task, {
+    #count.filter.options = list()    
+    count.filter.options = within(count.filter.options, {
+      keep.names = function(count,count_norm,...) {
+        colnames(count)[grepl("Streptococcus*",colnames(count))]
+      }
+      #min_max=30
+      #min_mean=10
+    })
+    taxa.levels.mix = 1  
+  })
+  
+})
+
+
 
 task.hla.control = within( task0, {
   
@@ -1320,8 +1351,7 @@ task.hla.control = within( task0, {
     
   })
   
-  return (list(task.hla))
-  #return (list(task1,task.species,task1.1,task2,task3,task3.1,task3.2,task.hla,task.hla.control,task4,task4.1, task1.3))
+  return (list(task1,task.species,task1.1,task2,task3,task3.1,task3.2,task.hla,task.hla.species,task.hla.control,task4,task4.1, task1.3))
 }
 
 
