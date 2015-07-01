@@ -754,6 +754,7 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
     ## Pandoc's subscript and suprscript extensions, but
     ## this will entirely replace internal default options and
     ## break TOC etc
+    cat(sprintf("Pandoc converting markdown file %s to %s format\n",fp.sub.md,out.format))
     Pandoc.convert(fp.sub.md,format=out.format,open=F,footer=F,
                    portable.html=portable.html.loc)
     }
