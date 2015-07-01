@@ -1,19 +1,29 @@
 
+compute.has.sibling <- function(meta) {
+  fam.with.sibl = ddply(meta,"FamilyID",summarise,
+                        has.sibling=("patient" %in% Sample.type) & ("sibling" %in% Sample.type))
+  
+  
+  fam.with.sibl = fam.with.sibl[fam.with.sibl$has.sibling,,drop=F]
+  
+  return (meta$FamilyID %in% fam.with.sibl$FamilyID)
+}
+
 ## Custom metadata loading function (define and pass to proc.project() when default
 ## implementation load.meta.default() is not sufficient)
 
 
 load.meta.choc <- function(file.name) {
-  meta = read.delim(file.name,header=T,stringsAsFactors=T)
+  meta = read.delim(file.name,header=T,stringsAsFactors=F)
   make.global(meta)
   
   allnames = replace.col.names(names(meta),
-                               c("Subject.ID..blinded.","JCVI.Sample.ID","Sample_Tube_ID..revised.","Subject.s.Gender","Subject.s.YEAR.of.birth","Had.subject.fever.at.the.time.of.sample.collection."),
+                               c("SubjectID.blinded.","JCVI.Sample.ID","Sample_Tube_ID..revised.","Subject.s.Gender","Subject.s.YEAR.of.birth","Had.subject.fever.at.the.time.of.sample.collection."),
                                c("SubjectID","SampleID","SampleID.compound","Gender","YearOfBirth","Fever.descr"))
   
   names(meta) = allnames
   
-  meta$SampleID = factor(paste("CHOC",meta$SampleID,sep=""))
+  meta$SampleID = paste("CHOC",meta$SampleID,sep="")
   
   ## Format of SubjectID from Raja:
   ## The third letter in the letter set describes whether the sample is 
@@ -22,25 +32,52 @@ load.meta.choc <- function(file.name) {
   ## links patient and sibling together. For example, ARP-0328-01 and 
   ## CRS-0329-01 are family set 01
   
-  meta$FamilyID = as.factor(substring(meta$SubjectID,10))
+  meta$FamilyID = substring(meta$SubjectID,10)
   
   meta$Sample.type = gsub(" ",".",meta$Sample.type)
   
   #Therapy.Status
   meta$Sample.type.1 = meta$Sample.type
   
-  meta$Sample.type = as.factor(unlist(apply(meta,
+  meta$Sample.type = unlist(apply(meta,
                                             1,
                                             function(row) {switch(row["Sample.type.1"],
                                                                   sibling ="sibling",
                                                                   patient.after.chemo="patient",
-                                                                  patient.before.chemo="patient")})))
-  meta$TherapyStatus = as.factor(unlist(apply(meta,
+                                                                  patient.before.chemo="patient")}))
+  meta$TherapyStatus = unlist(apply(meta,
                                               1,
                                               function(row) {switch(row["Sample.type.1"],
                                                                     sibling ="before.chemo",
                                                                     patient.after.chemo="after.chemo",
-                                                                    patient.before.chemo="before.chemo")})))
+                                                                    patient.before.chemo="before.chemo")}))
+  
+  
+  meta$Diagnosis[meta$Diagnosis=="#N/A"] = "Healthy"
+  meta$Diagnosis[is.na(meta$Diagnosis) & meta$Sample.type=="sibling"] = "Healthy"
+  #meta$Diagnosis[is.na(meta$Diagnosis) & meta$Sample.type=="patient"] = "leukemia"
+  if(any(meta$Diagnosis=="Healthy" & meta$Sample.type=="patient")) {
+    stop("Detected pateint with 'healthy' diagnosis value")
+  }
+  
+  diag.sel = (meta$Diagnosis == "Healthy") | grepl("leukemia",meta$Diagnosis,ignore.case = T)
+  
+  meta = meta[diag.sel,,drop=F]
+  
+  subj.dual.sample.types = ddply(meta,"SubjectID",summarise,
+                         dual.type=(length(unique(Sample.type))>1))
+  
+  if(any(subj.dual.sample.types$dual.type)) {
+    stop(sprintf("Some subjects have multiple sample types - they should be either 
+         only patient or sibling but not both: %s",
+                 paste(subj.dual.sample.types$SubjectID[subj.dual.sample.types$dual.type],collapse=", ")))
+  }
+  
+  meta$has.sibling = compute.has.sibling(meta)
+  
+  #meta = meta[meta$has.sibling,,drop=F]
+  
+  #meta$SampleID = factor(meta$SampleID)
   
   meta$Antibiotic = tolower(meta$Antibiotic.treatment.within.the.last.1.months.) != "no"
   meta$Antibiotic[str_blank(meta$Antibiotic.treatment.within.the.last.1.months.)] = NA
@@ -57,16 +94,13 @@ load.meta.choc <- function(file.name) {
   #meta$Fever = as.factor(meta$Fever)
   
   ## ggplot needs Date object
-  Specimen.Collection.Date = 
-    as.Date(as.character(meta$Specimen.Collection.Date),format = "%m/%d/%Y")
+  meta$Specimen.Collection.Date = 
+    as.Date(as.character(meta$Specimen.Collection.Date),format = "%m/%d/%y")
   
-  ## arithmetics work better with date object
-  Specimen.Collection.Date.d = 
-    as.date(as.character(meta$Specimen.Collection.Date),order="mdy")
   meta$age = as.numeric(
-    Specimen.Collection.Date.d
+    meta$Specimen.Collection.Date
     - 
-      as.date(paste(meta$YearOfBirth,"-06-01",sep=""),order="ymd")
+      as.Date(paste(meta$YearOfBirth,"-06-01",sep=""),format="%Y-%m-%d")
   )/365
   
   ## we need to create this as ordered quantile to show
@@ -74,15 +108,13 @@ load.meta.choc <- function(file.name) {
   ## in models that care about ordered factors)
   meta$age.quant = quantcut.ordered(meta$age)
   
-  meta$Specimen.Collection.Date = Specimen.Collection.Date
-  
   meta$visit = as.numeric(laply(as.character(meta$SampleID.compound),
                                 function(x) unlist(strsplit(x,".v",fixed=T))[2]))
-  meta$SampleID.1 = as.factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
-  meta$Sample.type = as.factor(meta$Sample.type)
-  meta$Sample.type.1 = as.factor(meta$Sample.type.1)
-  meta$TherapyStatus = as.factor(meta$TherapyStatus)
-  meta$SampleID = as.factor(meta$SampleID)
+  meta$SampleID.1 = factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
+  meta$Sample.type = factor(meta$Sample.type)
+  meta$Sample.type.1 = factor(meta$Sample.type.1)
+  meta$TherapyStatus = factor(meta$TherapyStatus)
+  meta$SampleID = factor(meta$SampleID)
   row.names(meta) = meta$SampleID
   meta$Sample.type.1 = relevel(meta$Sample.type.1,"sibling")
   meta$Sample.type = relevel(meta$Sample.type,"sibling")
@@ -90,12 +122,33 @@ load.meta.choc <- function(file.name) {
   
   meta.aggr = join(meta,
                    ddply(meta,"SubjectID",summarise,
-                         Antibiotic.Before.Therapy=any(ifelse(visit==1,as.logical(Antibiotic),F))),
+                         Antibiotic.Before.Therapy=any(ifelse(visit==1,as.logical(Antibiotic),F)),
+                         Antibiotic.Min.Visit=min(visit[Antibiotic])),
                    by="SubjectID",
-                   match="first")
+                   type="inner")
   stopifnot(nrow(meta.aggr)==nrow(meta))
 
+  meta = meta.aggr  
+  rownames(meta) = meta$SampleID
+  
+  meta$Antibiotic.Before.Sample = (meta$visit >= meta$Antibiotic.Min.Visit)
+  meta$Antibiotic.Before.Sample[is.na(meta$Antibiotic.Before.Sample)] = T
+  
+  meta.aggr = join(meta,
+                   ddply(meta,"SubjectID",summarise,
+                         First.Specimen.Date=Specimen.Collection.Date[visit==1]),
+                   by="SubjectID",
+                   type="inner")
+  stopifnot(nrow(meta.aggr)==nrow(meta))  
+  
   meta = meta.aggr
+  rownames(meta) = meta$SampleID
+  
+  meta$Months.Into.Therapy = as.numeric((meta$Specimen.Collection.Date - meta$First.Specimen.Date))/30
+  meta$Months.Into.Therapy.Group = quantcut.ordered(meta$Months.Into.Therapy,q=seq(0,1,by=0.20))
+  
+  report$add(qplot(x=visit,y=Months.Into.Therapy,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
+             caption="Relation between visits and dates")
 
   ## ignore antibiotic status in siblings - this field is for faceted plots
   meta$Sample.type.Antibio.Before = factor(with(meta,
@@ -114,6 +167,8 @@ load.meta.choc <- function(file.name) {
 
 summary.meta.choc <- function(m_a) {
   
+  make.global(m_a)
+  
   report$add.header("Summary of metadata variables")
   
   
@@ -124,6 +179,7 @@ summary.meta.choc <- function(m_a) {
   report$add(summary(meta),caption="Summary of metadata variables")
   
   xtabs.formulas = list("~Sample.type+TherapyStatus","~Antibiotic.Before.Therapy + Sample.type",
+                        "~Antibiotic.Before.Therapy + Sample.type + visit",
                         "~Fever + Sample.type",
                         "~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
   for(xtabs.formula in xtabs.formulas) {
@@ -151,15 +207,56 @@ summary.meta.choc <- function(m_a) {
                                 visit,
                                 method="spearman"),
                        caption="Spearman RHO for age and visit, patients only")
-    
+    report$add(glm(Antibiotic.Before.Therapy~Months.Into.Therapy,family="binomial"),
+               caption="How patients with initial anitbioitc treatment distributed between therapy periods")
   })
+  report$add(ggplot(data=meta[meta$Sample.type=="patient",],
+                    aes(x=Months.Into.Therapy,
+                        y=as.numeric(Antibiotic.Before.Therapy))) + 
+               geom_point() + 
+               stat_smooth(method="glm",family="binomial"),
+             caption="How patients with initial anitbioitc treatment distributed between therapy periods")
   
+  report$add(qplot(x=visit,y=Months.Into.Therapy,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
+             caption="Are visits evenly spaced for all patients (colored by initial antibiotic treatment)?")
+  report$add(qplot(x=visit,y=Months.Into.Therapy,color=Antibiotic.Before.Sample,shape=Sample.type,data=meta),
+             caption="Are visits evenly spaced for all patients (colored by antibiotic treatment prior to current sample)?")
+
   #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
   #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
-  report$add(ggplot(meta,aes(x=visit,y=age,color=Sample.type))+
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=visit,y=age,color=Antibiotic.Before.Therapy))+
                geom_point()+
                stat_smooth(method="loess", se = T,degree=1,size=1),
              caption="Plot for age and visit with Loess trend line")
+
+  aggr = ddply(meta,"SubjectID",summarise,
+        Num.Visits = length(visit),
+        Sample.type=Sample.type[1],
+        Antibiotic.Before.Therapy=Antibiotic.Before.Therapy[1],
+        Antibiotic.Ever=any(Antibiotic),
+        age=min(age),
+        Max.Months.Into.Therapy=max(Months.Into.Therapy)
+  )
+  aggr$Frequency.of.Visits = aggr$Num.Visits/aggr$Max.Months.Into.Therapy
+  
+  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Num.Visits,color=Max.Months.Into.Therapy))+
+               geom_jitter(position = position_jitter(width = .1)) + stat_summary(fun.data = "mean_cl_boot", 
+                                            geom = "crossbar",
+                              colour = "red", width = 0.2),
+             caption="Plot for total number of visits")
+
+  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Frequency.of.Visits,color=Max.Months.Into.Therapy))+
+               geom_jitter(position = position_jitter(width = .1)) + stat_summary(fun.data = "mean_cl_boot", 
+                                            geom = "crossbar",
+                                            colour = "red", width = 0.2),
+             caption="Plot for total number of visits")
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Months.Into.Therapy,y=visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
+               geom_line() + scale_y_continuous(breaks=1:20),
+             caption="Cumulative number of visits over therapy period")
+  # + geom_text(aes(label=SubjectID,x=Specimen.Collection.Date,y=visit),size=4,angle=45)
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Specimen.Collection.Date,y=visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
+               geom_line() + scale_y_continuous(breaks=1:20),
+             caption="Cumulative number of visits vs date of collection")
   
 }
 
@@ -177,14 +274,22 @@ gen.tasks.choc <- function() {
     
     read.data.task = within(read.data.task, {
       taxa.summary.file = NA
-      otu.shared.file="yap.2015-04-10/1b418b32c139b24f6945fe88f75bce9f.files_x1.sorted.0.03.shared"
-      cons.taxonomy.file="yap.2015-04-10/2d352a0510c12c320e45f8280c4230db.files_x1.sorted.0.03.cons.taxonomy.seq.taxonomy"
-      meta.file="CHOC_ALL_Samples_Metadata_Nov-19-2014.txt"
+      otu.shared.file="yap_2015-05-11/*.0.03.shared"
+      cons.taxonomy.file="yap_2015-05-11/*.0.03.cons.taxonomy.seq.taxonomy"
+      meta.file="CHOC_ALL_Samples_Metadata_April_2015.txt"
       load.meta.method=load.meta.choc
       load.meta.options=list()    
     })
     
     get.taxa.meta.aggr.base<-function(m_a) { 
+      ##some extremely young siblings will be outliers in microbiome compositon, remove
+      m_a = subset.m_a(m_a,subset=(m_a$attr$age>=1.5))
+#       m_a.pat = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient"))
+#       m_a.sib = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="sibling"))
+#       m_a.sib = subset.m_a(m_a.sib,subset=(!duplicated(m_a$attr$SubjectID)))
+#       m_a = cbind.m_a(list(m_a.sib,m_a.pat),batch.attr="Sample.type",col.match=T)
+      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient") | (!duplicated(m_a$attr$SubjectID)))
+      
       ##any aggregated attributes have to be computed here,
       ##after the available count samples have been joined,
       ##as opposed to in the load.meta() function.
@@ -196,24 +301,28 @@ gen.tasks.choc <- function() {
                                   visit.1=any(visit==1),
                                   visit.2=any(visit==2)),
                             by="SubjectID",
-                            match="first")
+                            type="inner")
       stopifnot(!any(is.na(meta.aggr$visit.max)) && 
                   nrow(meta.aggr)==nrow(meta))
-      
+
       meta = meta.aggr
+      rownames(meta) = meta$SampleID
+      
       meta.aggr = join(meta,
                        ddply(meta,"FamilyID",summarise,
-                             has.sibling=("patient" %in% Sample.type) & ("sibling" %in% Sample.type)),
+                             has.sibling.sample=("patient" %in% Sample.type) & ("sibling" %in% Sample.type)),
                        by="FamilyID",
-                       match="first")
-      stopifnot(!any(is.na(meta.aggr$has.sibling)) && 
+                       type="inner")
+      stopifnot(!any(is.na(meta.aggr$has.sibling.sample)) && 
                   nrow(meta.aggr)==nrow(meta))
-            
-      m_a$attr = meta.aggr
+      meta = meta.aggr
+      rownames(meta) = meta$SampleID
+      
+      m_a$attr = meta
       
       ##As of 2014-11-05, there are only 6 samples at visit 5, and less in higher visits
       ##and their profiles look similar to visit 4
-      m_a = subset.m_a(m_a,subset=(m_a$attr$visit<=4))
+      #m_a = subset.m_a(m_a,subset=(m_a$attr$visit<=4))
       return(m_a)
     }
     
@@ -234,9 +343,11 @@ gen.tasks.choc <- function() {
 
     descr = "All samples (up to visit 4), no aggregation"    
     
+    taxa.levels = c(2)
+    
     do.summary.meta = T
     
-    do.tests = T
+    do.tests = F
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
@@ -244,8 +355,8 @@ gen.tasks.choc <- function() {
     }    
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = c("visit")
-      group.vars = c("Sample.type","visit")
+      meta.x.vars = c("Months.Into.Therapy")
+      group.vars = c("Sample.type","Months.Into.Therapy.Group")
     })
     
     test.counts.task = within(test.counts.task, {
@@ -256,7 +367,13 @@ gen.tasks.choc <- function() {
       do.stabsel = F
       do.glmer = F
       do.plot.profiles.abund=T
-      do.heatmap.abund=T
+      do.heatmap.abund=F
+      do.network.features.combined = F
+      do.divrich = c()
+      
+      do.plot.profiles.abund=T
+      do.heatmap.abund=F
+      
       
       divrich.task = within(divrich.task,{
         group.attr = NULL
@@ -265,12 +382,12 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c("Sample.type","visit"),
-                            c("Sample.type.Antibio.Before","visit"),
+        id.vars.list = list(c("Sample.type","Months.Into.Therapy.Group"),
+                            c("Sample.type.Antibio.Before","Months.Into.Therapy.Group"),
                             c("Antibiotic.Before.Therapy","Sample.type.1"))
-        feature.meta.x.vars=c("visit")
+        feature.meta.x.vars=c("Months.Into.Therapy")
         do.profile=T
-        do.feature.meta=F
+        do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
@@ -423,7 +540,7 @@ gen.tasks.choc <- function() {
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = task2$get.taxa.meta.aggr(m_a)
-      m_a = subset.m_a(m_a,subset=(m_a$attr$has.sibling)) 
+      m_a = subset.m_a(m_a,subset=(m_a$attr$has.sibling.sample)) 
       return(m_a)
     }    
     
@@ -701,8 +818,8 @@ gen.tasks.choc <- function() {
     
   })
   
-  #return (list(task1.1))
-  return (list(task1,task2,task2.1,task3,task3.1,task4))
+  return (list(task1))
+  #return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
 
@@ -761,9 +878,10 @@ load_required_packages()
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
+source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=F)
+set_trace_options(try.debug=T)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
