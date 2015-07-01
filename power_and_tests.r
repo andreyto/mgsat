@@ -69,7 +69,16 @@ str_blank <- function(x) {
 
 ## replace oldnames with newnames in vector allnames
 ## to be used when allnames = names(data.frame)
-replace.col.names<-function(allnames,oldnames,newnames) {
+replace.col.names<-function(allnames,oldnames,newnames,do.checks=T) {
+  if (do.checks) {
+    not.found = oldnames[!(oldnames %in% allnames)]
+    if (length(not.found) > 0) {
+      stop(sprintf("These old names were not found: %s",paste(not.found,collapse=", ")))
+    }
+    if(length(oldnames)!=length(newnames)) {
+      stop(sprintf("There are %s old names and %s new names",lenght(oldnames),length(newnames)))
+    }
+  }
   allnames[match(oldnames,allnames)] = newnames
   return(allnames)
 }
@@ -100,8 +109,18 @@ colnames.as.factor <- function(x,ordered=F) {
 }
 
 ## Call quantcut and return its result as ordered factor
-quantcut.ordered <- function(...) {
-  ordered(quantcut(...))
+quantcut.ordered <- function(x,na.rm=T,...) {
+  ##contrary to the docs, na.rm is ignored by quantcut causing stop, do it manually here
+  if(na.rm) {
+    x.nna = x[!is.na(x),drop=F]
+    qq.nna = quantcut(x.nna,...)
+    y = factor(rep(NA,length(x)),levels=c(levels(qq.nna),NA))
+    y[!is.na(x)] = qq.nna
+  }
+  else {
+    y = quantcut(x)
+  }
+  ordered(y)
 }
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
@@ -473,10 +492,27 @@ dist.js <- function(x, offset=.Machine$double.eps, ...) {
 }
 
 ## subset method that will use the same subset argument on all data objects in m_a
-subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL) {
+subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL,na.index.is.false=T) {
+  
+  set.index.na.to.false <- function(ind) {
+    if(all(sapply(ind,is.logical))) {
+      ind[is.na(ind)] = F
+    }
+    else {
+      ind = ind[!is.na(ind)]
+    }
+    ind
+  }
+  
   if(is.null(select.count)) select.count = T
   if(is.null(select.attr)) select.attr = T
   if(is.null(subset)) subset = T
+  
+  if(na.index.is.false) {
+  select.count = set.index.na.to.false(select.count)
+  select.attr = set.index.na.to.false(select.attr)
+  subset = set.index.na.to.false(subset)
+  }
   
   m_a$count = m_a$count[subset,select.count,drop=F]
   m_a$attr = m_a$attr[subset,select.attr,drop=F]
@@ -1534,7 +1570,8 @@ merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
   mrg$Row.names = NULL
   all.names = colnames(mrg)
   attr.names = all.names[!(all.names %in% colnames(x))]
-  return (split_count_df(mrg,col_ignore=attr.names))
+  ret = split_count_df(mrg,col_ignore=attr.names)
+  return (ret)
 }
 
 aggregate.by.meta.data.m_a <- function(m_a,
@@ -1707,7 +1744,7 @@ plot.abund.meta <- function(m_a,
     gp = ggplot(dat, aes_s)
     
     gp = gp + geom_bar(position="stack",stat="identity") 
-    
+
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
