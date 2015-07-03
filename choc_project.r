@@ -9,6 +9,30 @@ compute.has.sibling <- function(meta) {
   return (meta$FamilyID %in% fam.with.sibl$FamilyID)
 }
 
+as.Date.date.time <- function(date,time,date.format="%Y-%m-%d",default.time="12:00") {
+  stopifnot(length(date)==length(time))
+  time = toupper(time)
+  time[grepl(".*UNK.*",time)] = NA
+  time[grepl(".*NR.*",time)] = NA
+  time[grepl(".*NA.*",time)] = NA
+  isel = nchar(time)==4 & !grepl(".*.M$",time) & !grepl(":",time)
+  time[isel] = paste(substr(time[isel],1,2),substring(time[isel],3),sep=":")  
+  isel = nchar(time)==3 & !grepl(".*.M$",time) & !grepl(":",time)
+  time[isel] = paste(substr(time[isel],1,1),substring(time[isel],2),sep=":")
+  isel = nchar(time)==3 & grepl(".*.M$",time) & !grepl(":",time)
+  time[isel] = paste(substr(time[isel],1,1),":00",substring(time[isel],2),sep="")
+  isel = !is.na(time) & nchar(time)==2 & !grepl(".*.M$",time) & !grepl(":",time)
+  time[isel] = paste(substr(time[isel],1,1),":",substring(time[isel],2),sep="")
+  time[is.na(time)] = default.time
+  #dt = time
+  dt = paste(date,time,sep=" ")
+  dt.24 = as.POSIXct(dt,format = paste(date.format,"%H:%M"))
+  dt.pm = as.POSIXct(dt,format = paste(date.format,"%I:%M%p"))
+  isel = !grepl(".*.M$",time)
+  dt.pm[isel] = dt.24[isel]
+  return (dt.pm)
+}
+
 ## Custom metadata loading function (define and pass to proc.project() when default
 ## implementation load.meta.default() is not sufficient)
 
@@ -79,6 +103,8 @@ load.meta.choc <- function(file.name) {
   
   #meta$SampleID = factor(meta$SampleID)
   
+  meta$Study.participation.status[str_blank(meta$Study.participation.status) | meta$Study.participation.status == "#N/A"] = "Active"
+  
   meta$Antibiotic = tolower(meta$Antibiotic.treatment.within.the.last.1.months.) != "no"
   meta$Antibiotic[str_blank(meta$Antibiotic.treatment.within.the.last.1.months.)] = NA
   meta$Antibiotic[tolower(meta$Antibiotic.treatment.within.the.last.1.months.)=="unknown"] = NA
@@ -95,12 +121,17 @@ load.meta.choc <- function(file.name) {
   
   ## ggplot needs Date object
   meta$Specimen.Collection.Date = 
-    as.Date(as.character(meta$Specimen.Collection.Date),format = "%m/%d/%y")
+    as.Date.date.time(as.character(meta$Specimen.Collection.Date),
+                      as.character(meta$Specimen.Collection.Time),
+                      date.format = "%m/%d/%y")
   
   meta$age = as.numeric(
+    difftime(
     meta$Specimen.Collection.Date
-    - 
-      as.Date(paste(meta$YearOfBirth,"-06-01",sep=""),format="%Y-%m-%d")
+    ,
+    as.POSIXct(paste(meta$YearOfBirth,"-06-01",sep=""),format="%Y-%m-%d"),
+    units="days"
+    )
   )/365
   
   ## we need to create this as ordered quantile to show
@@ -108,7 +139,7 @@ load.meta.choc <- function(file.name) {
   ## in models that care about ordered factors)
   meta$age.quant = quantcut.ordered(meta$age)
   
-  meta$visit = as.numeric(laply(as.character(meta$SampleID.compound),
+  meta$Sampling.Visit = as.numeric(laply(as.character(meta$SampleID.compound),
                                 function(x) unlist(strsplit(x,".v",fixed=T))[2]))
   meta$SampleID.1 = factor(paste(meta$SubjectID,meta$Sample.type.1,sep="."))
   meta$Sample.type = factor(meta$Sample.type)
@@ -122,8 +153,8 @@ load.meta.choc <- function(file.name) {
   
   meta.aggr = join(meta,
                    ddply(meta,"SubjectID",summarise,
-                         Antibiotic.Before.Therapy=any(ifelse(visit==1,as.logical(Antibiotic),F)),
-                         Antibiotic.Min.Visit=min(visit[Antibiotic])),
+                         Antibiotic.Before.Therapy=any(ifelse(Sampling.Visit==1,as.logical(Antibiotic),F)),
+                         Antibiotic.Min.Sampling.Visit=min(Sampling.Visit[Antibiotic])),
                    by="SubjectID",
                    type="inner")
   stopifnot(nrow(meta.aggr)==nrow(meta))
@@ -131,12 +162,12 @@ load.meta.choc <- function(file.name) {
   meta = meta.aggr  
   rownames(meta) = meta$SampleID
   
-  meta$Antibiotic.Before.Sample = (meta$visit >= meta$Antibiotic.Min.Visit)
+  meta$Antibiotic.Before.Sample = (meta$Sampling.Visit >= meta$Antibiotic.Min.Sampling.Visit)
   meta$Antibiotic.Before.Sample[is.na(meta$Antibiotic.Before.Sample)] = T
   
   meta.aggr = join(meta,
                    ddply(meta,"SubjectID",summarise,
-                         First.Specimen.Date=Specimen.Collection.Date[visit==1]),
+                         First.Specimen.Date=Specimen.Collection.Date[Sampling.Visit==1]),
                    by="SubjectID",
                    type="inner")
   stopifnot(nrow(meta.aggr)==nrow(meta))  
@@ -144,11 +175,11 @@ load.meta.choc <- function(file.name) {
   meta = meta.aggr
   rownames(meta) = meta$SampleID
   
-  meta$Months.Into.Therapy = as.numeric((meta$Specimen.Collection.Date - meta$First.Specimen.Date))/30
-  meta$Months.Into.Therapy.Group = quantcut.ordered(meta$Months.Into.Therapy,q=seq(0,1,by=0.20))
+  meta$Days.In.Study = as.numeric(difftime(meta$Specimen.Collection.Date,meta$First.Specimen.Date,units="days"))
+  meta$Days.In.Study.Bin = quantcut.ordered(meta$Days.In.Study,q=seq(0,1,by=0.20))
   
-  report$add(qplot(x=visit,y=Months.Into.Therapy,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
-             caption="Relation between visits and dates")
+  report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
+             caption="Relation between Sampling.Visits and dates")
 
   ## ignore antibiotic status in siblings - this field is for faceted plots
   meta$Sample.type.Antibio.Before = factor(with(meta,
@@ -179,9 +210,10 @@ summary.meta.choc <- function(m_a) {
   report$add(summary(meta),caption="Summary of metadata variables")
   
   xtabs.formulas = list("~Sample.type+TherapyStatus","~Antibiotic.Before.Therapy + Sample.type",
-                        "~Antibiotic.Before.Therapy + Sample.type + visit",
+                        "~Antibiotic.Before.Therapy + Sample.type + Sampling.Visit",
                         "~Fever + Sample.type",
-                        "~Sample.type+visit","~FamilyID","~Sample.type.1","~SubjectID")
+                        "~Sample.type+Sampling.Visit","~FamilyID","~Sample.type.1","~SubjectID",
+                        "~SubjectID+Study.participation.status")
   for(xtabs.formula in xtabs.formulas) {
     fact.xtabs = xtabs(as.formula(xtabs.formula),data=meta,drop.unused.levels=T)
     report$add(fact.xtabs,caption=paste("Sample cross tabulation",xtabs.formula))
@@ -197,67 +229,149 @@ summary.meta.choc <- function(m_a) {
   
   with(meta,{
     report$add(cor.test(age,
-                                visit,
+                                Sampling.Visit,
                                 method="spearman"),
-                       caption="Spearman RHO for age and visit")
+                       caption="Spearman RHO for age and Sampling.Visit")
     
   })
   with(meta[meta$Sample.type=="patient",],{
     report$add(cor.test(age,
-                                visit,
+                                Sampling.Visit,
                                 method="spearman"),
-                       caption="Spearman RHO for age and visit, patients only")
-    report$add(glm(Antibiotic.Before.Therapy~Months.Into.Therapy,family="binomial"),
+                       caption="Spearman RHO for age and Sampling.Visit, patients only")
+    report$add(glm(Antibiotic.Before.Therapy~Days.In.Study,family="binomial"),
                caption="How patients with initial anitbioitc treatment distributed between therapy periods")
   })
   report$add(ggplot(data=meta[meta$Sample.type=="patient",],
-                    aes(x=Months.Into.Therapy,
+                    aes(x=Days.In.Study,
                         y=as.numeric(Antibiotic.Before.Therapy))) + 
                geom_point() + 
                stat_smooth(method="glm",family="binomial"),
              caption="How patients with initial anitbioitc treatment distributed between therapy periods")
   
-  report$add(qplot(x=visit,y=Months.Into.Therapy,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
-             caption="Are visits evenly spaced for all patients (colored by initial antibiotic treatment)?")
-  report$add(qplot(x=visit,y=Months.Into.Therapy,color=Antibiotic.Before.Sample,shape=Sample.type,data=meta),
-             caption="Are visits evenly spaced for all patients (colored by antibiotic treatment prior to current sample)?")
+  report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
+             caption="Are Sampling.Visits evenly spaced for all patients (colored by initial antibiotic treatment)?")
+  report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Sample,shape=Sample.type,data=meta),
+             caption="Are Sampling.Visits evenly spaced for all patients (colored by antibiotic treatment prior to current sample)?")
 
-  #summary(glht(lm(age~visit,data=meta[meta$Sample.type=="patient",]),linfct="visit=0"))
-  #summary(glht(lmer(age~visit+(visit|Sample.type),data=meta),linfct="visit=0"))
-  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=visit,y=age,color=Antibiotic.Before.Therapy))+
+  #summary(glht(lm(age~Sampling.Visit,data=meta[meta$Sample.type=="patient",]),linfct="Sampling.Visit=0"))
+  #summary(glht(lmer(age~Sampling.Visit+(Sampling.Visit|Sample.type),data=meta),linfct="Sampling.Visit=0"))
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Sampling.Visit,y=age,color=Antibiotic.Before.Therapy))+
                geom_point()+
                stat_smooth(method="loess", se = T,degree=1,size=1),
-             caption="Plot for age and visit with Loess trend line")
+             caption="Plot for age and Sampling.Visit with Loess trend line")
 
   aggr = ddply(meta,"SubjectID",summarise,
-        Num.Visits = length(visit),
+        Num.Sampling.Visits = length(Sampling.Visit),
         Sample.type=Sample.type[1],
         Antibiotic.Before.Therapy=Antibiotic.Before.Therapy[1],
         Antibiotic.Ever=any(Antibiotic),
         age=min(age),
-        Max.Months.Into.Therapy=max(Months.Into.Therapy)
+        Max.Days.In.Study=max(Days.In.Study)
   )
-  aggr$Frequency.of.Visits = aggr$Num.Visits/aggr$Max.Months.Into.Therapy
+  aggr$Frequency.of.Sampling.Visits = aggr$Num.Sampling.Visits/aggr$Max.Days.In.Study
   
-  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Num.Visits,color=Max.Months.Into.Therapy))+
+  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Num.Sampling.Visits,color=Max.Days.In.Study))+
                geom_jitter(position = position_jitter(width = .1)) + stat_summary(fun.data = "mean_cl_boot", 
                                             geom = "crossbar",
                               colour = "red", width = 0.2),
-             caption="Plot for total number of visits")
+             caption="Plot for total number of Sampling.Visits")
 
-  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Frequency.of.Visits,color=Max.Months.Into.Therapy))+
+  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Frequency.of.Sampling.Visits,color=Max.Days.In.Study))+
                geom_jitter(position = position_jitter(width = .1)) + stat_summary(fun.data = "mean_cl_boot", 
                                             geom = "crossbar",
                                             colour = "red", width = 0.2),
-             caption="Plot for total number of visits")
-  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Months.Into.Therapy,y=visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
+             caption="Plot for total number of Sampling.Visits")
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Days.In.Study,y=Sampling.Visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
                geom_line() + scale_y_continuous(breaks=1:20),
-             caption="Cumulative number of visits over therapy period")
-  # + geom_text(aes(label=SubjectID,x=Specimen.Collection.Date,y=visit),size=4,angle=45)
-  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Specimen.Collection.Date,y=visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
+             caption="Cumulative number of Sampling.Visits over therapy period")
+  # + geom_text(aes(label=SubjectID,x=Specimen.Collection.Date,y=Sampling.Visit),size=4,angle=45)
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Specimen.Collection.Date,y=Sampling.Visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
                geom_line() + scale_y_continuous(breaks=1:20),
-             caption="Cumulative number of visits vs date of collection")
+             caption="Cumulative number of Sampling.Visits vs date of collection colored by pre-study antibioitc use")
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Specimen.Collection.Date,y=Sampling.Visit,color=Study.participation.status,group=SubjectID))+
+               geom_line() + scale_y_continuous(breaks=1:20),
+             caption="Cumulative number of Sampling.Visits vs date of collection colored by Study.participation.status")
   
+}
+
+new_emrevents <- function(...) {
+  x = data.frame(...)
+  class(x) <- append(class(x),"emrevents",0)
+  return(x)
+}
+
+extract.by.name.emrevents <- function(x,names,conv=as.character,is.regex=F,ignore.case=T) {
+  if(!is.regex) {
+    res = x[x$Name %in% names,,drop=F]
+  }
+  else {
+    res = x[grepl(names,x$Name,ignore.case=ignore.case),,drop=F]
+  }
+  res$Value = do.call(conv,list(res$Value))
+  return (res)
+}
+
+extract.by.type.emrevents <- function(x,name) {
+  if(name == "Temperature") {
+    y = extract.by.name.emrevents(x,names="^TEMPERATURE.*",is.regex=T,conv=as.numeric)
+    y = y[y$Value>=35,]
+    y = y[y$Value<=45,]
+  }
+  else if(name == "Fever") {
+    y = extract.by.type.emrevents(x,"Temperature")
+    ## http://www.seattlechildrens.org/medical-conditions/symptom-index/fever/
+    conv = c(TEMPERATUREORALC=37.8,TEMPERATUREAXILLARYC=37.2)
+    y$Value = factor(ifelse(y$Value >= conv[y$Name], "Fever", "No.Fever"),levels=c("No.Fever","Fever"))
+    y$Name = "Fever"
+  }
+  y = y[!is.na(y$Value),]
+  return (y)
+}
+
+join.with.biom.attr.emrevents <- function(x,biom.attr) {
+  biom.attr = biom.attr[!is.na(biom.attr$Sampling.Visit) & biom.attr$Sampling.Visit==1,]
+  stopifnot(!any(duplicated(biom.attr$SubjectID)))
+  x = merge(x,biom.attr[,c("SubjectID","First.Specimen.Date")],by="SubjectID")
+  x$Days.In.Study = as.numeric(difftime(x$Date,x$First.Specimen.Date,units="days"))
+  x$First.Specimen.Date = NULL
+  x
+}
+
+load.choc.emrevents <- function(emr.measure.file) {
+  events = read.delim(emr.measure.file,sep=",",stringsAsFactors=F,header=T)
+  allnames = replace.col.names(names(events),
+                               c("STUDYID",    "GROUP",      "EVENTDTTM",  "DISPLAYKEY", "DISPLAY",    "RESULT",     "RUNIT"),
+                               c("SubjectID",    "Group",  "Date",  "Name", "Name.Descr",    "Value",     "Units"))
+  
+  names(events) = allnames  
+  events$Date = as.POSIXct(events$Date,format="%m/%d/%y %H:%M")
+  ret = new_emrevents(events)
+  return (ret)
+}
+
+load.and.align.choc.emr.data <- function(emr.measure.file,biom.attr) {
+  events = load.choc.emrevents(emr.measure.file)
+  events = join.with.biom.attr.emrevents(events,biom.attr)
+  return (events)
+}
+
+plot.emrevents <- function(x,m_a) {
+  attr = m_a$attr[m_a$attr$SubjectID %in% x$SubjectID,]
+  p = ggplot(x,aes(x=Days.In.Study,y=Value)) + 
+    geom_point() +
+    facet_wrap(~SubjectID,scale="free_x") +
+    geom_vline(aes(xintercept=Days.In.Study), data=attr, color="black")
+  return(p)
+}
+
+describe.choc.emr <- function(m_a) {
+  events = load.and.align.choc.emr.data("emr.2015-05-15/microbiome_ce.csv",m_a$attr)
+  y = extract.by.type.emrevents(events,"Fever")
+  #print(plot.emrevents(y,m_a))
+  #y = extract.by.type.emrevents(events,"Temperature")
+  
+  return (y)
 }
 
 ## This function must generate a list with analysis tasks
@@ -296,13 +410,13 @@ gen.tasks.choc <- function() {
       meta = m_a$attr
       meta.aggr = join(meta,
                             ddply(meta,"SubjectID",summarise,
-                                  visit.max=max(visit),
-                                  visit.min=min(visit),
-                                  visit.1=any(visit==1),
-                                  visit.2=any(visit==2)),
+                                  Sampling.Visit.max=max(Sampling.Visit),
+                                  Sampling.Visit.min=min(Sampling.Visit),
+                                  Sampling.Visit.1=any(Sampling.Visit==1),
+                                  Sampling.Visit.2=any(Sampling.Visit==2)),
                             by="SubjectID",
                             type="inner")
-      stopifnot(!any(is.na(meta.aggr$visit.max)) && 
+      stopifnot(!any(is.na(meta.aggr$Sampling.Visit.max)) && 
                   nrow(meta.aggr)==nrow(meta))
 
       meta = meta.aggr
@@ -320,9 +434,9 @@ gen.tasks.choc <- function() {
       
       m_a$attr = meta
       
-      ##As of 2014-11-05, there are only 6 samples at visit 5, and less in higher visits
-      ##and their profiles look similar to visit 4
-      #m_a = subset.m_a(m_a,subset=(m_a$attr$visit<=4))
+      ##As of 2014-11-05, there are only 6 samples at Sampling.Visit 5, and less in higher Sampling.Visits
+      ##and their profiles look similar to Sampling.Visit 4
+      #m_a = subset.m_a(m_a,subset=(m_a$attr$Sampling.Visit<=4))
       return(m_a)
     }
     
@@ -341,7 +455,7 @@ gen.tasks.choc <- function() {
   
   task1 = within( task0, {
 
-    descr = "All samples (up to visit 4), no aggregation"    
+    descr = "All samples (up to Sampling.Visit 4), no aggregation"    
     
     taxa.levels = c(2)
     
@@ -355,8 +469,8 @@ gen.tasks.choc <- function() {
     }    
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = c("Months.Into.Therapy")
-      group.vars = c("Sample.type","Months.Into.Therapy.Group")
+      meta.x.vars = c("Days.In.Study")
+      group.vars = c("Sample.type","Days.In.Study.Bin")
     })
     
     test.counts.task = within(test.counts.task, {
@@ -382,16 +496,16 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c("Sample.type","Months.Into.Therapy.Group"),
-                            c("Sample.type.Antibio.Before","Months.Into.Therapy.Group"),
+        id.vars.list = list(c("Sample.type","Days.In.Study.Bin"),
+                            c("Sample.type.Antibio.Before","Days.In.Study.Bin"),
                             c("Antibiotic.Before.Therapy","Sample.type.1"))
-        feature.meta.x.vars=c("Months.Into.Therapy")
+        feature.meta.x.vars=c("Days.In.Study")
         do.profile=T
         do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c("Sample.type","visit","Antibiotic.Before.Therapy")
+        attr.annot.names=c("Sample.type","Sampling.Visit","Antibiotic.Before.Therapy")
       })
       
     })
@@ -601,7 +715,7 @@ gen.tasks.choc <- function() {
     
     main.meta.var = "TherapyStatus"
     
-    descr = "Patients' samples at visits 1 (before therapy) and 2 (after therapy), only paired samples"
+    descr = "Patients' samples at Sampling.Visits 1 (before therapy) and 2 (after therapy), only paired samples"
     
     do.summary.meta = F
     
@@ -610,9 +724,9 @@ gen.tasks.choc <- function() {
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
       m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient" 
-                                   & m_a$attr$visit <= 2 
-                                   & m_a$attr$visit.1
-                                   & m_a$attr$visit.2))
+                                   & m_a$attr$Sampling.Visit <= 2 
+                                   & m_a$attr$Sampling.Visit.1
+                                   & m_a$attr$Sampling.Visit.2))
       #DEBUG: scrambling SubjectID of before.chemo to see how paired tests behave on random pairings
       #m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"] = 
       #  sample(m_a$attr$SubjectID[m_a$attr$TherapyStatus=="before.chemo"])
@@ -744,7 +858,7 @@ gen.tasks.choc <- function() {
   
   task4 = within( task0, {
     
-    main.meta.var = "visit"
+    main.meta.var = "Sampling.Visit"
     
     descr = "Patients samples"
     
@@ -799,7 +913,7 @@ gen.tasks.choc <- function() {
           
           list(formula.rhs=main.meta.var,
                strata="SubjectID",
-               descr="Association with visit paired by subject")
+               descr="Association with Sampling.Visit paired by subject")
         )
         
       })
@@ -891,10 +1005,10 @@ report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of CHOC ALL 16S data",
                        incremental.save=F)
 
-
+if(T) {
 res = proc.project(
   task.generator.method=gen.tasks.choc
 )
 
 report$save()
-
+}
