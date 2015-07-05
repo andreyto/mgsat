@@ -173,14 +173,32 @@ load.meta.choc <- function(file.name) {
   stopifnot(nrow(meta.aggr)==nrow(meta))  
   
   meta = meta.aggr
+  
+  pat.vis.2 = meta[meta$Sample.type=="patient" & meta$Sampling.Visit==2,]
+  stopifnot(!any(duplicated(pat.vis.2$FamilyID)))
+  
+  pat.vis.2 = cbind(pat.vis.2[,c("FamilyID"),drop=F],PatientID=pat.vis.2$SubjectID,First.Therapy.Date=pat.vis.2$Specimen.Collection.Date)
+  
+  meta = merge(meta,pat.vis.2,by="FamilyID",all.x=T)
+  
+  imp.first.ther = meta$First.Specimen.Date + mean(meta$First.Therapy.Date-meta$First.Specimen.Date,na.rm=T)
+  
+  meta$First.Therapy.Date[is.na(meta$First.Therapy.Date)] = imp.first.ther[is.na(meta$First.Therapy.Date)]
+  
   rownames(meta) = meta$SampleID
   
-  meta$Days.In.Study = as.numeric(difftime(meta$Specimen.Collection.Date,meta$First.Specimen.Date,units="days"))
-  meta$Days.In.Study.Bin = quantcut.ordered(meta$Days.In.Study,q=seq(0,1,by=0.20))
-  
-  meta$Study.Stage = as.character(meta$Days.In.Study.Bin)
-  meta$Study.Stage[meta$Sample.type=="sibling"] = "sibling"
-  meta$Study.Stage = ordered(meta$Study.Stage,levels=c("sibling",levels(meta$Days.In.Study.Bin)))
+  meta$Days.In.Therapy = as.numeric(difftime(meta$Specimen.Collection.Date,meta$First.Therapy.Date,units="days"))
+  meta$Days.In.Therapy.Bin = cut(meta$Days.In.Therapy,
+                                 c(min(meta$Days.In.Therapy,na.rm=T),
+                                   0,
+                                   quantile(meta$Days.In.Therapy[meta$Days.In.Therapy>=0],na.rm=T)[-1]),
+                                 right=F,
+                                 ordered_result=T)
+  lev = levels(meta$Days.In.Therapy.Bin)
+  levels(meta$Days.In.Therapy.Bin) = paste("St.",seq_along(lev),"_",lev,sep="")
+  meta$Study.Stage = as.character(meta$Days.In.Therapy.Bin)
+  meta$Study.Stage[meta$Sample.type=="sibling"] = "St.0_sibling"
+  meta$Study.Stage = ordered(meta$Study.Stage,levels=c("St.0_sibling",levels(meta$Days.In.Therapy.Bin)))
   
   ## ignore antibiotic status in siblings - this field is for faceted plots
   meta$Sample.type.Antibio.Before = factor(with(meta,
@@ -244,21 +262,21 @@ summary.meta.choc <- function(m_a) {
                         Sampling.Visit,
                         method="spearman"),
                caption="Spearman RHO for age and Sampling.Visit, patients only")
-    report$add(glm(Antibiotic.Before.Therapy~Days.In.Study,family="binomial"),
+    report$add(glm(Antibiotic.Before.Therapy~Days.In.Therapy,family="binomial"),
                caption="How patients with initial anitbioitc treatment distributed between therapy periods")
   })
   report$add(ggplot(data=meta[meta$Sample.type=="patient",],
-                    aes(x=Days.In.Study,
+                    aes(x=Days.In.Therapy,
                         y=as.numeric(Antibiotic.Before.Therapy))) + 
                geom_point() + 
                stat_smooth(method="glm",family="binomial"),
              caption="How patients with initial anitbioitc treatment distributed between therapy periods")
   
-  report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
+  report$add(qplot(x=Sampling.Visit,y=Days.In.Therapy,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
              caption="Are Sampling.Visits evenly spaced for all patients (colored by initial antibiotic treatment)?")
-  report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Sample,shape=Sample.type,data=meta),
+  report$add(qplot(x=Sampling.Visit,y=Days.In.Therapy,color=Antibiotic.Before.Sample,shape=Sample.type,data=meta),
              caption="Are Sampling.Visits evenly spaced for all patients (colored by antibiotic treatment prior to current sample)?")
-
+  
   #summary(glht(lm(age~Sampling.Visit,data=meta[meta$Sample.type=="patient",]),linfct="Sampling.Visit=0"))
   #summary(glht(lmer(age~Sampling.Visit+(Sampling.Visit|Sample.type),data=meta),linfct="Sampling.Visit=0"))
   report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Sampling.Visit,y=age,color=Antibiotic.Before.Therapy))+
@@ -272,22 +290,22 @@ summary.meta.choc <- function(m_a) {
                Antibiotic.Before.Therapy=Antibiotic.Before.Therapy[1],
                Antibiotic.Ever=any(Antibiotic),
                age=min(age),
-               Max.Days.In.Study=max(Days.In.Study)
+               Max.Days.In.Therapy=max(Days.In.Therapy)
   )
-  aggr$Frequency.of.Sampling.Visits = aggr$Num.Sampling.Visits/aggr$Max.Days.In.Study
+  aggr$Frequency.of.Sampling.Visits = aggr$Num.Sampling.Visits/aggr$Max.Days.In.Therapy
   
-  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Num.Sampling.Visits,color=Max.Days.In.Study))+
+  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Num.Sampling.Visits,color=Max.Days.In.Therapy))+
                geom_jitter(position = position_jitter(width = .1)) + stat_summary(fun.data = "mean_cl_boot", 
                                                                                   geom = "crossbar",
                                                                                   colour = "red", width = 0.2),
              caption="Plot for total number of Sampling.Visits")
   
-  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Frequency.of.Sampling.Visits,color=Max.Days.In.Study))+
+  report$add(ggplot(aggr[aggr$Sample.type=="patient",],aes(x=Antibiotic.Before.Therapy,y=Frequency.of.Sampling.Visits,color=Max.Days.In.Therapy))+
                geom_jitter(position = position_jitter(width = .1)) + stat_summary(fun.data = "mean_cl_boot", 
                                                                                   geom = "crossbar",
                                                                                   colour = "red", width = 0.2),
              caption="Plot for total number of Sampling.Visits")
-  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Days.In.Study,y=Sampling.Visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
+  report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Days.In.Therapy,y=Sampling.Visit,color=Antibiotic.Before.Therapy,group=SubjectID))+
                geom_line() + scale_y_continuous(breaks=1:20),
              caption="Cumulative number of Sampling.Visits over therapy period")
   # + geom_text(aes(label=SubjectID,x=Specimen.Collection.Date,y=Sampling.Visit),size=4,angle=45)
@@ -315,7 +333,7 @@ extract.by.group.emrevents <- function(x,groups,is.regex=F,ignore.case=T) {
   }
   return (res)
 }
-  
+
 extract.by.name.emrevents <- function(x,names,conv=as.character,is.regex=F,ignore.case=T,invert=F) {
   if(invert) op = function(x) (!x)
   else op = function(x) (x)
@@ -345,10 +363,10 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
     w = round.numeric.into.days.emrevents(w,aggr.fun=mean.na.rm)
     h = extract.by.name.emrevents(x,names="HEIGHT",is.regex=F,conv=as.numeric)
     h = round.numeric.into.days.emrevents(h,aggr.fun=mean.na.rm)
-    h = h[,c("SubjectID","Days.In.Study","Value")]
+    h = h[,c("SubjectID","Days.In.Therapy","Value")]
     h$Value.H = h$Value
     h$Value = NULL
-    y = merge(w,h,by=c("SubjectID","Days.In.Study"))
+    y = merge(w,h,by=c("SubjectID","Days.In.Therapy"))
     y$Value = y$Value/(y$Value.H/100)**2
     y$Name = "BMI"
     y$Name.Descr = y$Name
@@ -417,9 +435,9 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
 join.with.biom.attr.emrevents <- function(x,biom.attr) {
   biom.attr = biom.attr[!is.na(biom.attr$Sampling.Visit) & biom.attr$Sampling.Visit==1,]
   stopifnot(!any(duplicated(biom.attr$SubjectID)))
-  x = merge(x,biom.attr[,c("SubjectID","First.Specimen.Date")],by="SubjectID")
-  x$Days.In.Study = as.numeric(difftime(x$Date,x$First.Specimen.Date,units="days"))
-  x$First.Specimen.Date = NULL
+  x = merge(x,biom.attr[,c("SubjectID","First.Therapy.Date")],by="SubjectID")
+  x$Days.In.Therapy = as.numeric(difftime(x$Date,x$First.Therapy.Date,units="days"))
+  x$First.Therapy.Date = NULL
   x
 }
 
@@ -461,8 +479,8 @@ binary.aggregate.by.presence.emrevents <- function(x,keys,min.presence=1) {
 }
 
 round.binary.into.days.emrevents <- function(x,min.presence=1) {
-  x$Days.In.Study = round(x$Days.In.Study)
-  x = binary.aggregate.by.presence.emrevents(x,c("SubjectID","Days.In.Study"),min.presence=min.presence)
+  x$Days.In.Therapy = round(x$Days.In.Therapy)
+  x = binary.aggregate.by.presence.emrevents(x,c("SubjectID","Days.In.Therapy"),min.presence=min.presence)
   return (x)
 }
 
@@ -470,8 +488,8 @@ round.numeric.into.days.emrevents <- function(x,aggr.fun=NULL) {
   if(is.null(aggr.fun)) {
     aggr.fun = mean.na.rm
   }
-  x$Days.In.Study = round(x$Days.In.Study)
-  x = ddply(x,c("SubjectID","Days.In.Study"),here(summarise),Value=aggr.fun(Value))
+  x$Days.In.Therapy = round(x$Days.In.Therapy)
+  x = ddply(x,c("SubjectID","Days.In.Therapy"),here(summarise),Value=aggr.fun(Value))
   return (x)
 }
 
@@ -487,7 +505,7 @@ two.level.to.numeric.emrevents <- function(x) {
 
 rolling.window.smooth.emrevents <- function(x,lower=-5,upper=5) {
   y = x
-  y$Value = rolling.window.irreg(data=x,bylist="SubjectID",dates="Days.In.Study",
+  y$Value = rolling.window.irreg(data=x,bylist="SubjectID",dates="Days.In.Therapy",
                                  target="Value",lower=-5,upper=5,incbounds=T,
                                  stat=mean,na.rm=T,cores=1)
   y
@@ -507,7 +525,7 @@ plot.emrevents <- function(x,m_a,str.ylab=NULL,facet.by.subject=T,to.binomial=F,
       x = two.level.to.numeric.emrevents(x)
     }
   }
-  p = ggplot(x,aes(x=Days.In.Study,y=Value))
+  p = ggplot(x,aes(x=Days.In.Therapy,y=Value))
   if(smooth) {
     y = rolling.window.smooth.emrevents(x,lower=smooth.lower,upper=smooth.upper)
     p = p + geom_point(data=y,color="blue")
@@ -529,7 +547,7 @@ plot.emrevents <- function(x,m_a,str.ylab=NULL,facet.by.subject=T,to.binomial=F,
   }
   if(facet.by.subject) {
     attr = m_a$attr[m_a$attr$SubjectID %in% x$SubjectID,]    
-    p = p + facet_wrap(~SubjectID,scale="free_x") + geom_vline(aes(xintercept=Days.In.Study), data=attr, color="green")
+    p = p + facet_wrap(~SubjectID,scale="free_x") + geom_vline(aes(xintercept=Days.In.Therapy), data=attr, color="green")
   }
   if(stat.smooth) {
     method = "glm"
@@ -551,15 +569,17 @@ plot.emrevents <- function(x,m_a,str.ylab=NULL,facet.by.subject=T,to.binomial=F,
         if(facet.by.subject) re.form = NULL
         else re.form = NA
         if(lmer.method=="glmer") {
-          m = glmer(Value ~ 1 + Days.In.Study + (1|SubjectID) + (0+Days.In.Study | SubjectID), data=x, family=family)
+          m = glmer(Value ~ 1 + Days.In.Therapy + (1|SubjectID) + (0+Days.In.Therapy | SubjectID), data=x, family=family)
         }
         else {
-          m = lmer(Value ~ 1 + Days.In.Study + (1|SubjectID) + (0+Days.In.Study | SubjectID), data=x)
+          m = lmer(Value ~ 1 + Days.In.Therapy + (1|SubjectID) + (0+Days.In.Therapy | SubjectID), data=x)
+          require(afex)
+          ret$mixed.model.test = mixed(m,data=x)
         }
         ret$mixed.model=m
         ret$mixed.model.family=family
         pr.x = cbind(x,ModelValue=predict(m,type="response",re.form=re.form))
-        p = p + geom_point(aes(x=Days.In.Study,y=ModelValue),data=pr.x,color="red")
+        p = p + geom_point(aes(x=Days.In.Therapy,y=ModelValue),data=pr.x,color="red")
       }
     }
   }
@@ -580,12 +600,12 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
   }
   
   res = plot.emrevents(x,m_a,
-                 str.ylab=str.ylab,
-                 facet.by.subject=T,
-                 to.binomial=to.binomial,
-                 smooth=T,
-                 stat.smooth=T,
-                 mixed.model=mixed.model)
+                       str.ylab=str.ylab,
+                       facet.by.subject=T,
+                       to.binomial=to.binomial,
+                       smooth=T,
+                       stat.smooth=T,
+                       mixed.model=mixed.model)
   
   width = 1200
   height = width*0.8
@@ -596,11 +616,14 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
              hi.res.width=width,
              hi.res.height=height)
   
-  if(mixed.model && res$mixed.model.family=="binomial") {
-    report$add(binnedplot(predict(res$mixed.model,type="response",re.form=NA),
-                          resid(res$mixed.model,type="response"),
-                          xlab="Expected Values", ylab="Average residual"),
-               caption="Binned plot without random effects")
+  if(mixed.model && !is.null(res$mixed.model)) {
+    if(res$mixed.model.family=="binomial") {
+      require(arm)
+      report$add(binnedplot(predict(res$mixed.model,type="response",re.form=NA),
+                            resid(res$mixed.model,type="response"),
+                            xlab="Expected Values", ylab="Average residual"),
+                 caption="Binned plot without random effects")
+    }
   }
   
   res = plot.emrevents(x,m_a,
@@ -613,12 +636,23 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
   
   report$add(res$main.plot,
              caption = str.ylab)
-
-  if(mixed.model && res$mixed.model.family=="binomial") {
-    report$add(binnedplot(predict(res$mixed.model,type="response",re.form=NULL),
-                          resid(res$mixed.model,type="response"),
-                          xlab="Expected Values", ylab="Average residual"),
-               caption="Binned plot with random effects")
+  
+  if(mixed.model && !is.null(res$mixed.model)) {
+    if(res$mixed.model.family=="binomial") {
+      require(arm)
+      report$add(binnedplot(predict(res$mixed.model,type="response",re.form=NULL),
+                            resid(res$mixed.model,type="response"),
+                            xlab="Expected Values", ylab="Average residual"),
+                 caption="Binned plot with random effects")
+    }
+    report$add.printed(res$mixed.model)
+    report$add.printed(summary(res$mixed.model))
+    anv = anova(res$mixed.model)
+    report$add.printed(anv)
+    if(!is.null(res$mixed.model.test)) {
+      report$add.printed(res$mixed.model.test)
+    }
+    report$add(plot(res$mixed.model))
   }
   
 }
@@ -626,22 +660,22 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
 describe.choc.emr <- function(m_a,mixed.model=F) {
   events = load.and.align.choc.emr.data("emr.2015-05-15/microbiome_ce.encod.csv",m_a$attr)
   make.global(events)
-  #y = extract.by.type.emrevents(events,"Fever",round.into.days=T)
-  #describe.emrevents(y,m_a=m_a,str.ylab="Fever", mixed.model=mixed.model) 
-  #y = extract.by.type.emrevents(events,"Diarrhea",round.into.days=T)
-  #describe.emrevents(y,m_a=m_a,str.ylab="Diarrhea") 
+  y = extract.by.type.emrevents(events,"Fever",round.into.days=T)
+  describe.emrevents(y,m_a=m_a,str.ylab="Fever", mixed.model=mixed.model) 
+  y = extract.by.type.emrevents(events,"Diarrhea",round.into.days=T)
+  describe.emrevents(y,m_a=m_a,str.ylab="Diarrhea") 
   
-  #y = extract.by.type.emrevents(events,"Neutropenia",round.into.days=T)
-  #describe.emrevents(y,m_a=m_a,str.ylab="Neutropenia", mixed.model=mixed.model) 
-
-  #y = extract.by.type.emrevents(events,"C.Diff",round.into.days=T)
-  #describe.emrevents(y,m_a=m_a,str.ylab="C.Diff", mixed.model=mixed.model)   
-
-  #y = extract.by.type.emrevents(events,"BMI",round.into.days=T)
-  #describe.emrevents(y,m_a=m_a,str.ylab="BMI", mixed.model=mixed.model)   
-
-  #y = extract.by.type.emrevents(events,"Other.Infections.Test",round.into.days=T)
-  #describe.emrevents(y,m_a=m_a,str.ylab="Other.Infections.Test", mixed.model=mixed.model)   
+  y = extract.by.type.emrevents(events,"Neutropenia",round.into.days=T)
+  describe.emrevents(y,m_a=m_a,str.ylab="Neutropenia", mixed.model=mixed.model) 
+  
+  y = extract.by.type.emrevents(events,"C.Diff",round.into.days=T)
+  describe.emrevents(y,m_a=m_a,str.ylab="C.Diff", mixed.model=mixed.model)   
+  
+  y = extract.by.type.emrevents(events,"BMI",round.into.days=T)
+  describe.emrevents(y,m_a=m_a,str.ylab="BMI", mixed.model=mixed.model)   
+  
+  y = extract.by.type.emrevents(events,"Other.Infections.Test",round.into.days=T)
+  describe.emrevents(y,m_a=m_a,str.ylab="Other.Infections.Test", mixed.model=mixed.model)   
   y.raw = extract.by.type.emrevents(events,"Other.Infections.Test",round.into.days=F)
   y.raw.aggr = binary.aggregate.by.presence.emrevents(y.raw,c("SubjectID","Name.Descr"),1)
   xtabs.report("~Name.Descr+Value",y.raw.aggr)
@@ -694,7 +728,7 @@ gen.tasks.choc <- function() {
     
     #DEBUG:
     #taxa.levels = c(2,3,4,5,6,"otu")
-    taxa.levels = c(5)
+    taxa.levels = c(2)
     
     norm.method = "prop"
     
@@ -771,7 +805,7 @@ gen.tasks.choc <- function() {
       
       do.ordination=F
       do.network.features.combined=F
-
+      
       count.filter.feature.options = within(list(), {
         drop.unclassified=T
         min_quant_mean_frac=0.25
@@ -809,7 +843,7 @@ gen.tasks.choc <- function() {
           stop(sprintf("Unplanned norm.method %s",norm.method))
         }
       })
-
+      
       genesel.task = within(genesel.task, {
         ## use common m_a.norm
         norm.count.task = NULL
@@ -866,7 +900,7 @@ gen.tasks.choc <- function() {
     
     main.meta.var = "Study.Stage"
     
-    do.summary.meta = F
+    do.summary.meta = T
     
     do.tests = T
     
@@ -876,8 +910,8 @@ gen.tasks.choc <- function() {
     }    
     
     summary.meta.task = within(summary.meta.task, {
-      meta.x.vars = c("Days.In.Study")
-      group.vars = c("Sample.type","Days.In.Study.Bin")
+      meta.x.vars = c("Days.In.Therapy")
+      group.vars = c("Sample.type","Days.In.Therapy.Bin")
     })
     
     test.counts.task = within(test.counts.task, {
@@ -900,16 +934,16 @@ gen.tasks.choc <- function() {
       
       plot.profiles.task = within(plot.profiles.task, {
         id.vars.list = list(c("Sample.type"),c("Study.Stage"))
-#                            c("Antibiotic.Before.Therapy","Study.Stage"))
-        feature.meta.x.vars=c("Days.In.Study")
+        #                            c("Antibiotic.Before.Therapy","Study.Stage"))
+        feature.meta.x.vars=c("Days.In.Therapy")
         do.profile=T
         do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c(main.meta.var,"Days.In.Study.Bin","Antibiotic.Before.Therapy")
+        attr.annot.names=c(main.meta.var,"Days.In.Therapy.Bin","Antibiotic.Before.Therapy")
       })
-
+      
       heatmap.combined.task = within(heatmap.combined.task, {
         #attr.annot.names=c(main.meta.var,"age","Antibiotic.Before.Therapy")
         attr.annot.names=c(main.meta.var,"Sample.type.1")
@@ -943,7 +977,7 @@ gen.tasks.choc <- function() {
       do.plot.profiles.abund=F
       do.heatmap.abund=F
       do.extra.method = taxa.levels
-            
+      
     })
     
   })
@@ -1059,11 +1093,11 @@ gen.tasks.choc <- function() {
       do.plot.profiles.abund=F
       do.heatmap.abund=F
       do.extra.method = taxa.levels
-
+      
       deseq2.task = within(deseq2.task, {
         formula.rhs = sprintf("FamilyID+%s",main.meta.var)
       })
-            
+      
       genesel.task = within(genesel.task, {
         genesel.param = within(genesel.param, {
           block.attr = "FamilyID"
@@ -1272,8 +1306,8 @@ gen.tasks.choc <- function() {
   
   task4 = within( task0, {
     
-    main.meta.var = "Days.In.Study"
-    main.meta.var.bin = "Days.In.Study.Bin"
+    main.meta.var = "Days.In.Therapy"
+    main.meta.var.bin = "Days.In.Therapy.Bin"
     
     descr = "Patients samples over time in study"
     
@@ -1343,7 +1377,7 @@ gen.tasks.choc <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
       })
-
+      
       heatmap.combined.task = within(heatmap.combined.task, {
         attr.annot.names=c(main.meta.var.bin,"SubjectID")
       })

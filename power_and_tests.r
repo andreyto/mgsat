@@ -3866,7 +3866,6 @@ show.feature.meta <- function(m_a,
     gr.range = ddply(dat.feature,group.var,summarise,
                                 range = max(.x.var) - min(.x.var))
     for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
-      print("DEBUG crossbar")
       pl = pl + stat_summary(aes_string(x=x.var, y=value.name,color=group.var),
                              fun.data = "mean_cl_boot", geom = "crossbar", width=x.var.range/20,
                              data = dat.feature[dat.feature[,group.var]==group,])

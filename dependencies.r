@@ -57,9 +57,13 @@ vanilla_packages = c(
   ## descriptive statistics and multinomial confidence intervals
   "DescTools",
   ## to install development versions of packages from GitHub
-  "devtools"
+  "devtools",
   ## Matrix of ggplots and other extensions
   ##GGally
+  ## binnedplot to diagnose logistic regression models
+  "arm",
+  ## mixed() to get p-values for lmer
+  "afex"  
 )
 
 vanilla_packages_github = c(
