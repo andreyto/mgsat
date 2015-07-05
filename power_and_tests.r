@@ -236,9 +236,19 @@ norm.meta.data<-function(dat,col_ignore=c(),norm.func=NULL,...) {
 # If data is non-normalized count OTU/data table with samples on rows
 # and features/OTUs in columns, then the transform is applied as
 # clr(data)
-# By default, it adds an offset of 1 before applying the transform, and acts
-# on rows, returning matrix in the same order as input. This offset is only
-# appropriate if you are transforming raw integer count data. The defaul base=2 in
+# By default, it does not add any offset of before applying the transform, and acts
+# on rows, returning matrix in the same order as input. Adding offset=1 might
+# be a good idea when you are dealing with integer count data where counts are 
+# generally much higher than one, and a count of one is close to noise level.
+# Here is why: the implementation will just ignore all features that are
+# close to zero within the tolerance. Features with count one, on the other hand,
+# will contribute zero to the nominator of the mean, but zero to the divider when the mean is taken.
+# Thus, at lower depth of sequencing, you will get more features which are exactly zero and do
+# not increase the divider, resulting in overal higher level of all non-zero features after
+# transformation. Adding offset one removes this effect, and should be OK under an 
+# assumption that one count should be considered random noise that should never affect
+# the analysis results. Another option is to use offset=0.5 (uninformative prior)
+# The defaul base=2 in
 # order to produce fold change between columns:
 # (m[,k]/m[,l] == 2**(clr.mgsat(m)[,k]-clr.mgsat(m)[,l]))
 # Note that in the original SpiecEasi implementation the transform should
@@ -265,7 +275,8 @@ norm.clr.default <- function(x.f, offset=0, base=2, tol=.Machine$double.eps) {
   ## this is invariant to a constant multiplier (well, not quite becase of the
   ## offset), so there is no need to combine it with normalization to simple
   ## proportions
-  x.f = ifelse(x.f>0,x.f,offset)
+  #x.f = ifelse(x.f>0,x.f,offset)
+  x.f = x.f + offset
   nzero <- (x.f >= tol)
   LOG <- log(ifelse(nzero, x.f, 1), base)
   ifelse(nzero, LOG - mean(LOG)/mean(nzero), 0.0)
@@ -297,9 +308,10 @@ norm.alr <- function(x, ...) {
 norm.alr.default <- function(x.f, divcomp=1, offset=1, base=2, remove.divcomp=TRUE,
                              tol=.Machine$double.eps) {
   if(is.character(divcomp)) {
-    divcomp = match(divcomp,names(x.f))
+    divcomp = match(divcomp,colnames(x.f))
   }
-  x.f = ifelse(x.f>0,x.f,offset)
+  #x.f = ifelse(x.f>0,x.f,offset)
+  x.f = x.f + offset
   nzero <- (x.f >= tol)
   LOG <- log(ifelse(nzero, x.f, 1), base)
   x.alr <- ifelse(nzero, LOG - LOG[divcomp], 0.0)
@@ -310,7 +322,11 @@ norm.alr.default <- function(x.f, divcomp=1, offset=1, base=2, remove.divcomp=TR
 norm.alr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
   ##TODO: optimize by doing matrix operations here instead of aaply
   if(is.character(divcomp)) {
-    divcomp = match(divcomp,names(x.f))
+    name.divcomp = divcomp
+    divcomp = match(divcomp,colnames(x.f))
+    if(length(divcomp)!=1) {
+      stop(sprintf("One and one only feature name should match the divider component name %s",name.divcomp))
+    }
   }
   y = aaply(x.f, mar, norm.alr, divcomp=divcomp, remove.divcomp=F, ...)
   if(mar==2) {
@@ -325,6 +341,56 @@ norm.alr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
 norm.alr.data.frame <- function(x.f, ...) {
   as.data.frame(norm.alr(as.matrix(x.f), ...))
 }
+
+#' Fold-ratio functions
+#' @export
+norm.fr <- function(x, ...) {
+  UseMethod('norm.fr', x)
+}
+
+
+norm.fr.default <- function(x.f, divcomp=1, offset=1, remove.divcomp=TRUE,
+                             tol=.Machine$double.eps,offset.is.prop=F) {
+  if(is.character(divcomp)) {
+    divcomp = match(divcomp,colnames(x.f))
+  }
+  if(offset.is.prop) {
+    s = sum(x.f)
+    if(abs(s) < tol) {
+      if (remove.divcomp) x.f = x.f[-divcomp]
+      return (x.f)
+    }
+    x.f = x.f / s
+  }
+  x.f = x.f + offset
+  x.fr <- x.f/x.f[divcomp]
+  if (remove.divcomp) x.fr[-divcomp]
+  else x.fr
+}
+
+norm.fr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
+  ##TODO: optimize by doing matrix operations here instead of aaply
+  if(is.character(divcomp)) {
+    name.divcomp = divcomp
+    divcomp = match(divcomp,colnames(x.f))
+    if(length(divcomp)!=1) {
+      stop(sprintf("One and one only feature name should match the divider component name %s",name.divcomp))
+    }
+  }
+  y = aaply(x.f, mar, norm.fr, divcomp=divcomp, remove.divcomp=F, ...)
+  if(mar==2) {
+    y = t(y)
+  }
+  if(remove.divcomp) {
+    y = y[,-divcomp]
+  }
+  return(y)
+}
+
+norm.fr.data.frame <- function(x.f, ...) {
+  as.data.frame(norm.fr(as.matrix(x.f), ...))
+}
+
 
 #' @method clr on results of DESeq2 Rlog transform. x.f is not used
 norm.clr.rlog.dds <- function(x.f,dds,...) {
@@ -343,7 +409,12 @@ rlog.dds <- function(dds,blind=T,fast=T,fitType="local") {
 
 
 ## IHS (inverse hyperbolic sign) transform
-## This is the same as log(x+(x**2+1)**0.5)
+## asinh(x) == log(x+(x**2+1)**0.5)
+## Increasing theta reduces the influence of unit addition
+## under the square root and make the function behave more
+## like (A + log(x)/B). Generally, for variance stabilization,
+## it is assumed that x >> 1. Thus, if you are applying it to
+## simple proportions, set theta to some large number.
 ihs <- function(x,theta=1) {
   asinh(theta*x)/theta
 }
@@ -509,9 +580,9 @@ subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL,na.ind
   if(is.null(subset)) subset = T
   
   if(na.index.is.false) {
-  select.count = set.index.na.to.false(select.count)
-  select.attr = set.index.na.to.false(select.attr)
-  subset = set.index.na.to.false(subset)
+    select.count = set.index.na.to.false(select.count)
+    select.attr = set.index.na.to.false(select.attr)
+    subset = set.index.na.to.false(subset)
   }
   
   m_a$count = m_a$count[subset,select.count,drop=F]
@@ -1650,7 +1721,7 @@ signed_sqrt_trans = function() trans_new("signed_sqrt", function(x) sign(x)*sqrt
 plot.abund.meta <- function(m_a,
                             ci=NULL,
                             id.vars=c(),
-                            value.name="abundance",
+                            value.name="Abundance",
                             file_name=NULL,
                             ggp.comp=NULL,
                             facet_grid.margins=FALSE,
@@ -1744,7 +1815,7 @@ plot.abund.meta <- function(m_a,
     gp = ggplot(dat, aes_s)
     
     gp = gp + geom_bar(position="stack",stat="identity") 
-
+    
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
@@ -2699,7 +2770,7 @@ plot.profiles <- function(m_a,
                           feature.meta.x.vars=c(),
                           do.profile=T,
                           do.feature.meta=T,
-                          value.name="abundance",
+                          value.name="Abundance",
                           show.profile.task=list(
                             geoms=c("bar","violin","boxplot","bar_stacked"),
                             dodged=T,
@@ -3269,12 +3340,7 @@ mgsat.16s.task.template = within(list(), {
       group.attr = main.meta.var
       do.nmds = F
       do.plot.profiles = T
-      norm.count.task = within(norm.count.task, {
-        ## this makes plots generated here for paired test
-        ## to show easily understood proportions
-        method = "norm.prop"
-        method.args = list()
-      })      
+      norm.count.task = NULL
       genesel.param = within(list(), {
         block.attr = NULL
         type="unpaired"
@@ -3334,10 +3400,7 @@ mgsat.16s.task.template = within(list(), {
     
     plot.profiles.abund.task = within(list(), {
       
-      norm.count.task = within(list(), {
-        method = "norm.prop"
-        drop.features=c("other")
-      })
+      norm.count.task = NULL
       
     })
     
@@ -3752,7 +3815,7 @@ show.feature.meta <- function(m_a,
                               feature.names,
                               x.var,
                               group.var,
-                              value.name="abundance",
+                              value.name="Abundance",
                               trans="boxcox",
                               vars.descr="Abundances") {
   
@@ -3789,13 +3852,25 @@ show.feature.meta <- function(m_a,
   id.vars = c(x.var,group.var)
   dat = cbind(m_a$attr[,id.vars,drop=F],count)
   dat = melt.abund.meta(dat,id.vars=id.vars,attr.names=id.vars,value.name=value.name)
+  dat$.x.var = dat[,x.var]
   smooth_method = "loess" #"lm"
   for(feature.name in feature.names) {
-    pl = ggplot(dat[dat$feature==feature.name,], aes_string(x=x.var, y=value.name,color=group.var)) +
+    dat.feature = dat[dat$feature==feature.name,]
+    x.var.range = max(dat.feature$.x.var) - min(dat.feature$.x.var)
+    pl = ggplot(dat.feature, aes_string(x=x.var, y=value.name,color=group.var)) +
       geom_point() +
       #geom_line(alpha=0.3, linetype=3) + 
       #geom_smooth(aes(group=group,color=group), method='lm', formula=y~x+I(x^2)+I(x^3)) + 
-      stat_smooth(method=smooth_method, se = T,degree=1,size=1)
+      stat_smooth(method=smooth_method, se = T,degree=1,size=1) +
+      ylab(paste(value.name,"of",feature.name))
+    gr.range = ddply(dat.feature,group.var,summarise,
+                                range = max(.x.var) - min(.x.var))
+    for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
+      print("DEBUG crossbar")
+      pl = pl + stat_summary(aes_string(x=x.var, y=value.name,color=group.var),
+                             fun.data = "mean_cl_boot", geom = "crossbar", width=x.var.range/20,
+                             data = dat.feature[dat.feature[,group.var]==group,])
+    }
     #scale_x_date() +
     #labs(title=title)+
     #facet_wrap(~feature,scales="free")
@@ -3841,23 +3916,29 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL,  n.cvs = 400, stand
     dfmax = ncol(x) + 1
   }
   
+  .errorhandling = "remove"
+  if(getOption("try.debug",F)) {
+    .errorhandling = "stop"
+  }
+  
   cv.res <- foreach(alpha=alphas,
                     .packages=c("glmnet"),
-                    .combine=rbind) %do% {
+                    .combine=rbind,
+                    .errorhandling=.errorhandling) %do% {
                       #re-import required for windows parallelism with doSNOW
                       #library(glmnet)
-                      # set.seed(seed)
+                      set.seed(seed)
                       # the function finds the best lambda for a given alpha
                       # within each model there is cross-validation happening for lambda for each alpha.
                       # lambda1 = lambda*alpha 
                       # lambda2 = lambda*(1-alpha)
                       cv.glmnet.args = list(x=x, y=y, family=family,
-                                        nfolds=numfolds, 
-                                        type.measure="deviance", 
-                                        standardize=standardize, 
-                                        alpha=alpha,
-                                        dfmax=dfmax,
-                                        ...)
+                                            nfolds=numfolds, 
+                                            type.measure="deviance", 
+                                            standardize=standardize, 
+                                            alpha=alpha,
+                                            dfmax=dfmax,
+                                            ...)
                       ## get a lambda vector here and pass it to all other cv.glmnet calls
                       ## inside the loop below
                       lambda = do.call(cv.glmnet,c(list(foldid=foldids[1,]),cv.glmnet.args))$lambda
@@ -3870,12 +3951,13 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL,  n.cvs = 400, stand
                         x
                       }
                       cvmeans = foreach(i.cv = seq(n.cvs),
-                                       .combine=plus,
-                                       .final=function(x) (x/n.cvs),
-                                       .packages=c("glmnet")) %dopar% {
-                                         cv.res = do.call(cv.glmnet,c(list(foldid=foldids[i.cv,]),cv.glmnet.args))
-                                         data.frame(lambda=cv.res$lambda,cvm=cv.res$cvm)
-                                       }
+                                        .combine=plus,
+                                        .final=function(x) (x/n.cvs),
+                                        .packages=c("glmnet"),
+                                        .errorhandling=.errorhandling) %dopar% {
+                                          cv.res = do.call(cv.glmnet,c(list(foldid=foldids[i.cv,]),cv.glmnet.args))
+                                          data.frame(lambda=cv.res$lambda,cvm=cv.res$cvm)
+                                        }
                       data.frame(alpha=alpha,cvmin=min(cvmeans$cvm))
                     }
   alpha = cv.res$alpha[which.min(cv.res$cvmin)]
@@ -4316,7 +4398,7 @@ genesel.stability.report <- function(m_a,group.attr,
   
   caption.descr = ""
   if(genesel.param$type=="paired" && !is.null(genesel.param$block.attr)) {
-    caption.descr = sprintf("Samples are paired according to attribute %s, resulting in %s samples.",
+    caption.descr = sprintf("Samples are paired according to attribute %s, resulting in %s pairs.",
                             genesel.param$block.attr,res.genesel.stability$n.samp)
   }
   
@@ -4539,10 +4621,12 @@ plot.profiles.abund <- function(m_a,
                                 norm.count.task=NULL,
                                 feature.ranking="stabsel") {
   
-  m_a.norm <- norm.count.report(m_a,
-                                res.tests=res.tests,
-                                descr="abundance plots",
-                                norm.count.task=norm.count.task)
+  if(!is.null(norm.count.task)) {
+    m_a <- norm.count.report(m_a,
+                             res.tests=res.tests,
+                             descr="abundance plots",
+                             norm.count.task=norm.count.task)
+  }
   
   tryCatchAndWarn({
     
@@ -4557,7 +4641,7 @@ plot.profiles.abund <- function(m_a,
     }
     
     do.call(plot.profiles,
-            c(list(m_a=m_a.norm,
+            c(list(m_a=m_a,
                    feature.order=feature.order),
               plot.profiles.task
             )
@@ -4705,15 +4789,15 @@ test.counts.project <- function(m_a,
     })
   }
   
-    m_a = report.count.filter.m_a(m_a,
-                                  count.filter.options=count.filter.feature.options,
-                                  "Filtering features")
-    export.taxa.meta(m_a,
-                     label=label,
-                     descr="After final feature filtering",
-                     row.proportions=T,
-                     row.names=F)    
-
+  m_a = report.count.filter.m_a(m_a,
+                                count.filter.options=count.filter.feature.options,
+                                "Filtering features")
+  export.taxa.meta(m_a,
+                   label=label,
+                   descr="After final feature filtering",
+                   row.proportions=T,
+                   row.names=F)    
+  
   m_a.abs = norm.count.m_a(m_a,method="ident")
   
   if(is.null(count.filter.feature.options) || length(count.filter.feature.options)==0) {
@@ -4748,8 +4832,6 @@ test.counts.project <- function(m_a,
                                 descr="data analysis (unless modified by specific methods)",
                                 norm.count.task)
   
-  #make.global(m_a.norm)
-  
   if(do.genesel) {
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
                                           task=genesel.task,res.tests=res)
@@ -4761,12 +4843,12 @@ test.counts.project <- function(m_a,
   }
   
   if(do.stabsel) {
-      tryCatchAndWarn({ 
-        res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
-                                               stabsel.task
-        )
-        )
-      })
+    tryCatchAndWarn({ 
+      res$stabsel = do.call(stabsel.report,c(list(m_a=m_a.norm),
+                                             stabsel.task
+      )
+      )
+    })
   }
   
   if(do.glmer) {  
@@ -4812,14 +4894,18 @@ test.counts.project <- function(m_a,
   if( do.plot.profiles.abund ) {
     
     tryCatchAndWarn({ 
+      
+      plot.profiles.abund.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
+                                                        task=plot.profiles.abund.task,res.tests=res)
+      
       do.call(plot.profiles.abund,
               c(
-                list(m_a=m_a,
+                list(m_a=plot.profiles.abund.norm.t$m_a.task,
                      label=label,
                      res.tests=res,
                      plot.profiles.task=plot.profiles.task,
                      feature.ranking=feature.ranking),
-                plot.profiles.abund.task
+                plot.profiles.abund.norm.t$task
               )
       )
     })
@@ -5267,7 +5353,7 @@ heatmap.combined.report <- function(m_a,
     g.t = g.test(m_a.norm$attr[,main.meta.var],split)
     report$add(g.t)
   }
-
+  
   m_a.norm$attr$.Heatmap.Cluster.Split = split
   export.taxa.meta(m_a.norm,
                    label="htmap",
@@ -6926,12 +7012,11 @@ marker.ver.power <- function(sm.df,tpr0,fpr0) {
   return(res)
 }
 
-show.partial.auc.roc <- function(response,predictor,predictor.descr) {
-  tpr0=0.25
-  fpr0=0.10
+show.partial.auc.roc <- function(response,predictor,predictor.descr,tpr0=0.25,fpr0=0.10) {
   spe.range=c(1,1-fpr0)
   se.range=NULL
-  ro = roc(response, predictor, 
+  require(pROC)
+  ro = pROC::roc(response, predictor, 
            percent=F,
            auc=F)
   smooth.bi = smooth(ro,method="bi")
@@ -6999,7 +7084,7 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     report$push.section(report.section)
     x = m_a$count[,feat.name]
     g = factor(m_a$attr[,group.attr])
-    if(F) {
+    if(T) {
       report$add(show.distr.group(x,g),
                  caption=sprintf("Empirical distribution of %s grouped by %s",
                                  feat.name,group.attr))
@@ -7020,11 +7105,14 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     }
     #report$add(roc(g,x,plot=T,smooth=F,ci=F,print.thres=T,grid=c(0.1,0.2)),
     #           caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
+    tryCatchAndWarn({ 
+      
     pwr.res = show.partial.auc.roc(g,x,predictor.descr=feat.name)
     
     report$add.table(as.data.frame(pwr.res$power),
-                     caption=sprintf("Power analysis for %s",feat.name)
+                     caption=sprintf("Power analysis for simple predictor based on %s level",feat.name)
     )
+    })
     report$pop.section()
   }
 }

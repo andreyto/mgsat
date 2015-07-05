@@ -178,13 +178,18 @@ load.meta.choc <- function(file.name) {
   meta$Days.In.Study = as.numeric(difftime(meta$Specimen.Collection.Date,meta$First.Specimen.Date,units="days"))
   meta$Days.In.Study.Bin = quantcut.ordered(meta$Days.In.Study,q=seq(0,1,by=0.20))
   
-  report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Therapy,shape=Sample.type,data=meta),
-             caption="Relation between Sampling.Visits and dates")
+  meta$Study.Stage = as.character(meta$Days.In.Study.Bin)
+  meta$Study.Stage[meta$Sample.type=="sibling"] = "sibling"
+  meta$Study.Stage = ordered(meta$Study.Stage,levels=c("sibling",levels(meta$Days.In.Study.Bin)))
   
   ## ignore antibiotic status in siblings - this field is for faceted plots
   meta$Sample.type.Antibio.Before = factor(with(meta,
                                                 ifelse(Sample.type=="patient",
-                                                       paste(Sample.type,Antibiotic.Before.Therapy,"."),
+                                                       paste(as.character(Sample.type),
+                                                             ifelse(Antibiotic.Before.Therapy,
+                                                                    "Antibiotic.Before",
+                                                                    "No.Antibiotic.Before"),
+                                                             sep="."),
                                                        as.character(Sample.type))
   ))
   
@@ -253,7 +258,7 @@ summary.meta.choc <- function(m_a) {
              caption="Are Sampling.Visits evenly spaced for all patients (colored by initial antibiotic treatment)?")
   report$add(qplot(x=Sampling.Visit,y=Days.In.Study,color=Antibiotic.Before.Sample,shape=Sample.type,data=meta),
              caption="Are Sampling.Visits evenly spaced for all patients (colored by antibiotic treatment prior to current sample)?")
-  
+
   #summary(glht(lm(age~Sampling.Visit,data=meta[meta$Sample.type=="patient",]),linfct="Sampling.Visit=0"))
   #summary(glht(lmer(age~Sampling.Visit+(Sampling.Visit|Sample.type),data=meta),linfct="Sampling.Visit=0"))
   report$add(ggplot(meta[meta$Sample.type=="patient",],aes(x=Sampling.Visit,y=age,color=Antibiotic.Before.Therapy))+
@@ -643,6 +648,44 @@ describe.choc.emr <- function(m_a,mixed.model=F) {
   #return (y)
 }
 
+new_ordination.task <- function(main.meta.var,norm.method) {
+  if(norm.method=="prop") {
+    ord.method = "CCA"
+  }
+  else {
+    ord.method = "RDA"
+  }
+  within(mgsat.16s.task.template$test.counts.task$ordination.task, {
+    distance="euclidean"
+    ord.tasks = list(
+      list(
+        ordinate.task=list(
+          method=ord.method
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      ),
+      list(
+        ordinate.task=list(
+          method=ord.method,
+          formula=main.meta.var
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      )          
+    )
+  })            
+}
+
+
 ## This function must generate a list with analysis tasks
 
 gen.tasks.choc <- function() {
@@ -651,7 +694,9 @@ gen.tasks.choc <- function() {
     
     #DEBUG:
     #taxa.levels = c(2,3,4,5,6,"otu")
-    taxa.levels = c(2)
+    taxa.levels = c(5)
+    
+    norm.method = "prop"
     
     descr = "All samples, no aggregation"
     
@@ -661,7 +706,18 @@ gen.tasks.choc <- function() {
       cons.taxonomy.file="yap_2015-05-11/*.0.03.cons.taxonomy.seq.taxonomy"
       meta.file="CHOC_ALL_Samples_Metadata_April_2015.txt"
       load.meta.method=load.meta.choc
-      load.meta.options=list()    
+      load.meta.options=list()
+      count.filter.options = list()    
+      #       count.filter.options = within(list(), {
+      #         drop.unclassified=T
+      #         min_quant_mean_frac=0.25
+      #         min_quant_incidence_frac=0.25
+      #         #min_max=30
+      #         min_mean=10
+      #       })
+      
+      otu.count.filter.options=list()
+      
     })
     
     get.taxa.meta.aggr.base<-function(m_a) { 
@@ -713,9 +769,89 @@ gen.tasks.choc <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      norm.count.task = within(norm.count.task, {
-        method="norm.ihs.prop"
+      do.ordination=F
+      do.network.features.combined=F
+
+      count.filter.feature.options = within(list(), {
+        drop.unclassified=T
+        min_quant_mean_frac=0.25
+        min_quant_incidence_frac=0.25
+        #min_max=30
+        min_mean=10
       })
+      
+      norm.count.task = within(norm.count.task, {
+        #method="norm.ihs.prop"
+        #method.args = list(theta=2000)
+        #method="norm.rlog.dds"
+        #method.args=list(dds=NA) #signals to pull Deseq2 object
+        if(norm.method=="prop") {
+          method="norm.prop"
+          method.args=list()
+        }
+        else if(norm.method=="ihs.prop") {
+          method="norm.ihs.prop"
+          method.args = list(theta=1000)
+        }
+        else if(norm.method=="clr") {
+          method="norm.clr"
+          method.args=list(offset=1)
+        }
+        else if(norm.method=="alr") {
+          method="norm.alr"
+          method.args=list(offset=1,divcomp="other")
+        }        
+        else if(norm.method=="fr") {
+          method="norm.fr"
+          method.args=list(offset=0.1,divcomp=1,offset.is.prop=T)
+        }                
+        else {
+          stop(sprintf("Unplanned norm.method %s",norm.method))
+        }
+      })
+
+      genesel.task = within(genesel.task, {
+        ## use common m_a.norm
+        norm.count.task = NULL
+      })
+      
+      adonis.task = within(adonis.task, {
+        if(norm.method=="prop") {
+          dist.metr="bray"
+        }
+        else {
+          dist.metr="euclidean"          
+        }
+        col.trans=NULL
+        norm.count.task=NULL
+        data.descr="normalized counts"
+      })
+      
+      heatmap.abund.task = within(heatmap.abund.task,{
+        trans.clust=NULL
+        stand.clust=NULL
+        dist.metr="euclidian"
+        trans.show=NULL
+        stand.show="range"
+        cluster.row.cuth=10
+      })
+      
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        hmap.width=1000
+        hmap.height=hmap.width*0.8
+        attr.annot.names=c(main.meta.var)
+        if(norm.method=="prop") {
+          clustering_distance_rows="manhattan"
+        }
+        else {
+          clustering_distance_rows="pearson"
+        }
+        km.abund=0
+        km.diversity=0
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method)
       
     })
     
@@ -726,11 +862,13 @@ gen.tasks.choc <- function() {
     
     descr = "All samples (up to Sampling.Visit 4), no aggregation"    
     
-    taxa.levels = c(2)
+    #taxa.levels = c(2)
     
-    do.summary.meta = T
+    main.meta.var = "Study.Stage"
     
-    do.tests = F
+    do.summary.meta = F
+    
+    do.tests = T
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
@@ -750,13 +888,9 @@ gen.tasks.choc <- function() {
       do.stabsel = F
       do.glmer = F
       do.plot.profiles.abund=T
-      do.heatmap.abund=F
-      do.network.features.combined = F
-      do.divrich = c()
-      
-      do.plot.profiles.abund=T
-      do.heatmap.abund=F
-      
+      do.heatmap.abund=T
+      #do.network.features.combined = F
+      #do.divrich = c()      
       
       divrich.task = within(divrich.task,{
         group.attr = NULL
@@ -765,17 +899,23 @@ gen.tasks.choc <- function() {
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c("Sample.type","Days.In.Study.Bin"),
-                            c("Sample.type.Antibio.Before","Days.In.Study.Bin"),
-                            c("Antibiotic.Before.Therapy","Sample.type.1"))
+        id.vars.list = list(c("Sample.type"),c("Study.Stage"))
+#                            c("Antibiotic.Before.Therapy","Study.Stage"))
         feature.meta.x.vars=c("Days.In.Study")
         do.profile=T
         do.feature.meta=T
       })
       
       heatmap.abund.task = within(heatmap.abund.task,{
-        attr.annot.names=c("Sample.type","Sampling.Visit","Antibiotic.Before.Therapy")
+        attr.annot.names=c(main.meta.var,"Days.In.Study.Bin","Antibiotic.Before.Therapy")
       })
+
+      heatmap.combined.task = within(heatmap.combined.task, {
+        #attr.annot.names=c(main.meta.var,"age","Antibiotic.Before.Therapy")
+        attr.annot.names=c(main.meta.var,"Sample.type.1")
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method)
       
     })
     
@@ -803,32 +943,7 @@ gen.tasks.choc <- function() {
       do.plot.profiles.abund=F
       do.heatmap.abund=F
       do.extra.method = taxa.levels
-      
-      
-      extra.method.task = within(extra.method.task, {
-        
-        func = function(m_a,m_a.norm,res.tests,norm.count.task) {
-          require(vegan)
-          
-          report$add.header('Testing that patients move closer to sibling profiles over time')
-          
-          if(!is.null(norm.count.task)) {
-            m_a <- norm.count.report(m_a,
-                                     descr="Profile time trend",
-                                     norm.count.task=norm.count.task)
-          }
-          
-          make.global(m_a)
-          
-        }
-        norm.count.task = within(norm.count.task, {
-          method="norm.prop"
-          #drop.features = list()
-        })
-        
-      })
-      
-      
+            
     })
     
   })
@@ -840,7 +955,7 @@ gen.tasks.choc <- function() {
     
     descr = "Patient/Sibling samples before therapy aggregated by SubjectID"
     
-    do.summary.meta = T
+    do.summary.meta = F
     
     do.tests = T
     
@@ -860,7 +975,7 @@ gen.tasks.choc <- function() {
       do.deseq2 = T
       do.adonis = T
       do.genesel = T
-      do.stabsel = T
+      do.stabsel = F
       do.glmer = F
       do.plot.profiles.abund=T
       do.heatmap.abund=T
@@ -908,6 +1023,12 @@ gen.tasks.choc <- function() {
         attr.annot.names=c(main.meta.var,"age.quant")
       })
       
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var,"age")
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method)
+      
     })
     
   })
@@ -930,7 +1051,7 @@ gen.tasks.choc <- function() {
     test.counts.task = within(test.counts.task, {
       
       do.divrich = c()
-      do.deseq2 = F
+      do.deseq2 = T
       do.adonis = T
       do.genesel = T
       do.stabsel = F
@@ -938,7 +1059,11 @@ gen.tasks.choc <- function() {
       do.plot.profiles.abund=F
       do.heatmap.abund=F
       do.extra.method = taxa.levels
-      
+
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = sprintf("FamilyID+%s",main.meta.var)
+      })
+            
       genesel.task = within(genesel.task, {
         genesel.param = within(genesel.param, {
           block.attr = "FamilyID"
@@ -960,15 +1085,23 @@ gen.tasks.choc <- function() {
       extra.method.task = within(extra.method.task, {
         
         func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          if(norm.method=="prop") {
+            dist.metr = "bray"
+          }
+          else {
+            dist.metr = "euclidean"
+          }
           test.dist.matr.within.between(m_a=m_a,
                                         group.attr="Sample.type",
                                         block.attr="FamilyID",
                                         n.perm=4000,
+                                        dist.metr=dist.metr,
+                                        col.trans="ident",
                                         norm.count.task=norm.count.task.extra
           )
         }
         norm.count.task.extra = within(norm.count.task, {
-          method="norm.prop"
+          #method="norm.prop"
           #drop.features = list()
         })
         
@@ -1023,7 +1156,7 @@ gen.tasks.choc <- function() {
       })
       
       deseq2.task = within(deseq2.task, {
-        formula.rhs = main.meta.var
+        formula.rhs = sprintf("SubjectID+%s",main.meta.var)
       })
       
       genesel.task = within(genesel.task, {
@@ -1074,20 +1207,32 @@ gen.tasks.choc <- function() {
         attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
       })
       
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var,"SubjectID")
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method)
+      
       extra.method.task = within(extra.method.task, {
         
         func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          if(norm.method=="prop") {
+            dist.metr = "bray"
+          }
+          else {
+            dist.metr = "euclidean"
+          }
           test.dist.matr.within.between(m_a=m_a,
                                         group.attr="TherapyStatus",
                                         block.attr="SubjectID",
                                         n.perm=8000,
-                                        #dist.metr="euclidian",
-                                        col.trans="ident",
+                                        dist.metr=dist.metr,
+                                        col.trans="ident",                                        
                                         norm.count.task=norm.count.task.extra
           )
         }
         norm.count.task.extra = within(norm.count.task, {
-          method="norm.prop"
+          #method="norm.prop"
           #drop.features = list()
         })
         
@@ -1127,9 +1272,10 @@ gen.tasks.choc <- function() {
   
   task4 = within( task0, {
     
-    main.meta.var = "Sampling.Visit"
+    main.meta.var = "Days.In.Study"
+    main.meta.var.bin = "Days.In.Study.Bin"
     
-    descr = "Patients samples"
+    descr = "Patients samples over time in study"
     
     do.summary.meta = F
     
@@ -1153,7 +1299,7 @@ gen.tasks.choc <- function() {
       do.heatmap.abund=T
       
       divrich.task = within(divrich.task,{
-        group.attr = main.meta.var
+        group.attr = main.meta.var.bin
         counts.glm.task = within(counts.glm.task,{
           formula.rhs = main.meta.var
         })
@@ -1161,7 +1307,7 @@ gen.tasks.choc <- function() {
       })
       
       deseq2.task = within(deseq2.task, {
-        formula.rhs = main.meta.var
+        formula.rhs = sprintf("SubjectID+%s",main.meta.var)
       })
       
       genesel.task = within(genesel.task, {
@@ -1182,13 +1328,14 @@ gen.tasks.choc <- function() {
           
           list(formula.rhs=main.meta.var,
                strata="SubjectID",
-               descr="Association with Sampling.Visit paired by subject")
+               descr=sprintf("Association with %s paired by subject",main.meta.var))
         )
         
       })
       
       plot.profiles.task = within(plot.profiles.task, {
-        id.vars.list = list(c(main.meta.var,"Antibiotic.Before.Therapy"))
+        id.vars.list = list(c(),c(main.meta.var.bin),c(main.meta.var.bin,"Antibiotic.Before.Therapy"))
+        feature.meta.x.vars=c(main.meta.var)
         do.profile=T
         do.feature.meta=T
       })
@@ -1196,13 +1343,19 @@ gen.tasks.choc <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
       })
+
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var.bin,"SubjectID")
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method)
       
     })
     
   })
   
   return (list(task1))
-  #return (list(task1,task2,task2.1,task3,task3.1,task4))
+  return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
 
@@ -1275,7 +1428,7 @@ report <- PandocAT$new(author="atovtchi@jcvi.org",
                        title="Analysis of CHOC ALL 16S data",
                        incremental.save=F)
 
-if(F) {
+if(T) {
   res = proc.project(
     task.generator.method=gen.tasks.choc
   )
