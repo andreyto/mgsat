@@ -2595,6 +2595,7 @@ mgsat.divrich.report <- function(m_a,
                                  do.plot.profiles=T,
                                  do.incidence=T,
                                  do.abundance=T,
+                                 do.beta=T,
                                  do.rarefy=T,
                                  do.accum=T,
                                  extra.header="") {
@@ -2746,7 +2747,7 @@ mgsat.divrich.report <- function(m_a,
     report$pop.section()
   }
   
-  if(!is.null(beta.task)) {
+  if(do.beta && !is.null(beta.task)) {
     res$beta = do.call(mgsat.diversity.beta,
                        c(list(m_a,
                               n.rar.rep=n.rar.rep,
@@ -3297,6 +3298,10 @@ mgsat.16s.task.template = within(list(), {
       ## this will be taken from task-wide structure
       counts.genesel.task = NULL
       do.plot.profiles = T
+      ## Computing beta-diversity matrix on multiple rarefications can take a while
+      do.beta = T
+      do.accum = T
+      do.incidence = T
     })
     
     count.filter.feature.options=list(drop.unclassified=T,min_mean_frac=0.0005)
@@ -3400,7 +3405,10 @@ mgsat.16s.task.template = within(list(), {
     
     plot.profiles.abund.task = within(list(), {
       
-      norm.count.task = NULL
+      norm.count.task = within(norm.count.task, {
+          method="norm.prop"
+          method.args=list()
+      })
       
     })
     

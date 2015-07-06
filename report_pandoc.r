@@ -239,11 +239,11 @@ pandoc.as.printed.return <- function(x,attrs="") {
          '\n', repChar('`', 7), '\n')
 }
 
-pandoc.special.symb = "`*_{}()#+!~"
+pandoc.special.symb = "\\-\\[\\]`*_{}()#+!~"
 
 pandoc.escape.special <- function(x) {
   gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",
-       format(x,digits=panderOptions("digits")))
+       format(x,digits=panderOptions("digits")),perl=T)
 }
 
 pandoc.link.verbatim.return <- function(url,text=NULL) {
@@ -701,7 +701,8 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
   }
   
   write.el <- function(el,fp) {
-    cat(paste(pander.return(el$result), collapse = '\n'), 
+    el.str = pander.return(el$result)
+    cat(paste(el.str, collapse = '\n'), 
         file = fp, append = TRUE)    
   }
   
@@ -761,6 +762,112 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
   }
   
 })
+
+
+tmp.save <- function(report,out.file.loc,out.formats.loc,portable.html.loc,sort.by.sections=F) {
+  .self = report$.self
+  
+  if (missing(out.file.loc)) {
+    out.file.loc = .self$out.file
+    if(missing(out.file.loc)) {
+      out.file.loc = "report"
+    }
+  }
+  
+  if (missing(out.formats.loc)) {
+    out.formats.loc = .self$out.formats
+    if(missing(out.formats.loc)) {
+      out.formats.loc = c("html")
+    }
+  }
+  
+  if (missing(portable.html.loc)) {
+    portable.html.loc = .self$portable.html
+    if(missing(portable.html.loc)) {
+      portable.html.loc = T
+    }
+  }
+  
+  fp    <- out.file.loc
+  timer <- proc.time()
+  
+  fp.all = list()
+  
+  f_sections = .self$sections
+  f_body = .self$body
+  
+  if(sort.by.sections) {
+    ##sort by section lexicographically, using a stable sort
+    sect_ord = sort.list(
+      unlist(lapply(.self$sections,format.section.path)),
+      method="shell")
+    f_body = f_body[sect_ord]
+  }
+  
+  write.el <- function(el,fp) {
+    el.str = pander.return(el$result)
+    el.str = gsub("_[","_\\[",el.str,fixed=T)
+    cat(paste(el.str, collapse = '\n'), 
+        file = fp, append = TRUE)    
+  }
+  
+  for(i.el in seq_along(f_body)) {
+    section = f_sections[[i.el]]
+    el = f_body[[i.el]]
+    
+    section.par = cut.to.bottom.sub.section.path(section)
+    
+    #print(paste("Full section:",paste(section,collapse=" ")))
+    #print(paste("Par section:",paste(section.par,collapse=" ")))
+    
+    if(length(section.par) > 0) {
+      sub.path = section.par
+    }
+    else {
+      sub.path = NULL
+    }
+    fp.sub = report$make.file.name(name.base=fp,
+                            make.unique=F,
+                            dir=".",
+                            section.path=sub.path)
+    fp.sub.md = paste(fp.sub,".md",sep="")
+    #print(paste("fp.sub=",fp.sub))
+    
+    if(is.null(fp.all[[fp.sub.md]])) {
+      cat(pandoc.title.return(.self$title, .self$author, .self$date), file = fp.sub.md)
+    }    
+    
+    if(i.el>1) {
+      sub.level.prev = get.sub.level.section.path(f_sections[[i.el-1]])
+      sub.level = get.sub.level.section.path(section)
+      if(sub.level > sub.level.prev) {
+        cat(pandoc.link.verbatim.return(paste(fp.sub,".html",sep=""),"Subreport"), 
+            file = fp.sub.md.prev, append = TRUE)
+        if(section[[length(section)]]$has.header) {
+          write.el(f_body[[i.el-1]],fp.sub.md)
+        }
+      }
+    }    
+    
+    write.el(el,fp.sub.md)
+    fp.all[[fp.sub.md]] = 1
+    fp.sub.md.prev = fp.sub.md
+  }
+  
+  for(out.format in out.formats.loc) {
+    for(fp.sub.md in names(fp.all)) {
+      ## It would be nice to add `options="-s -S"` to support
+      ## Pandoc's subscript and suprscript extensions, but
+      ## this will entirely replace internal default options and
+      ## break TOC etc
+      cat(sprintf("Pandoc converting markdown file %s to %s format\n",fp.sub.md,out.format))
+      Pandoc.convert(fp.sub.md,format=out.format,open=F,footer=F,
+                     portable.html=portable.html.loc)
+    }
+  }
+  
+}
+
 
 test_report.sections<-function() {
   

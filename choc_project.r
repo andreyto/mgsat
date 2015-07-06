@@ -124,7 +124,7 @@ load.meta.choc <- function(file.name) {
     as.Date.date.time(as.character(meta$Specimen.Collection.Date),
                       as.character(meta$Specimen.Collection.Time),
                       date.format = "%m/%d/%y")
-  
+  meta = meta[!is.na(meta$Specimen.Collection.Date),]
   meta$age = as.numeric(
     difftime(
       meta$Specimen.Collection.Date
@@ -188,10 +188,18 @@ load.meta.choc <- function(file.name) {
   rownames(meta) = meta$SampleID
   
   meta$Days.In.Therapy = as.numeric(difftime(meta$Specimen.Collection.Date,meta$First.Therapy.Date,units="days"))
+  
+  ## some siblings had their virst visit around the second visit of the patient, so ther day in therapy are positive at this point; reset
+  ## days in therapy of all siblings to the mean of all patients at their visit 1
+  meta$Days.In.Therapy[meta$Sample.type == "sibling"] = mean(meta$Days.In.Therapy[meta$Sample.type == "patient" & meta$Sampling.Visit==1],na.rm=T)
+  stopifnot(all(meta$Days.In.Therapy[meta$Sample.type == "sibling"]<0))
+  
+  qt = quantile(meta$Days.In.Therapy[meta$Days.In.Therapy>=0],na.rm=T)
+  qt[length(qt)] = qt[length(qt)] + 1
   meta$Days.In.Therapy.Bin = cut(meta$Days.In.Therapy,
-                                 c(min(meta$Days.In.Therapy,na.rm=T),
+                                 c(min(meta$Days.In.Therapy,na.rm=T)-1,
                                    0,
-                                   quantile(meta$Days.In.Therapy[meta$Days.In.Therapy>=0],na.rm=T)[-1]),
+                                   qt[-1]),
                                  right=F,
                                  ordered_result=T)
   lev = levels(meta$Days.In.Therapy.Bin)
@@ -385,7 +393,7 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
     #conv = c(TEMPERATUREORALC=37.8,TEMPERATUREAXILLARYC=37.2)
     #Keri's response on Oral and my guess on axillary
     conv = c(TEMPERATUREORALC=38.0,TEMPERATUREAXILLARYC=37.8)
-    y$Value = factor(ifelse(y$Value >= conv[y$Name], "Fever", "No.Fever"),levels=c("No.Fever","Fever"))
+    y$Value = factor(ifelse(y$Value >= conv[y$Name], "Fever.Pos", "Fever.Neg"),levels=c("Fever.Neg","Fever.Pos"))
     y$Name = name
     if(round.into.days) {
       y = round.binary.into.days.emrevents(y)
@@ -393,8 +401,8 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
   }
   else if(name == "Diarrhea") {
     y = extract.by.name.emrevents(x,names="STOOLCONSISTENCY")
-    y$Value = factor(ifelse(grepl("Liquid",y$Value,ignore.case=T), "Diarrhea", "No.Diarrhea"))
-    y$Value = relevel(y$Value,"No.Diarrhea")
+    y$Value = factor(ifelse(grepl("Liquid",y$Value,ignore.case=T), "Diarrhea.Pos", "Diarrhea.Neg"))
+    y$Value = relevel(y$Value,"Diarrhea.Neg")
     y$Name = name
     if(round.into.days) {
       y = round.binary.into.days.emrevents(y)
@@ -402,8 +410,8 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
   }
   else if(name == "Neutropenia") {
     y = extract.by.name.emrevents(x,names="^ABSOLUTENEUTROPHILCOUNT.*",is.regex=T,conv=as.numeric)
-    y$Value = factor(ifelse(y$Value < 500, "Neutropenia", "No.Neutropenia"))
-    y$Value = relevel(y$Value,"No.Neutropenia")
+    y$Value = factor(ifelse(y$Value < 500, "Neutropenia.Pos", "Neutropenia.Neg"))
+    y$Value = relevel(y$Value,"Neutropenia.Neg")
     y$Name = name
     if(round.into.days) {
       y = round.binary.into.days.emrevents(y)
@@ -411,8 +419,8 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
   }
   else if(name == "C.Diff") {
     y = extract.by.name.emrevents(x,names="^CDIFF.*",is.regex=T)
-    y$Value = factor(ifelse(grepl("^POS.*",y$Value,ignore.case=T), "C.Diff", "No.C.Diff"))
-    y$Value = relevel(y$Value,"No.C.Diff")
+    y$Value = factor(ifelse(grepl("^POS.*",y$Value,ignore.case=T), "C.Diff.Pos", "C.Diff.Neg"))
+    y$Value = relevel(y$Value,"C.Diff.Neg")
     y$Name = name
     if(round.into.days) {
       y = round.binary.into.days.emrevents(y)
@@ -420,8 +428,8 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
   }
   else if(name == "Other.Infections.Test") {
     y = extract.other.infections.raw.emrevents(x)
-    y$Value = factor(ifelse(grepl("^POS.*",y$Value,ignore.case=T), "Other.Infections.Test", "No.Other.Infections.Test"))
-    y$Value = relevel(y$Value,"No.Other.Infections.Test")
+    y$Value = factor(ifelse(grepl("^POS.*",y$Value,ignore.case=T), "Other.Infections.Test.Pos", "Other.Infections.Test.Neg"))
+    y$Value = relevel(y$Value,"Other.Infections.Test.Neg")
     y$Name = name
     if(round.into.days) {
       y = round.binary.into.days.emrevents(y)
@@ -590,20 +598,24 @@ plot.emrevents <- function(x,m_a,str.ylab=NULL,facet.by.subject=T,to.binomial=F,
 xtabs.report <- function(form,data) {
   fact.xtabs = xtabs(as.formula(form),data=data,drop.unused.levels=T)
   report$add(fact.xtabs,caption=paste("Sample cross tabulation",form))
+  report$add.table(as.data.frame(fact.xtabs),caption=paste("Sample cross tabulation as table",form),show.row.names=T)
   report$add.printed(summary(fact.xtabs))
 }
 
-describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
+describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F,smooth=F) {
   two.level = is.two.level.factor(x$Value)  
-  if(is.two.level.factor(x$Value)) {
+  if(two.level) {
     to.binomial = T
+  }
+  else {
+    to.binomial = F
   }
   
   res = plot.emrevents(x,m_a,
                        str.ylab=str.ylab,
                        facet.by.subject=T,
                        to.binomial=to.binomial,
-                       smooth=T,
+                       smooth=smooth,
                        stat.smooth=T,
                        mixed.model=mixed.model)
   
@@ -630,7 +642,7 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
                        str.ylab=str.ylab,
                        facet.by.subject=F,
                        to.binomial=to.binomial,
-                       smooth=T,
+                       smooth=smooth,
                        stat.smooth=T,
                        mixed.model=mixed.model)
   
@@ -660,10 +672,12 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F) {
 describe.choc.emr <- function(m_a,mixed.model=F) {
   events = load.and.align.choc.emr.data("emr.2015-05-15/microbiome_ce.encod.csv",m_a$attr)
   make.global(events)
+  
   y = extract.by.type.emrevents(events,"Fever",round.into.days=T)
   describe.emrevents(y,m_a=m_a,str.ylab="Fever", mixed.model=mixed.model) 
+  
   y = extract.by.type.emrevents(events,"Diarrhea",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="Diarrhea") 
+  describe.emrevents(y,m_a=m_a,str.ylab="Diarrhea", mixed.model=mixed.model) 
   
   y = extract.by.type.emrevents(events,"Neutropenia",round.into.days=T)
   describe.emrevents(y,m_a=m_a,str.ylab="Neutropenia", mixed.model=mixed.model) 
@@ -727,10 +741,10 @@ gen.tasks.choc <- function() {
   task0 = within( mgsat.16s.task.template, {
     
     #DEBUG:
-    #taxa.levels = c(2,3,4,5,6,"otu")
-    taxa.levels = c(2)
+    taxa.levels = c(2,3,4,5,6,"otu")
+    #taxa.levels = c(2,4,6,"otu")
     
-    norm.method = "prop"
+    norm.method = "ihs.prop"
     
     descr = "All samples, no aggregation"
     
@@ -803,8 +817,9 @@ gen.tasks.choc <- function() {
     
     test.counts.task = within(test.counts.task, {
       
-      do.ordination=F
-      do.network.features.combined=F
+      do.ordination=T
+      do.network.features.combined=T
+      #do.divrich = c()
       
       count.filter.feature.options = within(list(), {
         drop.unclassified=T
@@ -844,6 +859,12 @@ gen.tasks.choc <- function() {
         }
       })
       
+      divrich.task = within(divrich.task,{
+        do.beta = F
+        do.accum = F
+        do.incidence = F
+      })
+            
       genesel.task = within(genesel.task, {
         ## use common m_a.norm
         norm.count.task = NULL
@@ -894,7 +915,7 @@ gen.tasks.choc <- function() {
   
   task1 = within( task0, {
     
-    descr = "All samples (up to Sampling.Visit 4), no aggregation"    
+    descr = "All samples, no aggregation, only visualization"    
     
     #taxa.levels = c(2)
     
@@ -1009,7 +1030,7 @@ gen.tasks.choc <- function() {
       do.deseq2 = T
       do.adonis = T
       do.genesel = T
-      do.stabsel = F
+      do.stabsel = T
       do.glmer = F
       do.plot.profiles.abund=T
       do.heatmap.abund=T
@@ -1387,9 +1408,24 @@ gen.tasks.choc <- function() {
     })
     
   })
+
   
-  return (list(task1))
-  return (list(task1,task2,task2.1,task3,task3.1,task4))
+  task4.infl.up = task4
+  task4.infl.up$get.taxa.meta.aggr = function(m_a) { 
+    m_a = task4$get.taxa.meta.aggr(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$Study.Stage <= "St.3_[25.6,83.2)"))
+    return(m_a)
+  }
+
+  task4.infl.down = task4
+  task4.infl.down$get.taxa.meta.aggr = function(m_a) { 
+    m_a = task4$get.taxa.meta.aggr(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$Study.Stage >= "St.3_[25.6,83.2)"))
+    return(m_a)
+  }
+    
+  #return (list(task1))
+  return (list(task1,task2,task2.1,task3,task3.1,task4,task4.infl.up,task4.infl.down))
 }
 
 
@@ -1452,7 +1488,7 @@ source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"rolling_window_irreg.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 ## set incremental.save=T only for debugging or demonstration runs - it forces 
 ## report generation after adding every header section, thus slowing down
