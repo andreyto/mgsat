@@ -70,6 +70,45 @@ summary.meta.diet <- function(m_a) {
   
 }
 
+
+new_ordination.task <- function(main.meta.var,norm.method) {
+  if(norm.method=="prop") {
+    ord.method = "CCA"
+  }
+  else {
+    ord.method = "RDA"
+  }
+  within(mgsat.16s.task.template$test.counts.task$ordination.task, {
+    distance="euclidean"
+    ord.tasks = list(
+      list(
+        ordinate.task=list(
+          method=ord.method
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      ),
+      list(
+        ordinate.task=list(
+          method=ord.method,
+          formula=main.meta.var
+          ##other arguments to phyloseq:::ordinate
+        ),
+        plot.task=list(
+          type="samples",
+          color=main.meta.var
+          ##other arguments to phyloseq:::plot_ordination
+        )
+      )          
+    )
+  })            
+}
+
+
 ## This function must generate a list with analysis tasks
 
 gen.tasks.diet <- function() {
@@ -77,9 +116,11 @@ gen.tasks.diet <- function() {
   task0 = within( mgsat.16s.task.template, {
     
     taxa.levels = c(2,4,6,"otu")
-    #taxa.levels = c(2)
+    #taxa.levels = c(6)
     
     descr = "All samples, no aggregation, no tests here, only plots"
+    
+    main.meta.var = "Sample.type"    
     
     read.data.task = within(read.data.task, {
       taxa.summary.file = "example_taxa.summary.file"
@@ -106,6 +147,9 @@ gen.tasks.diet <- function() {
     summary.meta.method=summary.meta.diet
     
     test.counts.task = within(test.counts.task, {
+      
+      do.ordination=T
+      do.network.features.combined=T      
       
       count.filter.feature.options = within(list(), {
         min_quant_mean_frac=0.25
@@ -139,6 +183,17 @@ gen.tasks.diet <- function() {
         stand.show="range"
         cluster.row.cuth=10
       })
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        hmap.width=1000
+        hmap.height=hmap.width*0.8
+        attr.annot.names=c(main.meta.var)
+        clustering_distance_rows="pearson"
+        km.abund=0
+        km.diversity=0
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")      
       
     })
     
@@ -191,6 +246,12 @@ gen.tasks.diet <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c("Sample.type","visit","Drug.Before.Diet")
       })
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var)
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")      
       
     })
     
@@ -270,6 +331,12 @@ gen.tasks.diet <- function() {
       heatmap.abund.task = within(heatmap.abund.task,{
         attr.annot.names=c(main.meta.var,"age.quant")
       })
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var)
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")            
       
     })
     
@@ -426,6 +493,13 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var,"Drug.Before.Diet")
       })
       
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var)
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")      
+      
+      
       extra.method.task = within(extra.method.task, {
         
         func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
@@ -547,6 +621,12 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var,"Drug.Before.Diet")
       })
       
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var)
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")            
+      
     })
     
   })
@@ -562,8 +642,6 @@ options(mc.cores=4)
 options(boot.ncpus=4)
 ## parallel backend
 options(boot.parallel="snow")
-library("BiocParallel")
-register(SnowParam(4))
 
 
 ## location of MGSAT code
@@ -581,9 +659,13 @@ source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
 ## loads dependency packages (which already must be installed)
 load_required_packages()
 
+library("BiocParallel")
+register(SnowParam(4))
+
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
+source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
 set_trace_options(try.debug=F)
