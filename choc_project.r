@@ -9,6 +9,20 @@ compute.has.sibling <- function(meta) {
   return (meta$FamilyID %in% fam.with.sibl$FamilyID)
 }
 
+compute.healthy.sibling.id <- function(meta) {
+  fam.healthy = ddply(meta,"FamilyID",summarise,
+                      HealthySubjectID = SubjectID[Sample.type=="sibling"][1],
+                      HealthySampleID = SampleID[Sample.type=="sibling"][1]
+                      )
+  
+  
+  fam.healthy = fam.healthy[!is.null(fam.healthy$HealthySubjectID),,drop=F]
+  
+  meta = join(meta,fam.healthy,by="FamilyID",type="left")
+  rownames(meta) = meta$SampleID
+  meta
+}
+
 as.Date.date.time <- function(date,time,date.format="%Y-%m-%d",default.time="12:00") {
   stopifnot(length(date)==length(time))
   time = toupper(time)
@@ -251,11 +265,14 @@ summary.meta.choc <- function(m_a) {
     report$add.printed(summary(fact.xtabs))
   }
   
-  with(meta,{
+  with(meta[meta$Sampling.Visit==1,],{
     report$add.printed(summary(aov(age~Sample.type)),
-                       caption="ANOVA for age and sample type")
+                       caption="ANOVA for age and sample type at visit 1")
+    report$add.table(ddply(meta,"Sample.type",summarise,
+          median.age=median(age), mean.age=mean(age)),
+          caption="Summary for age and sample type at visit 1")
     report$add(qplot(Sample.type,age,geom="violin"),
-               caption="Violin plot for age and sample type")
+               caption="Violin plot for age and sample type at visit 1")
   })
   
   with(meta,{
@@ -440,6 +457,35 @@ extract.by.type.emrevents <- function(x,name,round.into.days=F,round.aggr.fun=NU
   return (y)
 }
 
+aggr.with.biome.in.window.emrevents <- function(x,biom.attr,window=7) {
+  x$Days.In.Therapy.Emr = x$Days.In.Therapy
+  x$Days.In.Therapy = NULL
+  x$Value.Emr = x$Value
+  x$Value = NULL
+  old.nrow = nrow(biom.attr)
+  y = merge(biom.attr,x,by="SubjectID",all.x=T)
+  keys = c("SubjectID","Days.In.Therapy")
+  if(is.two.level.factor(y$Value.Emr)) {
+    lev = get.presence.level(x$Value.Emr)
+    y = ddply(y,keys,here(summarise),
+              Value.Emr.Pos=sum(Value.Emr==lev & abs(Days.In.Therapy - Days.In.Therapy.Emr)<window,na.rm=T),
+              Value.Emr.Neg=sum(Value.Emr!=lev & abs(Days.In.Therapy - Days.In.Therapy.Emr)<window,na.rm=T))
+  }
+  else if(is.numeric(y$Value.Emr)) {
+    y = ddply(y,keys,here(summarise),
+              Value.Emr.Mean=mean(Value.Emr[abs(Days.In.Therapy - Days.In.Therapy.Emr)<window],na.rm=T))    
+  }
+  else {
+    stop("Unsupported variable type")
+  }
+  stopifnot(nrow(y)==old.nrow)
+  y = merge(biom.attr,y,by=keys)
+  stopifnot(nrow(y)==old.nrow)
+  rownames(y) = y$SampleID
+  y = y[rownames(biom.attr),]
+  y
+}
+
 join.with.biom.attr.emrevents <- function(x,biom.attr) {
   biom.attr = biom.attr[!is.na(biom.attr$Sampling.Visit) & biom.attr$Sampling.Visit==1,]
   stopifnot(!any(duplicated(biom.attr$SubjectID)))
@@ -545,7 +591,14 @@ plot.emrevents <- function(x,m_a,str.ylab=NULL,facet.by.subject=T,to.binomial=F,
     alpha.data = 1 
   }
   if(jitter) {
-    p = p + geom_jitter(position = position_jitter(height = .03),color=color.data,alpha=alpha.data)
+    if(is.numeric(x$Value)) {
+      y.range = max(x$Value) - min(x$Value)
+      y.jit = y.range * 0.02
+    }
+    else {
+      y.jit = 0.03
+    }
+    p = p + geom_jitter(position = position_jitter(height = y.jit,width=0),color=color.data,alpha=alpha.data)
   }
   else {
     p = p + geom_point(color=color.data,alpha=alpha.data)
@@ -669,31 +722,41 @@ describe.emrevents <- function(x,m_a,str.ylab,mixed.model=F,smooth=F) {
   
 }
 
-describe.choc.emr <- function(m_a,mixed.model=F) {
+describe.choc.emr <- function(m_a,mixed.model=F,describe=T) {
   events = load.and.align.choc.emr.data("emr.2015-05-15/microbiome_ce.encod.csv",m_a$attr)
   make.global(events)
   
+  res = list()
+  
   y = extract.by.type.emrevents(events,"Fever",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="Fever", mixed.model=mixed.model) 
+  res$Fever = y
+  if(describe) describe.emrevents(y,m_a=m_a,str.ylab="Fever", mixed.model=mixed.model) 
   
   y = extract.by.type.emrevents(events,"Diarrhea",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="Diarrhea", mixed.model=mixed.model) 
+  res$Diarrhea = y
+  if(describe) describe.emrevents(y,m_a=m_a,str.ylab="Diarrhea", mixed.model=mixed.model) 
   
   y = extract.by.type.emrevents(events,"Neutropenia",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="Neutropenia", mixed.model=mixed.model) 
+  res$Neutropenia = y
+  if(describe) describe.emrevents(y,m_a=m_a,str.ylab="Neutropenia", mixed.model=mixed.model) 
   
   y = extract.by.type.emrevents(events,"C.Diff",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="C.Diff", mixed.model=mixed.model)   
+  res$C.Diff = y
+  if(describe) describe.emrevents(y,m_a=m_a,str.ylab="C.Diff", mixed.model=mixed.model)   
   
   y = extract.by.type.emrevents(events,"BMI",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="BMI", mixed.model=mixed.model)   
+  res$BMI = y
+  if(describe) describe.emrevents(y,m_a=m_a,str.ylab="BMI", mixed.model=mixed.model)   
   
   y = extract.by.type.emrevents(events,"Other.Infections.Test",round.into.days=T)
-  describe.emrevents(y,m_a=m_a,str.ylab="Other.Infections.Test", mixed.model=mixed.model)   
+  res$Other.Infections.Test = y
+  if(describe) describe.emrevents(y,m_a=m_a,str.ylab="Other.Infections.Test", mixed.model=mixed.model)   
+  
   y.raw = extract.by.type.emrevents(events,"Other.Infections.Test",round.into.days=F)
   y.raw.aggr = binary.aggregate.by.presence.emrevents(y.raw,c("SubjectID","Name.Descr"),1)
   xtabs.report("~Name.Descr+Value",y.raw.aggr)
-  #return (y)
+  
+  return (res)
 }
 
 new_ordination.task <- function(main.meta.var,norm.method) {
@@ -734,6 +797,122 @@ new_ordination.task <- function(main.meta.var,norm.method) {
 }
 
 
+norm.by.sibl <- function(m_a,dist.metr="euclidean",aggr.sibl=F) {
+  
+  m_a$attr = compute.healthy.sibling.id(m_a$attr)
+  stopifnot(all(rownames(m_a$count)==rownames(m_a$attr)))
+  
+  m_a = subset.m_a(m_a,subset=(!is.na(m_a$attr$HealthySubjectID)))
+  
+  ## the lines below would test invariants for debugging
+  #dist.metr="euclidean"
+  #m_a$count[,"Bacteroidetes"] = m_a$count[,"Bacteroidetes"] + as.numeric(m_a$attr$FamilyID)*10
+  #m_a$count[,] = as.numeric(m_a$attr$FamilyID)*10 + ifelse(m_a$attr$Sample.type=="patient",1,0)
+  #m_a = subset.m_a(m_a,select.count=c("Bacteroidetes"))
+  
+  if(aggr.sibl) {
+    m_a$attr = within(m_a$attr, {DistRefID = ifelse(Sample.type=="sibling","RefGroup",as.character(SampleID))})
+    m_a = aggregate.by.meta.data.m_a(m_a,
+                                           group_col="DistRefID",
+                                           count_aggr=mean,
+                                           attr_aggr=NULL,
+                                           group_col_result_name="SampleID") 
+    m_a$attr$DistRefID = "RefGroup"
+    RefID = m_a$attr$DistRefID
+  }
+  else {
+    RefID = m_a$attr$HealthySampleID
+  }
+  
+  dist.ref = dist.to.reference(m_a$count,RefID,dist.metr,drop.ref=T,drop.na=T)
+  count = contrast.to.reference(m_a$count,RefID,drop.ref=T)
+  m_a = subset.m_a(m_a,subset=rownames(m_a$attr) %in% rownames(count))
+  stopifnot(all(rownames(m_a$count) == rownames(count)))
+  m_a$count = count
+  stopifnot(all(rownames(m_a$attr)==names(dist.ref)))
+  stopifnot(length(dist.ref) > 0 && all(m_a$attr$Sample.type=="patient"))
+  
+  m_a$attr$Distance.To.Sibling = dist.ref
+  m_a
+}
+
+mixed.model.emr.phyla <- function(m_a,window=15,include.time=T,do.mixed=T) {
+  report.section = report$add.header("Modeling association with EMR responses",
+                                     section.action="push", sub=T)      
+  require(lme4)
+  emr = describe.choc.emr(m_a,mixed.model=F,describe=F)
+  emr.vars = c("Fever","Neutropenia","C.Diff","Diarrhea","Other.Infections.Test")
+  resp = list()
+  pred = list()
+  pval = list()
+  i_test = 1
+  for(emr.var in emr.vars) {
+    report$add.header(sprintf("Mixed models for EMR response %s",emr.var))
+    report$push.section(report.section)
+    
+    attr = aggr.with.biome.in.window.emrevents(emr[[emr.var]],biom.attr=m_a$attr,window=window)
+    stopifnot(rownames(attr)==rownames(m_a$count))
+    count = decostand(m_a$count,method = "standardize",2)
+    full.attr = cbind(attr,count)
+    if(do.mixed)
+    for(feature in colnames(m_a$count)) {
+      report$add.header(sprintf("Mixed models for EMR response %s and predictor %s",emr.var,feature))
+      report$push.section(report.section)
+
+      tryCatchAndWarn({ 
+        if(include.time) {
+          gm = glmer(as.formula(sprintf("cbind(Value.Emr.Pos,Value.Emr.Neg) ~ 1 + Days.In.Therapy + %s + (1|SubjectID) + (0+Days.In.Therapy | SubjectID) + (0+%s| SubjectID)",feature,feature)), data=full.attr, family="binomial")
+        }
+        else {
+          gm = glmer(as.formula(sprintf("cbind(Value.Emr.Pos,Value.Emr.Neg) ~ 1 + %s + (1|SubjectID) + (0+%s| SubjectID)",feature,feature)), data=full.attr, family="binomial")
+        }
+      report$add.printed(summary(gm))
+      require(arm)
+      report$add(binnedplot(predict(gm,type="response",re.form=NULL),
+                            resid(gm,type="response"),
+                            xlab="Expected Values", ylab="Average residual"),
+                 caption="Binned plot with random effects")
+      report$add(plot(gm),caption="Residuals vs expected values")
+      resp[[i_test]] = emr.var
+      pred[[i_test]] = feature
+      pval[[i_test]] = summary(gm)$coefficients[,"Pr(>|z|)"][feature]
+      i_test = i_test + 1
+      })
+      report$pop.section()
+    }
+    report$pop.section()
+    if(F) {
+      
+    report$add.header(sprintf("Stability selection for EMR response %s",emr.var))
+    report$push.section(report.section)
+    
+    m_a.s = m_a
+    m_a.s$count = count
+    m_a.s$attr = attr
+    stabsel.report(m_a.s,
+                   resp.attr=c("Value.Emr.Neg","Value.Emr.Pos"),
+                   fitfun="glmnet.lasso",
+                   parfitfun="cv.glmnet.alpha",
+                   args.fitfun = list(
+                     family="binomial",
+                     standardize=T                                        
+                   ),
+                   args.stabsel = list(
+                     PFER=0.05,
+                     sampling.type="SS",
+                     assumption="r-concave",
+                     q=NULL,
+                     B=200
+                   ))
+    report$pop.section()  
+    }    
+  }
+  res = data.frame(resp=unlist(resp),pred=unlist(pred),pval=unlist(pval),padj=p.adjust(unlist(pval),"BH"))
+  res = res[order(res$pval),]
+  report$add.table(res,caption="Summary results for mixed models")
+  report$pop.section()  
+}
+
 ## This function must generate a list with analysis tasks
 
 gen.tasks.choc <- function() {
@@ -742,7 +921,7 @@ gen.tasks.choc <- function() {
     
     #DEBUG:
     taxa.levels = c(2,3,4,5,6,"otu")
-    #taxa.levels = c(2,4,6,"otu")
+    #taxa.levels = c(6)
     
     norm.method = "ihs.prop"
     
@@ -1010,9 +1189,9 @@ gen.tasks.choc <- function() {
     
     descr = "Patient/Sibling samples before therapy aggregated by SubjectID"
     
-    do.summary.meta = F
+    do.summary.meta = T
     
-    do.tests = T
+    do.tests = F
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
@@ -1327,6 +1506,8 @@ gen.tasks.choc <- function() {
   
   task4 = within( task0, {
     
+    #taxa.levels = c(2)
+    
     main.meta.var = "Days.In.Therapy"
     main.meta.var.bin = "Days.In.Therapy.Bin"
     
@@ -1338,7 +1519,7 @@ gen.tasks.choc <- function() {
     
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
-      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient"))
+      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient" & m_a$attr$Sampling.Visit.max >= 2))
       return(m_a)
     }
     
@@ -1352,6 +1533,20 @@ gen.tasks.choc <- function() {
       do.glmer = F
       do.plot.profiles.abund=T
       do.heatmap.abund=T
+      
+      do.ordination=F
+      do.network.features.combined=F
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      do.extra.method = taxa.levels
+      do.aggr.after.norm = taxa.levels
+      
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var.bin
@@ -1405,27 +1600,209 @@ gen.tasks.choc <- function() {
       
       ordination.task = new_ordination.task(main.meta.var,norm.method)
       
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests) {
+          mixed.model.emr.phyla(m_a.norm)
+          mixed.model = T
+          m_a = m_a.norm
+          attr = m_a$attr
+          count = m_a$count
+          for(taxa.name in c("Bacteroidetes","Firmicutes")) {
+            attr$Value = count[,taxa.name]
+            describe.emrevents(attr,m_a=m_a,str.ylab=taxa.name, mixed.model=mixed.model) 
+          }
+        }
+        
+      })
+      
+      
     })
     
   })
 
   
-  task4.infl.up = task4
-  task4.infl.up$get.taxa.meta.aggr = function(m_a) { 
-    m_a = task4$get.taxa.meta.aggr(m_a)
-    m_a = subset.m_a(m_a,subset=(m_a$attr$Study.Stage <= "St.3_[25.6,83.2)"))
-    return(m_a)
-  }
-
-  task4.infl.down = task4
-  task4.infl.down$get.taxa.meta.aggr = function(m_a) { 
-    m_a = task4$get.taxa.meta.aggr(m_a)
-    m_a = subset.m_a(m_a,subset=(m_a$attr$Study.Stage >= "St.3_[25.6,83.2)"))
-    return(m_a)
-  }
+  
+  
+  gen.split.time.tasks <- function(task) {
+  
+  stage.split = "St.3_[25.6,83.2)"
     
-  #return (list(task1))
-  return (list(task1,task2,task2.1,task3,task3.1,task4,task4.infl.up,task4.infl.down))
+  task.infl.up = task
+  task.infl.up$get.taxa.meta.aggr = function(m_a) { 
+    m_a = task$get.taxa.meta.aggr(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$Study.Stage <= stage.split))
+    return(m_a)
+  }
+  task.infl.up$descr = paste(task.infl.up$descr,"time up to",stage.split,"including")
+
+  task.infl.down = task
+  task.infl.down$get.taxa.meta.aggr = function(m_a) { 
+    m_a = task$get.taxa.meta.aggr(m_a)
+    m_a = subset.m_a(m_a,subset=(m_a$attr$Study.Stage >= stage.split))
+    return(m_a)
+  }
+  task.infl.down$descr = paste(task.infl.down$descr,"time from ",stage.split,"including")
+
+  return (list(task.infl.up,task.infl.down))
+  
+  }
+  
+  task4.sib = within( task4, {
+    
+    #taxa.levels = c(2)
+    
+    main.meta.var = "Days.In.Therapy"
+    main.meta.var.bin = "Days.In.Therapy.Bin"
+    
+    descr = "Patients samples over time in study with sibling comparison"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      return(m_a)
+    }
+    
+    test.counts.task = within(test.counts.task, {
+      
+      #do.divrich = c()
+      do.deseq2 = T
+      do.adonis = T
+      do.genesel = F
+      do.stabsel = T
+      do.glmer = F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+
+      do.ordination=F
+      do.network.features.combined=F
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
+      do.extra.method = taxa.levels
+      do.aggr.after.norm = taxa.levels
+      
+      divrich.task = within(divrich.task,{
+        group.attr = main.meta.var.bin
+        counts.glm.task = within(counts.glm.task,{
+          formula.rhs = main.meta.var
+        })
+        do.plot.profiles = T
+      })
+      
+      deseq2.task = within(deseq2.task, {
+        formula.rhs = sprintf("SubjectID+%s",main.meta.var)
+      })
+      
+      genesel.task = within(genesel.task, {
+        group.attr = main.meta.var
+      })
+      
+      stabsel.task = within(stabsel.task, {
+        resp.attr=main.meta.var
+        args.fitfun = within(args.fitfun, {
+          family="gaussian"
+          standardize=T                                     
+        })
+      })
+      
+      adonis.task = within(adonis.task, {
+        
+        tasks = list(
+          
+          list(formula.rhs=main.meta.var,
+               strata="SubjectID",
+               descr=sprintf("Association with %s paired by subject",main.meta.var))
+        )
+        
+      })
+      
+      plot.profiles.task = within(plot.profiles.task, {
+        id.vars.list = list(c(),c(main.meta.var.bin),c(main.meta.var.bin,"Antibiotic.Before.Therapy"))
+        feature.meta.x.vars=c(main.meta.var)
+        do.profile=F
+        do.feature.meta=F
+      })
+      
+      plot.profiles.abund.task = within(plot.profiles.abund.task, {
+        norm.count.task = NULL        
+      })
+      
+      heatmap.abund.task = within(heatmap.abund.task,{
+        attr.annot.names=c(main.meta.var,"Antibiotic.Before.Therapy")
+      })
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var.bin)
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method)
+      
+      aggr.after.norm.task = within(aggr.after.norm.task, {
+        
+        func = function(m_a,m_a.norm,m_a.abs,res.tests,norm.count.task.extra) {
+          if(norm.method=="prop") {
+            dist.metr = "bray"
+          }
+          else {
+            dist.metr = "euclidean"
+          }
+          m_a.norm = norm.by.sibl(m_a.norm,dist.metr=dist.metr)
+          m_a.norm = subset.m_a(m_a.norm,subset=(m_a.norm$attr$Sampling.Visit.max >= 2))          
+          ret = list()
+          ret$m_a.norm = m_a.norm
+          ret$m_a = m_a.norm
+          ret$m_a.abs = m_a.norm
+          ret
+        }
+        norm.count.task.extra = within(norm.count.task, {
+          #method="norm.prop"
+          #drop.features = list()
+        })
+        
+      })
+      
+      extra.method.task = within(extra.method.task, {
+        
+        func = function(m_a,m_a.norm,res.tests) {
+          tryCatchAndWarn({ 
+          mixed.model.emr.phyla(m_a.norm)
+          })
+          mixed.model = T
+          m_a = m_a.norm
+          attr = m_a$attr
+          count = m_a$count
+          attr$Value = attr$Distance.To.Sibling
+          tryCatchAndWarn({ 
+          describe.emrevents(attr,m_a=m_a,str.ylab="Distance.To.Sibling", mixed.model=mixed.model) 
+          })
+          for(taxa.name in colnames(count)) {
+            attr$Value = count[,taxa.name]
+            tryCatchAndWarn({ 
+            describe.emrevents(attr,m_a=m_a,str.ylab=taxa.name, mixed.model=mixed.model) 
+            })
+          }
+        }
+      
+      })
+      
+      
+    })
+    
+  })
+  
+  
+  #return (list(gen.split.time.tasks(task4)[[1]]))
+  return (list(task4,gen.split.time.tasks(task4)[[1]],task4.sib,gen.split.time.tasks(task4.sib)[[1]]))
+  return (c(list(task1,task2,task2.1,task3,task3.1,task4),gen.split.time.tasks(task4),gen.split.time.tasks(task4.sib)))
 }
 
 
@@ -1462,8 +1839,6 @@ options(mc.cores=4)
 options(boot.ncpus=4)
 ## parallel backend
 options(boot.parallel="snow")
-library("BiocParallel")
-register(SnowParam(4))
 
 
 ## location of MGSAT code
@@ -1480,6 +1855,9 @@ source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
 
 ## loads dependency packages (which already must be installed)
 load_required_packages()
+
+library("BiocParallel")
+register(SnowParam(4))
 
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)

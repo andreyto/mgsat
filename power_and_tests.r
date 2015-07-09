@@ -562,6 +562,71 @@ dist.js <- function(x, offset=.Machine$double.eps, ...) {
   return(resultsMatrix) 
 }
 
+names.to.ind <- function(x,ind) {
+  if(!is.numeric(ind)) {
+    ind = as.character(ind)
+    ind.names = seq(nrow(x))
+    names(ind.names) = rownames(x)
+    ind = ind.names[ind]
+  }  
+  ind
+}
+
+## Take sample x feature matrix and id.ref that selects 
+## "reference" samples in that matrix, and return distance
+## to those samples from the remaining samples.
+## id.ref can be either a scalar, in which case a distance to
+## that single sample from all remaining samples is computed,
+## or a vector of length nrow(x), with each element pointing to
+## some (possibly repeating elements of x.
+## id.ref elements are excluded from the returned vector.
+## TODO: currently a square matrix all-against-all is computed and then
+## subset is returned. It should be done instead only for requested
+## combinations.
+dist.to.reference <- function(x,id.ref,dist.method,drop.ref=T,drop.na=T) {
+  if(dist.method=="js") {
+    ##Jensen-Shannon
+    dist.o = dist.js(x)
+  }
+  else if(dist.method=="hell") {
+    ##Hellinger
+    dist.o = vegdist(sqrt(x),method = "euclidean")/sqrt(2)
+  }
+  else {
+    dist.o = vegdist(x,method = dist.method)
+  }
+  dist.o = as.matrix(dist.o)
+  id.ref = names.to.ind(x,id.ref) 
+  ## index will be a two column matrix
+  ind = as.matrix(data.frame(seq(nrow(x)),id.ref))
+  res = dist.o[ind]
+  names(res) = rownames(x)
+  if(drop.ref) {
+    res = res[-id.ref[!is.na(id.ref)]]
+  }
+  if(drop.na) {
+    res = res[!is.na(res)]
+  }
+  res
+}
+
+## Similar to dist.to.reference but returns a matrix of profile-profile subtractions (contrasts)
+contrast.to.reference <- function(x,id.ref,drop.ref=T) {
+  id.ref = names.to.ind(x,id.ref)
+  if(length(id.ref)==1 && nrow(x)>1) {
+    id.ref = rep(id.ref,nrow(x))
+  }
+  x.ref = x[id.ref,]
+  res = x - x.ref
+  rownames(res) = rownames(x)
+  if(drop.ref) {
+    res = res[-id.ref[!is.na(id.ref)],]
+  }
+  res
+}
+
+
+
 ## subset method that will use the same subset argument on all data objects in m_a
 subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL,na.index.is.false=T) {
   
@@ -3276,6 +3341,7 @@ mgsat.16s.task.template = within(list(), {
     do.network.features.combined=T
     do.select.samples=c()
     do.extra.method=c()
+    do.aggr.after.norm=c()
     
     feature.ranking = "stabsel"
     
@@ -3460,6 +3526,12 @@ mgsat.16s.task.template = within(list(), {
     
     extra.method.task = within(list(), {
       func = function(m_a,m_a.norm,res.tests,...) {}
+      ##possibly other arguments to func()
+    })
+    
+    aggr.after.norm.task = within(list(), {
+      func = function(m_a,m_a.norm,m_a.abs,res.tests,...) 
+      {return(list(m_a=m_a,m_a.norm=m_a.norm,m_a.abs=m_a.abs))}
       ##possibly other arguments to func()
     })
     
@@ -3689,6 +3761,7 @@ proc.project <- function(
           test.counts.task.call$do.select.samples = (taxa.level %in% test.counts.task.call$do.select.samples)
           test.counts.task.call$do.divrich = (taxa.level %in% test.counts.task.call$do.divrich)
           test.counts.task.call$do.extra.method = (taxa.level %in% test.counts.task.call$do.extra.method)
+          test.counts.task.call$do.aggr.after.norm = (taxa.level %in% test.counts.task.call$do.aggr.after.norm)
           
           res.tests = tryCatchAndWarn(
             do.call(test.counts.project,
@@ -4247,7 +4320,7 @@ stabsel.report <- function(m_a,
   require(stabs)
   report$add.header(paste(
     "Stability selection analysis for response (",
-    resp.attr,
+    paste(resp.attr,collapse=","),
     ")"
   )
   )
@@ -4734,6 +4807,7 @@ test.counts.project <- function(m_a,
                                 do.ordination=T,
                                 do.network.features.combined=T,
                                 do.extra.method=F,
+                                do.aggr.after.norm=F,
                                 count.filter.feature.options=NULL,
                                 norm.count.task=NULL,
                                 stabsel.task=NULL,
@@ -4752,7 +4826,8 @@ test.counts.project <- function(m_a,
                                 alpha=0.05,
                                 do.return.data=T,
                                 feature.ranking="stabsel",
-                                extra.method.task = NULL
+                                extra.method.task = NULL,
+                                aggr.after.norm.task = NULL
 ) {
   
   report.section = report$add.header("Data analysis",section.action="push")
@@ -4838,6 +4913,23 @@ test.counts.project <- function(m_a,
                                 res.tests=res,
                                 descr="data analysis (unless modified by specific methods)",
                                 norm.count.task)
+
+  if(do.aggr.after.norm && !is.null(aggr.after.norm.task)) {
+    aggr.after.norm.func = aggr.after.norm.task$func
+    aggr.after.norm.task$func = NULL
+    res.aan = do.call(aggr.after.norm.func,
+                               c(list(m_a=m_a,
+                                      m_a.norm=m_a.norm,
+                                      m_a.abs=m_a.abs,
+                                      res.tests=res),
+                                 aggr.after.norm.task
+                               )
+    )
+    m_a = res.aan$m_a
+    m_a.norm = res.aan$m_a.norm
+    m_a.abs = res.aan$m_a.abs
+  }
+  
   
   if(do.genesel) {
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,

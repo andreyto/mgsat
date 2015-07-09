@@ -161,7 +161,7 @@ discrete.distro.dissim.report <- function(m_a,m_a.norm,reference.rowid,distro.ty
     ## where it is 1 minus an integral of a product of densities of two variables.
     ## In the discreet case, the rational is that sqrt(p) is a unit vector in L2 norm,
     ## and the distance is defined as Euclidian distance between sqrt(p).
-    dist.m = as.matrix(vegdist(sqrt(m_a.norm$count),method = "euclidian")/sqrt(2))
+    dist.m = as.matrix(vegdist(sqrt(m_a.norm$count),method = "euclidean")/sqrt(2))
     caption="Hellinger dissimilarity"
     report$add.table(dist.m,show.row.names=T,
                      caption=caption)
