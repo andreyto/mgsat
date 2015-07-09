@@ -1534,16 +1534,6 @@ gen.tasks.choc <- function() {
       do.plot.profiles.abund=T
       do.heatmap.abund=T
       
-      do.ordination=F
-      do.network.features.combined=F
-      do.divrich = c()
-      do.deseq2 = F
-      do.adonis = F
-      do.genesel = F
-      do.stabsel = F
-      do.glmer = F
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
       do.extra.method = taxa.levels
       do.aggr.after.norm = taxa.levels
       
@@ -1801,8 +1791,8 @@ gen.tasks.choc <- function() {
   
   
   #return (list(gen.split.time.tasks(task4)[[1]]))
-  return (list(task4,gen.split.time.tasks(task4)[[1]],task4.sib,gen.split.time.tasks(task4.sib)[[1]]))
-  return (c(list(task1,task2,task2.1,task3,task3.1,task4),gen.split.time.tasks(task4),gen.split.time.tasks(task4.sib)))
+  #return (list(task4,gen.split.time.tasks(task4)[[1]],task4.sib,gen.split.time.tasks(task4.sib)[[1]]))
+  return (c(list(task1,task2,task2.1,task3,task3.1,task4,task4.sib,),gen.split.time.tasks(task4),gen.split.time.tasks(task4.sib)))
 }
 
 
