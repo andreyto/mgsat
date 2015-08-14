@@ -88,6 +88,7 @@ install_required_packages <- function() {
   install.packages(vanilla_packages)
   source("http://bioconductor.org/biocLite.R")
   biocLite(bio_packages)
+  library(devtools) ## for install_github
   for(pkg in vanilla_packages_github) {
     install_github(pkg)
   }
