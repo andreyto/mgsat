@@ -67,6 +67,9 @@ str_blank <- function(x) {
   return (nchar(gsub("\\s","",x))==0)
 }
 
+## convert accented characters to regular ASCII equivalents
+str_to_ascii <- function(x) iconv(x,to="ASCII//TRANSLIT")
+
 ## replace oldnames with newnames in vector allnames
 ## to be used when allnames = names(data.frame)
 replace.col.names<-function(allnames,oldnames,newnames,do.checks=T) {
@@ -121,6 +124,26 @@ quantcut.ordered <- function(x,na.rm=T,...) {
     y = quantcut(x)
   }
   ordered(y)
+}
+
+
+missing.join.keys.report <- function(x,y,by,do.report=T,name.x="x",name.y="y",report.only.keys=F) {
+  require(dplyr)
+  x_y = anti_join(x,y,by=by)
+  if(report.only.keys) {
+  if(!is.null(names(by))) {
+    by_x = names(by)
+  }
+  else {
+    by_x = by
+  }
+  x_y = dplyr::count_(x_y,by_x,sort=T)
+  }
+  if(do.report) {
+    report$add.table(x_y,wrap.vals = T,skip.if.empty=T,
+                     caption=sprintf("Keys present in '%s' but missing from '%s'",name.x,name.y))
+  }
+  return(x_y)
 }
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
@@ -5012,7 +5035,7 @@ test.counts.project <- function(m_a,
   
   if (do.heatmap.abund) {
     
-    tryCatchAndWarn({
+    if(F) tryCatchAndWarn({
       do.call(heatmap.counts,
               c(list(m_a=m_a.norm),
                 heatmap.abund.task
@@ -5420,11 +5443,18 @@ heatmap.combined.report <- function(m_a,
                                     hmap.height=hmap.width*0.8,
                                     attr.annot.names=c(),
                                     clustering_distance_rows="pearson",
+                                    cluster_columns=T,
                                     km.abund=0,
                                     km.diversity=0,
-                                    show_row_names = F) {
+                                    show_row_names = F,
+                                    show_column_names = T,
+                                    max.n.columns=NULL) {
   require(fpc)
   require(cluster)
+  if(!is.null(max.n.columns)) {
+    max.n.columns = min(max.n.columns,ncol(m_a.norm$count))
+    m_a.norm$count = m_a.norm$count[,1:max.n.columns,drop=F]
+  }
   main.meta.var = NULL
   if(length(attr.annot.names)>0) {
     main.meta.var = attr.annot.names[[1]]
@@ -5436,8 +5466,9 @@ heatmap.combined.report <- function(m_a,
     split = pam(m_a.norm$count, k=km.abund, metric=clustering_distance_rows)$clustering
   }
   h = Heatmap(m_a.norm$count,name="Abundance",
-              cluster_columns=T,
-              show_row_names = show_row_names, 
+              cluster_columns=cluster_columns,
+              show_row_names = show_row_names,
+              show_column_names = show_column_names,
               clustering_distance_rows = clustering_distance_rows, 
               split=split,
               column_names_gp = gpar(fontsize = 8),

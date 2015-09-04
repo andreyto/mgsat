@@ -239,7 +239,7 @@ pandoc.as.printed.return <- function(x,attrs="") {
          '\n', repChar('`', 7), '\n')
 }
 
-pandoc.special.symb = "\\-\\[\\]`*_{}()#+!~"
+pandoc.special.symb = "\\-\\[\\]`*_{}()#+!~|"
 
 pandoc.escape.special <- function(x) {
   gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",
@@ -256,9 +256,9 @@ pandoc.link.verbatim.return <- function(url,text=NULL) {
 pandoc.anchor.return <- function(anchor,text) {
   anchor.tag = sprintf('<a name="%s"></a>',anchor)
   ret = sprintf("%s%s",
-               anchor.tag,
-               pandoc.link.verbatim.return(sprintf("#%s",anchor),
-                                  text))
+                anchor.tag,
+                pandoc.link.verbatim.return(sprintf("#%s",anchor),
+                                            text))
   return(ret)
 }
 
@@ -308,7 +308,7 @@ PandocAT$methods(initialize = function(
   dir.create(graph.dir, showWarnings = FALSE, recursive = TRUE)
   
   callSuper(author=author,title=title,...)
-
+  
 })
 
 ## private service method - should be called whenever an element is
@@ -455,6 +455,7 @@ PandocAT$methods(add.table = function(x,
                                       export.to.file=T,
                                       show.first.rows=200,
                                       show.first.cols=200,
+                                      skip.if.empty=F,
                                       ...) {
   if (wrap.caption && !is.null(caption)) {
     caption = pandoc.escape.special(caption)
@@ -463,10 +464,15 @@ PandocAT$methods(add.table = function(x,
   caption = .self$priv.format.caption(caption,type="table")
   
   if(is.null(x) || nrow(x)==0) {
-    if(!is.null(caption)) {
-      .self$add.p(caption)
+    if(!skip.if.empty) {
+      if(!is.null(caption)) {
+        .self$add.p(caption)
+      }
+      return(.self$add.p("Empty dataset"))
     }
-    return(.self$add.p("Empty dataset"))
+    else {
+      return(.self)
+    }
   }
   if(show.first.rows > 0) {
     if(show.first.rows >= nrow(x)) {
@@ -701,7 +707,7 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
   }
   
   write.el <- function(el,fp) {
-    el.str = pander.return(el$result)
+    el.str = pander_return(el$result)
     cat(paste(el.str, collapse = '\n'), 
         file = fp, append = TRUE)    
   }
@@ -714,7 +720,7 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
     
     #print(paste("Full section:",paste(section,collapse=" ")))
     #print(paste("Par section:",paste(section.par,collapse=" ")))
-          
+    
     if(length(section.par) > 0) {
       sub.path = section.par
     }
@@ -722,12 +728,12 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
       sub.path = NULL
     }
     fp.sub = make.file.name(name.base=fp,
-                              make.unique=F,
-                              dir=".",
-                              section.path=sub.path)
+                            make.unique=F,
+                            dir=".",
+                            section.path=sub.path)
     fp.sub.md = paste(fp.sub,".md",sep="")
     #print(paste("fp.sub=",fp.sub))
-
+    
     if(is.null(fp.all[[fp.sub.md]])) {
       cat(pandoc.title.return(.self$title, .self$author, .self$date), file = fp.sub.md)
     }    
@@ -751,13 +757,13 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
   
   for(out.format in out.formats.loc) {
     for(fp.sub.md in names(fp.all)) {
-    ## It would be nice to add `options="-s -S"` to support
-    ## Pandoc's subscript and suprscript extensions, but
-    ## this will entirely replace internal default options and
-    ## break TOC etc
-    cat(sprintf("Pandoc converting markdown file %s to %s format\n",fp.sub.md,out.format))
-    Pandoc.convert(fp.sub.md,format=out.format,open=F,footer=F,
-                   portable.html=portable.html.loc)
+      ## It would be nice to add `options="-s -S"` to support
+      ## Pandoc's subscript and suprscript extensions, but
+      ## this will entirely replace internal default options and
+      ## break TOC etc
+      cat(sprintf("Pandoc converting markdown file %s to %s format\n",fp.sub.md,out.format))
+      Pandoc.convert(fp.sub.md,format=out.format,open=F,footer=F,
+                     portable.html=portable.html.loc)
     }
   }
   
@@ -805,7 +811,7 @@ tmp.save <- function(report,out.file.loc,out.formats.loc,portable.html.loc,sort.
   }
   
   write.el <- function(el,fp) {
-    el.str = pander.return(el$result)
+    el.str = pander_return(el$result)
     el.str = gsub("_[","_\\[",el.str,fixed=T)
     cat(paste(el.str, collapse = '\n'), 
         file = fp, append = TRUE)    
@@ -827,9 +833,9 @@ tmp.save <- function(report,out.file.loc,out.formats.loc,portable.html.loc,sort.
       sub.path = NULL
     }
     fp.sub = report$make.file.name(name.base=fp,
-                            make.unique=F,
-                            dir=".",
-                            section.path=sub.path)
+                                   make.unique=F,
+                                   dir=".",
+                                   section.path=sub.path)
     fp.sub.md = paste(fp.sub,".md",sep="")
     #print(paste("fp.sub=",fp.sub))
     
