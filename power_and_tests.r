@@ -5418,16 +5418,23 @@ heatmap.t1d <- function(meta.data,attr.names,caption="Heatmap") {
   }
 }
 
-ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,...) {
+ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,width=NA,...) {
   n.h = length(attr.names)
+  if(!is.null(width)) {
+    if(is.na(width)) {
+      width = grid::unit(1.0,"lines")
+    }
+  }
   h = Heatmap(data[,attr.names[1],drop=F],name=attr.names[1],
               show_row_names = ifelse(n.h>1,F,show_row_names),
+              width = width,
               ...)
   n.h = n.h - 1
   if (n.h > 0) {
     for(attr.name in attr.names[2:length(attr.names)]) {
       h = h + Heatmap(data[,attr.name,drop=F],name=attr.name,
                       show_row_names = ifelse(n.h>1,F,show_row_names),
+                      width = width,
                       ...) 
       n.h = n.h - 1
     }
@@ -5461,10 +5468,14 @@ heatmap.combined.report <- function(m_a,
   }
   if(km.abund<1) {
     split = pamk(m_a.norm$count, metric=clustering_distance_rows)$pamobject$clustering
+    split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
   }
   else {
     split = pam(m_a.norm$count, k=km.abund, metric=clustering_distance_rows)$clustering
+    split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
   }
+  caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
+                         main.meta.var,split.descr)
   h = Heatmap(m_a.norm$count,name="Abundance",
               cluster_columns=cluster_columns,
               show_row_names = show_row_names,
@@ -5477,11 +5488,11 @@ heatmap.combined.report <- function(m_a,
                             m_a.norm$attr,
                             show_row_names=F,
                             row_names_gp = gpar(fontsize = 8))
-  report$add(h,caption="Clustered heatmap of normalized abundance values",
+  report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(main.meta.var)) {
     g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-    report$add(g.t)
+    report$add(g.t,caption = caption.g.test)
   }
   
   m_a.norm$attr$.Heatmap.Cluster.Split = split
@@ -5504,13 +5515,14 @@ heatmap.combined.report <- function(m_a,
                   show_row_names = F, 
                   clustering_distance_rows = "pearson", 
                   split=split,
-                  column_names_gp = gpar(fontsize = 8))
+                  column_names_gp = gpar(fontsize = 8),
+                  width=grid::unit(ncol(div),"lines"))
     h = h.d + h
-    report$add(h,caption="Clustered heatmap of of diversity and normalized abundance values",
+    report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
                width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
     if(!is.null(main.meta.var)) {
       g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-      report$add(g.t)
+      report$add(g.t,caption = caption.g.test)
     }
     m_a.norm$attr$.Heatmap.Cluster.Split = split
     m_a.norm$count = div
