@@ -1967,7 +1967,7 @@ plot.abund.meta <- function(m_a,
     ## Because of the above, we switch between two representations: vertical with
     ## coord_trans(y = "sqrt") and horizontal (flipped) with original linear coords
     aes_s = aes_string(x="feature",y=value.name,
-                       fill = fill,color = color)
+                       fill = fill,color = color,group = id.vars)
     gp = ggplot(dat, aes_s)
     
     if(geom == "bar") {
@@ -1994,10 +1994,16 @@ plot.abund.meta <- function(m_a,
     else if(geom == "jitter") {
       gp = gp + geom_jitter()
     }
-    else if(geom == "path") {
+    else if(geom == "line") {
+      #gp = gp + geom_point() + geom_path(aes_string(x="feature",y=value.name,
+      #                                               group=".record.id"))
+      gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="line")
+      
+      #show.samp.n = F
+    }
+    else if(geom == "line_obs") {
       gp = gp + geom_point() + geom_path(aes_string(x="feature",y=value.name,
                                                      group=".record.id"))
-      
       show.samp.n = F
     }
     else {
@@ -2732,6 +2738,7 @@ mgsat.divrich.report <- function(m_a,
                                  do.plot.profiles=T,
                                  do.incidence=T,
                                  do.abundance=T,
+                                 do.abundance.richness=F,
                                  do.beta=T,
                                  do.rarefy=T,
                                  do.accum=T,
@@ -2799,7 +2806,7 @@ mgsat.divrich.report <- function(m_a,
   }
   
   if(do.abundance) {
-    if(is.raw.count.data) {
+    if(do.abundance.richness && is.raw.count.data) {
       res$rich.counts = mgsat.richness.counts(m_a,n.rar.rep=n.rar.rep,
                                               do.rarefy=do.rarefy,
                                               filtered.singletons=filtered.singletons)
@@ -2824,8 +2831,11 @@ mgsat.divrich.report <- function(m_a,
                                                do.rarefy=do.rarefy,
                                                hill.args=list(evenness=div.task$evenness))
       if(do.plot.profiles) {
-        plot.profiles.task$show.profile.task$geoms = 
-          unique(c(plot.profiles.task$show.profile.task$geoms,"path"))
+        plot.profiles.task$show.profile.task = within(plot.profiles.task$show.profile.task,{
+          geoms = c("line","line_obs")
+          dodged=T
+          faceted=F
+        })
         do.call(plot.profiles,
                 c(list(m_a=list(count=div.counts$e,attr=m_a$attr),
                        feature.descr=sprintf("Abundance-based %s %s",
@@ -2850,7 +2860,7 @@ mgsat.divrich.report <- function(m_a,
       }
     }
     divrich.counts = cbind(res$div.counts[["diversity"]]$e,res$div.counts[["evenness"]]$e)
-    if(is.raw.count.data) {
+    if(do.abundance.richness && is.raw.count.data) {
       divrich.counts = cbind(divrich.counts,res$rich.counts$e)
     }
     
@@ -3428,6 +3438,7 @@ mgsat.16s.task.template = within(list(), {
       n.rar.rep=400
       is.raw.count.data=T
       filtered.singletons=T
+      do.abundance.richness=F
       group.attr = main.meta.var
       counts.glm.task = within(list(),{
         formula.rhs = main.meta.var
@@ -3537,7 +3548,7 @@ mgsat.16s.task.template = within(list(), {
       do.profile=T
       do.feature.meta=F
       show.profile.task=list(
-        ##geoms can be also c("dotplot","jitter","path")
+        ##geoms can be also c("dotplot","jitter","line","line_obs")
         geoms=c("bar_stacked","bar","violin","boxplot"),
         dodged=T,
         faceted=T,
