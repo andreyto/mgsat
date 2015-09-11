@@ -93,6 +93,12 @@ update.list <- function(x,y) {
   x
 }
 
+are.identical <- function(x,y) {
+  if(is.character(x)) x = get(x)
+  if(is.character(y)) y = get(y)
+  identical(x,y)
+}
+
 ## Return a copy of data frames or matrix with selected columns removed
 drop.columns <- function(df,drop_names=c()) {
   mask_col_ignore = colnames(df) %in% drop_names
@@ -1803,6 +1809,15 @@ order.levels <- function(lev,keys) {
   lev[order(keys,decreasing=T)]
 }
 
+split.by.total.levels.data.frame <- function(x) {
+  require(plyr)
+  cuprod = cumprod(colwise(function(y) length(levels(factor(y))))(x))
+  cuprod.max = cuprod[length(cuprod)][1,]
+  ind.split = which(cuprod >= (cuprod.max/2))[1]
+  colnam = colnames(x)
+  return(list(colnam[1:ind.split],colnam[(ind.split+1):length(colnam)]))
+}
+
 require(scales) # trans_new() is in the scales library
 signed_sqrt_trans = function() trans_new("signed_sqrt", function(x) sign(x)*sqrt(abs(x)), function(x) sign(x)*sqrt(abs(x)))
 
@@ -1896,6 +1911,24 @@ plot.abund.meta <- function(m_a,
     color=id.var.dodge
   }
   
+  make.facet.formula <- function(df,vars) {
+    if(length(vars) == 0) {
+      wr = NULL
+    }
+    else if (length(vars) == 1) {
+      wr = as.formula(paste("~",vars[1],sep=""))
+    }
+    else {
+      splits = split.by.total.levels.data.frame(df[,vars,drop=F])
+      wr = as.formula(paste(paste(splits[[2]],collapse = "+"),paste(splits[[1]],collapse = "+"),sep="~"))
+    }
+    wr
+  }
+  
+  facet.form = make.facet.formula(dat,id.vars.facet)
+  
+  show.samp.n = T
+  
   if(geom == "bar_stacked") {
     sqrt.scale = F
     aes_s = aes_string(x=".record.id",y=value.name,
@@ -1908,12 +1941,12 @@ plot.abund.meta <- function(m_a,
       wr = facet_null()
     }
     else if (length(id.vars.facet) == 1) {
-      wr = facet_grid(as.formula(paste("~",id.vars.facet[1],sep="")),
+      wr = facet_grid(facet.form,
                       drop=T,
                       scale="free_x", space = "free_x")
     }
     else {
-      wr = facet_grid(as.formula(paste(id.vars.facet[2],id.vars.facet[1],sep="~")),
+      wr = facet_grid(facet.form,
                       drop=T,margins=facet_grid.margins,
                       scale="free_x", space = "free_x")
     }
@@ -1955,6 +1988,18 @@ plot.abund.meta <- function(m_a,
     else if(geom == "boxplot") {
       gp = gp + geom_boxplot(fill=NA,na.value=NA,notch=F)
     }
+    else if(geom == "dotplot") {
+      gp = gp + geom_dotplot(binaxis = "y", stackdir = "center", binpositions="all")
+    }
+    else if(geom == "jitter") {
+      gp = gp + geom_jitter()
+    }
+    else if(geom == "path") {
+      gp = gp + geom_point() + geom_path(aes_string(x="feature",y=value.name,
+                                                     group=".record.id"))
+      
+      show.samp.n = F
+    }
     else {
       stop(paste("Unexpected parameter value: geom = ",geom))
     }
@@ -1977,10 +2022,10 @@ plot.abund.meta <- function(m_a,
       wr = facet_null()
     }
     else if (length(id.vars.facet) == 1) {
-      wr = facet_wrap(as.formula(paste("~",id.vars.facet[1],sep="")))
+      wr = facet_wrap(facet.form)
     }
     else {
-      wr = facet_grid(as.formula(paste(id.vars.facet[2],id.vars.facet[1],sep="~")),
+      wr = facet_grid(facet.form,
                       drop=T,margins=facet_grid.margins)
     }
     gp = gp + wr
@@ -2008,7 +2053,11 @@ plot.abund.meta <- function(m_a,
     facet.cnt$.n = paste("n =", facet.cnt$.n)
     #facet.cnt$y = facet.cnt$V2
     
-    if(stat_summary.fun.y!="identity") {
+    if(stat_summary.fun.y=="identity") {
+      show.samp.n = F
+    }
+    
+    if(show.samp.n) {
       gp = gp +
         geom_text(aes(x=.x, y=.y, label=.n), 
                   data=facet.cnt, 
@@ -2711,13 +2760,16 @@ mgsat.divrich.report <- function(m_a,
   rar.descr = " Counts are not rarefied."
   rar.descr.short = "No rarefication."
   if(is.raw.count.data && do.rarefy) {
-    rar.descr = sprintf(" Counts are rarefied to the lowest library size, abundance-based and
+    
+    n.rar = min(rowSums(m_a$count))
+  
+    rar.descr = sprintf(" Counts are rarefied to the lowest library size (%s), abundance-based and
                    incidence-based alpha diversity indices and richness estimates are computed
                    (if requested).
                    This is repeated multiple times (n=%s), and the results are averaged.
                    Beta diversity matrix is also computed by averaging over multiple 
                    rarefications.",
-                        n.rar.rep)
+                        n.rar, n.rar.rep)
     rar.descr.short = "With rarefication."
   }
   
@@ -2772,6 +2824,8 @@ mgsat.divrich.report <- function(m_a,
                                                do.rarefy=do.rarefy,
                                                hill.args=list(evenness=div.task$evenness))
       if(do.plot.profiles) {
+        plot.profiles.task$show.profile.task$geoms = 
+          unique(c(plot.profiles.task$show.profile.task$geoms,"path"))
         do.call(plot.profiles,
                 c(list(m_a=list(count=div.counts$e,attr=m_a$attr),
                        feature.descr=sprintf("Abundance-based %s %s",
@@ -3483,6 +3537,7 @@ mgsat.16s.task.template = within(list(), {
       do.profile=T
       do.feature.meta=F
       show.profile.task=list(
+        ##geoms can be also c("dotplot","jitter","path")
         geoms=c("bar_stacked","bar","violin","boxplot"),
         dodged=T,
         faceted=T,
@@ -6919,15 +6974,26 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
   report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=sub.report)
   
   m_a.summ=make.sample.summaries(m_a)
-  
+
   if(show.sample.totals) {
-    report$add.table(m_a.summ$count[,"count.sum",drop=F],
-                     caption="Summary of total counts per sample",
-                     show.row.names=T)
+    report$add.table(cbind(m_a.summ$count[,"count.sum",drop=F],m_a.summ$attr),
+                     caption="Total counts per sample",
+                     show.row.names=F)
   }  
   
   if(show.sample.means) {
     report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of total counts per sample")
+    report$add.table(ddply(join_count_df(m_a.summ),
+                           group.vars,
+                           summarise,
+                           Min.Count.Sum=min(count.sum),
+                           Max.Count.Sum=max(count.sum),
+                           Mean.Count.Sum=mean(count.sum),
+                           Median.Count.Sum=median(count.sum),
+                           Q25.Count.Sum=quantile(count.sum,0.25),
+                           Q75.Count.Sum=quantile(count.sum,0.75)
+                           ),
+                     caption="Group summaries of total counts per sample")
   }
   
   if(!is.null(group.vars)) {
@@ -7073,7 +7139,14 @@ read.mr_oralc <- function(taxa.level=3) {
 count.summary <- function(count,fun,group,format="data.frame",group.prefix=NULL) {
   .group = group
   .group = data.frame(.group)
-  group.summ = ddply(cbind(as.data.frame(count),.group),names(.group),colwise(fun))
+  if(are.identical(fun,"mean")) {
+    fun = colSums
+  }
+  else {
+    fun = colwise(fun)
+  }
+  n.col.sel = 1:ncol(count)
+  group.summ = ddply(cbind(as.data.frame(count),.group),names(.group),function(x) fun(x[,n.col.sel,drop=F]))
   if(format == "data.frame") {
     return (group.summ)
   }
