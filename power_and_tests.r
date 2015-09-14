@@ -137,13 +137,13 @@ missing.join.keys.report <- function(x,y,by,do.report=T,name.x="x",name.y="y",re
   require(dplyr)
   x_y = anti_join(x,y,by=by)
   if(report.only.keys) {
-  if(!is.null(names(by))) {
-    by_x = names(by)
-  }
-  else {
-    by_x = by
-  }
-  x_y = dplyr::count_(x_y,by_x,sort=T)
+    if(!is.null(names(by))) {
+      by_x = names(by)
+    }
+    else {
+      by_x = by
+    }
+    x_y = dplyr::count_(x_y,by_x,sort=T)
   }
   if(do.report) {
     report$add.table(x_y,wrap.vals = T,skip.if.empty=T,
@@ -379,7 +379,7 @@ norm.fr <- function(x, ...) {
 
 
 norm.fr.default <- function(x.f, divcomp=1, offset=1, remove.divcomp=TRUE,
-                             tol=.Machine$double.eps,offset.is.prop=F) {
+                            tol=.Machine$double.eps,offset.is.prop=F) {
   if(is.character(divcomp)) {
     divcomp = match(divcomp,colnames(x.f))
   }
@@ -1829,7 +1829,9 @@ plot.abund.meta <- function(m_a,
                             ggp.comp=NULL,
                             facet_grid.margins=FALSE,
                             features.order=NULL,
+                            feature.names.conv=NULL,
                             geom="bar",
+                            line.show.points=T,
                             n.top=20,
                             id.var.dodge=NULL,
                             flip.coords=T,
@@ -1876,10 +1878,10 @@ plot.abund.meta <- function(m_a,
   if(make.summary.table) {
     dat.summary = eval(parse(text=sprintf('ddply(dat, c("feature",id.vars),
         summarise,
-        mean = mean(%s),
-        sd = sd(%s),
-        median = median(%s),
-        incidence = mean(%s>0)
+        mean = mean(%s,na.rm=T),
+        sd = sd(%s,na.rm=T),
+        median = median(%s,na.rm=T),
+        incidence = mean(%s>0,na.rm=T)
         )',value.name,value.name,value.name,value.name)
     ))
     dat.melt = dat
@@ -1888,12 +1890,17 @@ plot.abund.meta <- function(m_a,
     dat.summary = NULL
     dat.melt = NULL
   }
-  
-  ##show only n.top
+
   features = levels(dat$feature)
-  features = features[1:min(length(features),n.top)]
-  dat = dat[dat$feature %in% features,,drop=F]
-  
+  if(!is.null(feature.names.conv)) {
+    dat$feature = do.call(feature.names.conv,list(dat$feature))
+  }
+  if(is.factor(dat$feature)) {
+    ##show only n.top
+    features = levels(dat$feature)
+    features = features[1:min(length(features),n.top)]
+    dat = dat[dat$feature %in% features,,drop=F]
+  }
   if(geom == "violin") {
     ##violin will fail the entire facet if one feature has zero variance,
     ##so we perturb data a tiny bit
@@ -2002,8 +2009,11 @@ plot.abund.meta <- function(m_a,
       #show.samp.n = F
     }
     else if(geom == "line_obs") {
-      gp = gp + geom_point() + geom_path(aes_string(x="feature",y=value.name,
-                                                     group=".record.id"))
+      gp = gp + geom_path(aes_string(x="feature",y=value.name,
+                                                    group=".record.id"))
+      if(line.show.points) {
+        gp = gp + geom_point()
+      }
       show.samp.n = F
     }
     else {
@@ -2280,21 +2290,21 @@ mgsat.diversity.hill.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T,do
   if(is.raw.count.data && do.rarefy) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"), .export=c("mgsat.hill"), .combine=plus_here,
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-{
-  do.call(
-    mgsat.hill,c(
-      list(rrarefy(m_a$count,n.rar)),
-      hill.args)
-  )
-}
+                {
+                  do.call(
+                    mgsat.hill,c(
+                      list(rrarefy(m_a$count,n.rar)),
+                      hill.args)
+                  )
+                }
   }
-else {
-  x = do.call(mgsat.hill,c(
-    list(m_a$count),
-    hill.args)
-  )
-}
-return(list(e=x))
+  else {
+    x = do.call(mgsat.hill,c(
+      list(m_a$count),
+      hill.args)
+    )
+  }
+  return(list(e=x))
 }
 
 
@@ -2317,12 +2327,12 @@ mgsat.richness.counts <- function(m_a,
   if(do.rarefy) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-{estimateR(rrarefy(m_a$count,n.rar))[ind.names,,drop=F]}
+                {estimateR(rrarefy(m_a$count,n.rar))[ind.names,,drop=F]}
   }
-else {
-  x = estimateR(m_a$count)[ind.names,,drop=F]
-}
-return(list(e=t(x)))
+  else {
+    x = estimateR(m_a$count)[ind.names,,drop=F]
+  }
+  return(list(e=t(x)))
 }
 
 ## This uses incidence data and therefore should be applicable to both raw count data as 
@@ -2355,26 +2365,26 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
               .combine=plus,
               .export=c("balanced.sample"),
               .final=function(x) (x/n.rar.rep)) %dopar% 
-{
-  if(do.stratify) {
-    strat.ind = balanced.sample(pool)
-    count = count[strat.ind,,drop=F]
-    pool=pool[strat.ind]
-  }
-  if(do.rarefy) {
-    count.run = rrarefy(count,n.rar)
-  }
-  else {
-    count.run = count
-  }
-  specpool(count.run,pool=pool)
-}
-
-se.ind = grep(".*[.]se",names(x))
-e = x[,-se.ind,drop=F]
-se = x[,se.ind,drop=F]
-names(se) = sub("[.]se","",names(se))
-return(list(e=e,se=se,e.se=x))
+              {
+                if(do.stratify) {
+                  strat.ind = balanced.sample(pool)
+                  count = count[strat.ind,,drop=F]
+                  pool=pool[strat.ind]
+                }
+                if(do.rarefy) {
+                  count.run = rrarefy(count,n.rar)
+                }
+                else {
+                  count.run = count
+                }
+                specpool(count.run,pool=pool)
+              }
+  
+  se.ind = grep(".*[.]se",names(x))
+  e = x[,-se.ind,drop=F]
+  se = x[,se.ind,drop=F]
+  names(se) = sub("[.]se","",names(se))
+  return(list(e=e,se=se,e.se=x))
 }
 
 ## This returns Hill numbers
@@ -2389,20 +2399,20 @@ mgsat.diversity.alpha.counts <- function(m_a,n.rar.rep=400,is.raw.count.data=T,d
   if(is.raw.count.data && do.rarefy) {
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-{f.div(rrarefy(m_a$count,n.rar))}
+                {f.div(rrarefy(m_a$count,n.rar))}
   }
-else {
-  x = f.div(m_a$count)
-}
-
-if(is.raw.count.data) {
-  #this is already unbiased (determenistic wrt rarefication)
-  div.unb.simpson = rarefy(m_a$count,2)-1
-  #div.fisher.alpha = fisher.alpha(m_a$count)
-  x = cbind(x,div.unb.simpson=div.unb.simpson)
-}
-
-return(list(e=x))
+  else {
+    x = f.div(m_a$count)
+  }
+  
+  if(is.raw.count.data) {
+    #this is already unbiased (determenistic wrt rarefication)
+    div.unb.simpson = rarefy(m_a$count,2)-1
+    #div.fisher.alpha = fisher.alpha(m_a$count)
+    x = cbind(x,div.unb.simpson=div.unb.simpson)
+  }
+  
+  return(list(e=x))
 }
 
 mgsat.diversity.beta.dist.complexity <- function(n.r,n.c) {
@@ -2423,14 +2433,14 @@ mgsat.diversity.beta.dist <- function(m_a,n.rar.rep=400,method="-1",do.rarefy=T)
     
     x = foreach(seq(n.rar.rep),.packages=c("vegan"),.combine="+",
                 .final=function(x) (x/n.rar.rep)) %dopar% 
-{
-  betadiver(rrarefy(m_a$count,n.rar),method=method)
-}
+                {
+                  betadiver(rrarefy(m_a$count,n.rar),method=method)
+                }
   }
-else {
-  x = betadiver(m_a$count,method=method)
-}
-return(list(e=x))
+  else {
+    x = betadiver(m_a$count,method=method)
+  }
+  return(list(e=x))
 }
 
 mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
@@ -2494,8 +2504,121 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
   return(res)
 }
 
+## Modified vegan::rarefy code.
+## Parallelized with nested foreach loops (requires active parallel backend).
+## Sets to NA all output matrix elements where requested rarefication sample count
+## is less than total available.
+## include.max - if T, add maximum sample counts to the grid of sample sizes (adopted from 
+## www.joshuajacobs.org/R/rarefaction.html)
+## Value: named list(e=expected species count,se=standard error of e (if se=T in arguments))
+rarefy.mgsat <- function (x, sample, se = FALSE, MARGIN = 1, include.max = T) 
+{
+  require(foreach)
+  x <- as.matrix(x)
+  if(MARGIN==2) {
+    x = t(x)
+  }
+  sample.sums = rowSums(x)
+  minsample <- min(sample.sums)
+  if (any(sample > minsample)) 
+    warning(gettextf("Requested 'sample' was larger than smallest site maximum (%d)", 
+                     minsample))
+  if (ncol(x) == 1 && MARGIN == 1) 
+    x <- t(x)
+  if (!identical(all.equal(x, round(x)), TRUE)) 
+    stop("function accepts only integers (counts)")
+  if(missing(sample)) {
+    if(include.max) {
+      sample = c()
+    }
+  }
+  if(include.max) {
+    sample = unique(sort(c(sample.sums,sample)))
+  }
+  if (missing(sample)) {
+    sample <- minsample
+    info <- paste("The size of 'sample' must be given --\nHint: Smallest site maximum", 
+                  sample)
+    stop(info)
+  }
+  rarefun <- function(x, sample) {
+    x <- x[x > 0]
+    J <- sum(x)
+    if(J<sample) {
+      out = NA
+    }
+    else {
+      ldiv <- lchoose(J, sample)
+      p1 <- ifelse(J - x < sample, 0, exp(lchoose(J - x, sample) - 
+                                            ldiv))
+      out <- sum(1 - p1)
+    }
+    if (se) {
+      if(is.na(out)) {
+        out = cbind(NA,NA)
+      }
+      else {
+        V <- sum(p1 * (1 - p1))
+        Jxx <- J - outer(x, x, "+")
+        ind <- lower.tri(Jxx)
+        Jxx <- Jxx[ind]
+        V <- V + 2 * sum(ifelse(Jxx < sample, 0, exp(lchoose(Jxx, 
+                                                             sample) - ldiv)) - outer(p1, p1)[ind])
+        out <- cbind(out, sqrt(V))
+      }
+    }
+    out
+  }
+  S.rare <- foreach(n=sample,.combine=cbind) %:% 
+    foreach(i=1:nrow(x),.combine=rbind) %dopar% {
+      rarefun(x[i,],sample=n)
+    }
+  S.rare <- matrix(S.rare, ncol = length(sample))
+  colnames(S.rare) <- paste("", sample, sep = "")
+  if (se) {
+    S.rare.se = S.rare[seq(2,nrow(x),2),]
+    S.rare.e = S.rare[seq(1,nrow(x),2),]
+    rownames(S.rare.se) <- rownames(x)
+  }
+  else {
+    S.rare.e = S.rare
+  }
+  rownames(S.rare.e) <- rownames(x)
+  attr(S.rare.e, "Subsample") <- sample
+  return (list(e=S.rare.e,se=if(se) S.rare.se else NULL))
+}
 
-mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T,do.rarefy=T) {
+mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T,do.plot.profiles=T,plot.profiles.task=list(),do.rarefy=T) {
+  
+  res = new_mgsatres()
+  
+  if(is.raw.count.data) {
+    max.n = max(rowSums(m_a$count))
+    res.rar = rarefy.mgsat(m_a$count, sample = seq(1,max.n,length.out = 30), se = FALSE, include.max = T) 
+    if(do.plot.profiles) {
+      plot.profiles.task$show.profile.task = within(plot.profiles.task$show.profile.task,{
+        geoms = c("line_obs")
+        dodged=T
+        faceted=F
+        line.show.points=F
+        sqrt.scale=F
+      })
+      plot.profiles.task$feature.names.conv = function(x) as.numeric(as.character(x))
+      do.call(plot.profiles,
+              c(list(m_a=list(count=res.rar$e,attr=m_a$attr),
+                     feature.descr="Abundance-based rarefaction curves",
+                     value.name="Richness"),
+                plot.profiles.task
+              )
+      )
+    }
+    res$rarecurve.abund = res.rar
+  }
+  return(res)
+}
+
+
+mgsat.divrich.accum.extra.plots <- function(m_a,is.raw.count.data=T,do.rarefy=T) {
   require(vegan)
   
   n.rar = min(rowSums(m_a$count))
@@ -2769,7 +2892,7 @@ mgsat.divrich.report <- function(m_a,
   if(is.raw.count.data && do.rarefy) {
     
     n.rar = min(rowSums(m_a$count))
-  
+    
     rar.descr = sprintf(" Counts are rarefied to the lowest library size (%s), abundance-based and
                    incidence-based alpha diversity indices and richness estimates are computed
                    (if requested).
@@ -2780,7 +2903,7 @@ mgsat.divrich.report <- function(m_a,
     rar.descr.short = "With rarefication."
   }
   
-  descr = sprintf("%s%s",rar.descr,group.descr)
+  descr = sprintf("%s%s Dimensions of input count matrix (%s x %s).",rar.descr,group.descr,nrow(m_a$count),ncol(m_a$count))
   
   if(!str_blank(descr)) {
     report$add.descr(descr)
@@ -2895,7 +3018,11 @@ mgsat.divrich.report <- function(m_a,
   
   if(do.accum) {
     report$push.section(report.section)
-    mgsat.divrich.accum.plots(m_a,is.raw.count.data=is.raw.count.data,do.rarefy=do.rarefy)
+    mgsat.divrich.accum.plots(m_a,
+                              is.raw.count.data=is.raw.count.data,
+                              do.rarefy=do.rarefy,
+                              plot.profiles.task=plot.profiles.task,
+                              do.plot.profiles=do.plot.profiles)
     report$pop.section()
   }
   
@@ -2919,6 +3046,7 @@ mgsat.divrich.report <- function(m_a,
 plot.profiles <- function(m_a,
                           ci=NULL,
                           feature.order=NULL,
+                          feature.names.conv = NULL,
                           id.vars.list=list(c()),
                           feature.meta.x.vars=c(),
                           do.profile=T,
@@ -2929,7 +3057,8 @@ plot.profiles <- function(m_a,
                             dodged=T,
                             faceted=T,
                             stat_summary.fun.y="mean",
-                            sqrt.scale=F
+                            sqrt.scale=F,
+                            line.show.points=T
                           ),
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
@@ -3050,9 +3179,9 @@ plot.profiles <- function(m_a,
               ## parameters, skip otherwise
               skip.bar_stacked = F
               if(other.params$flip.coords || 
-                   !is.null(id.var.dodge$dodge) || 
-                   length(id.vars) > 1 ||
-                   ncol(m_a$count) < 2) {
+                 !is.null(id.var.dodge$dodge) || 
+                 length(id.vars) > 1 ||
+                 ncol(m_a$count) < 2) {
                 skip.bar_stacked = T
               }
               if(!(geom == "bar_stacked" && skip.bar_stacked)) {
@@ -3071,7 +3200,9 @@ plot.profiles <- function(m_a,
                                            ci=ci,
                                            id.vars=id.vars,
                                            features.order=pl.par$ord,
+                                           feature.names.conv = feature.names.conv,
                                            geom=geom,
+                                           line.show.points = show.profile.task$line.show.points,
                                            file_name=NULL,
                                            id.var.dodge=id.var.dodge$dodge,
                                            flip.coords=other.params$flip.coords,
@@ -3561,8 +3692,8 @@ mgsat.16s.task.template = within(list(), {
     plot.profiles.abund.task = within(list(), {
       
       norm.count.task = within(norm.count.task, {
-          method="norm.prop"
-          method.args=list()
+        method="norm.prop"
+        method.args=list()
       })
       
     })
@@ -4034,7 +4165,7 @@ show.feature.meta <- function(m_a,
       stat_smooth(method=smooth_method, se = T,degree=1,size=1) +
       ylab(paste(value.name,"of",feature.name))
     gr.range = ddply(dat.feature,group.var,summarise,
-                                range = max(.x.var) - min(.x.var))
+                     range = max(.x.var) - min(.x.var))
     for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
       pl = pl + stat_summary(aes_string(x=x.var, y=value.name,color=group.var),
                              fun.data = "mean_cl_boot", geom = "crossbar", width=x.var.range/20,
@@ -4512,7 +4643,7 @@ genesel.stability.report <- function(m_a,group.attr,
   
   report$add.header("GeneSelector stability ranking")
   if(genesel.param$type %in% c("unpaired","paired") &&
-       num.levels(m_a$attr[,group.attr]) != 2) {
+     num.levels(m_a$attr[,group.attr]) != 2) {
     report$add.descr(sprintf("GeneSelector analysis is skipped 
                              because grouping factor %s does not have two levels",group.attr))
     return(NULL)
@@ -4825,7 +4956,7 @@ plot.profiles.abund <- function(m_a,
 update.norm.count.task <- function(norm.count.task,res.tests=NULL) {
   ## if dds is required but not defined (set to NA)
   if(!is.null(norm.count.task$method.args$dds) && 
-       is.na(norm.count.task$method.args$dds)) {
+     is.na(norm.count.task$method.args$dds)) {
     if(!is.null(res.tests$deseq2$dds)) {
       norm.count.task$method.args$dds = res.tests$deseq2$dds
     }
@@ -5002,17 +5133,17 @@ test.counts.project <- function(m_a,
                                 res.tests=res,
                                 descr="data analysis (unless modified by specific methods)",
                                 norm.count.task)
-
+  
   if(do.aggr.after.norm && !is.null(aggr.after.norm.task)) {
     aggr.after.norm.func = aggr.after.norm.task$func
     aggr.after.norm.task$func = NULL
     res.aan = do.call(aggr.after.norm.func,
-                               c(list(m_a=m_a,
-                                      m_a.norm=m_a.norm,
-                                      m_a.abs=m_a.abs,
-                                      res.tests=res),
-                                 aggr.after.norm.task
-                               )
+                      c(list(m_a=m_a,
+                             m_a.norm=m_a.norm,
+                             m_a.abs=m_a.abs,
+                             res.tests=res),
+                        aggr.after.norm.task
+                      )
     )
     m_a = res.aan$m_a
     m_a.norm = res.aan$m_a.norm
@@ -5264,11 +5395,11 @@ annHeatmap2AT <-
       }
     })
     cluster$Row = within(cluster$Row, if (!is.null(cuth) && (cuth > 
-                                                               0)) {
+                                                             0)) {
       grp = cutree.dendrogram(dendrogram$Row$dendro, cuth)[rowInd]
     })
     cluster$Col = within(cluster$Col, if (!is.null(cuth) && (cuth > 
-                                                               0)) {
+                                                             0)) {
       grp = cutree.dendrogram(dendrogram$Col$dendro, cuth)[colInd]
     })
     annotation$Row = within(annotation$Row, {
@@ -6408,7 +6539,7 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
     xx1 <- x[, 1:tab[1]]
     xx2 <- x[, -c(1:tab[1])]
     if (tab[1] != tab[2] || length(unique(y[1:tab[1]])) != 
-          1 | length(unique(y[-c(1:tab[1])])) != 1) 
+        1 | length(unique(y[-c(1:tab[1])])) != 1) 
       stop("Incorrect coding for type='paired'. \n")
     diffxx <- xx2 - xx1
     r1 <- apply(diffxx, 1, function(z) {
@@ -6985,7 +7116,7 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
   report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=sub.report)
   
   m_a.summ=make.sample.summaries(m_a)
-
+  
   if(show.sample.totals) {
     report$add.table(cbind(m_a.summ$count[,"count.sum",drop=F],m_a.summ$attr),
                      caption="Total counts per sample",
@@ -7003,8 +7134,8 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
                            Median.Count.Sum=median(count.sum),
                            Q25.Count.Sum=quantile(count.sum,0.25),
                            Q75.Count.Sum=quantile(count.sum,0.75)
-                           ),
-                     caption="Group summaries of total counts per sample")
+    ),
+    caption="Group summaries of total counts per sample")
   }
   
   if(!is.null(group.vars)) {
@@ -7243,8 +7374,8 @@ show.partial.auc.roc <- function(response,predictor,predictor.descr,tpr0=0.25,fp
   se.range=NULL
   require(pROC)
   ro = pROC::roc(response, predictor, 
-           percent=F,
-           auc=F)
+                 percent=F,
+                 auc=F)
   smooth.bi = smooth(ro,method="bi")
   sm.df = with(smooth.bi,data.frame(specificities,sensitivities))
   pwr = marker.ver.power(sm.df,tpr0=tpr0,fpr0=fpr0)
@@ -7333,11 +7464,11 @@ counts.distro.report <- function(m_a,group.attr,descr) {
     #           caption=sprintf("ROC of %s for predicting %s",feat.name,group.attr))
     tryCatchAndWarn({ 
       
-    pwr.res = show.partial.auc.roc(g,x,predictor.descr=feat.name)
-    
-    report$add.table(as.data.frame(pwr.res$power),
-                     caption=sprintf("Power analysis for simple predictor based on %s level",feat.name)
-    )
+      pwr.res = show.partial.auc.roc(g,x,predictor.descr=feat.name)
+      
+      report$add.table(as.data.frame(pwr.res$power),
+                       caption=sprintf("Power analysis for simple predictor based on %s level",feat.name)
+      )
     })
     report$pop.section()
   }
