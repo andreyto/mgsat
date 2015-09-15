@@ -45,6 +45,10 @@ arg.list.as.str<-function(x,collapse=",") {
   )
 }
 
+are.automatic.rownames <- function(df) {
+  all(rownames(df) == paste(seq(nrow(df))))
+}
+
 tempfile.unix <- function(...) {
   x = tempfile(...)
   gsub("\\","/",x,fixed=T)
@@ -516,7 +520,7 @@ PandocAT$methods(add.table = function(x,
   
   if(wrap.vals) {
     rn = rownames(x)
-    if(!is.null(rn)) {
+    if(show.row.names && !are.automatic.rownames(x)) {
       rn = pandoc.escape.special(rn)
     }
     if(is.matrix(x)) {
