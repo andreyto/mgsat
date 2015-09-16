@@ -3684,7 +3684,8 @@ mgsat.16s.task.template = within(list(), {
         dodged=T,
         faceted=T,
         stat_summary.fun.y="mean",
-        sqrt.scale=T
+        sqrt.scale=T,
+        line.show.points=F
       )
       show.feature.meta.task=list()
     })
