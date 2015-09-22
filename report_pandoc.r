@@ -12,7 +12,7 @@ evalsOptions("cache",F)
 evalsOptions("cache.mode","environment")
 #evalsOptions("output",c("result"))
 evalsOptions("output",c("all"))
-evalsOptions("graph.output","png")
+evalsOptions("graph.output","svg") #"png"
 evalsOptions("graph.unify",F)
 evalsOptions("width",800)
 evalsOptions("height",640)
@@ -52,6 +52,10 @@ are.automatic.rownames <- function(df) {
 tempfile.unix <- function(...) {
   x = tempfile(...)
   gsub("\\","/",x,fixed=T)
+}
+
+html.path <- function(...) {
+  paste(...,sep="/")
 }
 
 #' Write citations for a vector of package names into file in BibTex format
@@ -283,7 +287,9 @@ PandocAT <- setRefClass('PandocAT', contains = "Pandoc",
                           'out.formats' = 'character',
                           'portable.html' = 'logical',
                           'object.index' = 'list',
-                          'data.dir' = 'character'
+                          'data.dir' = 'character',
+                          'widget.dir' = 'character',
+                          'widget.deps.dir' = 'character'
                         )
 )
 
@@ -310,6 +316,10 @@ PandocAT$methods(initialize = function(
   graph.dir = evalsOptions("graph.dir")
   unlink(graph.dir,recursive=T,force=T)
   dir.create(graph.dir, showWarnings = FALSE, recursive = TRUE)
+  
+  .self$widget.dir = "." #normalizePath(graph.dir,winslash = "/")
+  .self$widget.deps.dir = "widget_deps" #html.path(.self$widget.dir,"widget_deps")
+  dir.create(.self$widget.deps.dir, showWarnings = FALSE, recursive = TRUE)
   
   callSuper(author=author,title=title,...)
   
@@ -359,6 +369,58 @@ PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) 
   
   return (caption)
 })
+
+
+PandocAT$methods(add.widget = function(x,new.paragraph=T,
+                                caption=NULL,
+                                show.image.links=T,
+                                width = 800,
+                                height = 800,
+                                ...) {
+  
+  require(htmlwidgets)
+  
+  if(new.paragraph) {
+    .self$add.p("")
+  }
+
+  name.base=paste(str.to.file.name(caption,20),".html",sep="")
+  
+  fn = .self$make.file.name(name.base,dir=.self$widget.dir,make.unique=T)
+  
+  saveWidget(x,fn,selfcontained = F,libdir=.self$widget.deps.dir)
+  
+  caption.res = sprintf("Click to see widget file in full window: %s.",
+                              pandoc.link.verbatim.return(fn))
+
+  caption.type = "widget"
+
+  if(!is.null(caption)) {
+    caption = .self$priv.format.caption(caption,type=caption.type)
+  }
+  
+  caption = paste(caption,caption.res)
+  
+  if(!is.null(caption)) {
+    .self$add.p(caption)
+  }
+  
+  if(missing(width)) {
+    width = evalsOptions("width")
+  }
+
+  if(missing(height)) {
+    height = evalsOptions("height")
+  }
+    
+  report$add(sprintf('<iframe src="%s" width=%s height=%s> </iframe>',
+                     fn,
+                     width,
+                     height))
+  
+  return(x)
+})
+
 
 PandocAT$methods(add = function(x,new.paragraph=T,
                                 caption=NULL,

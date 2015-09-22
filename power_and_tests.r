@@ -70,6 +70,20 @@ str_blank <- function(x) {
 ## convert accented characters to regular ASCII equivalents
 str_to_ascii <- function(x) iconv(x,to="ASCII//TRANSLIT")
 
+label.size.points <- function(x,what="width",resolution=72) {
+  require(graphics)
+  if(what=="width") {
+    y = strwidth(x,units = "inches")
+  }
+  else if(what=="height") {
+    y = strheight(x,units = "inches")
+  }
+  else {
+    stop(sprintf("Uknown `what` parameter value: %s",what))
+  }
+  return (max(y)*resolution)
+}
+
 ## replace oldnames with newnames in vector allnames
 ## to be used when allnames = names(data.frame)
 replace.col.names<-function(allnames,oldnames,newnames,do.checks=T) {
@@ -5053,7 +5067,7 @@ test.counts.project <- function(m_a,
   
   report.section = report$add.header("Data analysis",section.action="push")
   
-  ##make.global(m_a)
+  make.global(m_a)
   
   res = new_mgsatres()
   
@@ -5151,6 +5165,7 @@ test.counts.project <- function(m_a,
     m_a.abs = res.aan$m_a.abs
   }
   
+  make.global(m_a.norm)
   
   if(do.genesel) {
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
