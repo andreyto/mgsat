@@ -63,11 +63,16 @@ vanilla_packages = c(
   ## binnedplot to diagnose logistic regression models
   "arm",
   ## mixed() to get p-values for lmer
-  "afex"  
+  "afex",
+  ## htmlwidgets-based packages
+  "htmlwidgets",
+  "d3heatmap",
+  "threejs"
 )
 
 vanilla_packages_github = c(
-  "zdk123/SpiecEasi"
+  "zdk123/SpiecEasi",
+  "juba/scatterD3"
 )
 
 bio_packages = c(

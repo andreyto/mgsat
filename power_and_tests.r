@@ -1832,6 +1832,39 @@ split.by.total.levels.data.frame <- function(x) {
   return(list(colnam[1:ind.split],colnam[(ind.split+1):length(colnam)]))
 }
 
+generate.colors.mgsat <- function(x,value=c("colors","palette"),discrete=F) {
+  require(RColorBrewer)
+  value = value[[1]]
+  if(is.character(x)) {
+    x = factor(x)
+  }
+  if(is.numeric(x)) {
+    require(lattice)
+    at = do.breaks(range(x), 30)
+    ret = level.colors(x, at = at,col.regions = rainbow)
+  }
+  else if(is.factor(x)) {
+    lev = levels(x)
+    if(!is.ordered(x)) {
+      n.color.orig = 8
+      palette = brewer.pal(n.color.orig, "Accent")
+      #get.palette = colorRampPalette(palette)
+      #palette = get.palette(max(length(features),n.color.orig))
+      palette = rep_len(palette,max(length(lev),1000))
+    }
+    else {
+      palette = rainbow(length(lev))
+    }
+    if(value=="colors") {
+      ret = palette[x]
+    }
+    else {
+      ret = palette
+    }
+  }
+  return(ret)
+}
+
 require(scales) # trans_new() is in the scales library
 signed_sqrt_trans = function() trans_new("signed_sqrt", function(x) sign(x)*sqrt(abs(x)), function(x) sign(x)*sqrt(abs(x)))
 
@@ -1852,7 +1885,6 @@ plot.abund.meta <- function(m_a,
                             sqrt.scale=F,
                             stat_summary.fun.y="mean",
                             make.summary.table=T) {
-  require(RColorBrewer)
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -1904,7 +1936,7 @@ plot.abund.meta <- function(m_a,
     dat.summary = NULL
     dat.melt = NULL
   }
-
+  
   features = levels(dat$feature)
   if(!is.null(feature.names.conv)) {
     dat$feature = do.call(feature.names.conv,list(dat$feature))
@@ -2024,7 +2056,7 @@ plot.abund.meta <- function(m_a,
     }
     else if(geom == "line_obs") {
       gp = gp + geom_path(aes_string(x="feature",y=value.name,
-                                                    group=".record.id"))
+                                     group=".record.id"))
       if(line.show.points) {
         gp = gp + geom_point()
       }
@@ -2121,7 +2153,7 @@ plot.abund.meta <- function(m_a,
     #get.palette = colorRampPalette(palette)
     #palette = get.palette(max(length(features),n.color.orig))
     palette = rep_len(palette,max(length(features),1000))
-    
+    palette = generate.colors.mgsat(factor(features,levels=features),value="palette")    
     gp = gp + 
       scale_fill_manual(values = palette) +
       scale_color_manual(values = palette)
@@ -5747,6 +5779,16 @@ heatmap.combined.report <- function(m_a,
   }
 }
 
+plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,...) {
+  require(threejs)
+  scatterplot3js(xyz,
+                 labels = if(!is.null(labels)) data[,labels] else NULL,
+                 color = if(!is.null(color)) generate.colors.mgsat(data[,color]) else NULL,
+                 size = if(!is.null(size)) data[,size] else NULL,
+                 ...
+  )
+}
+
 ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T) {
   require(phyloseq)
   report.section = report$add.header("Ordinations",section.action="push",sub=sub.report)  
@@ -5761,16 +5803,42 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                   c(list(ph,distance=distance),
                     ord.task$ordinate.task
                   ))
+    pt.orig = ord.task$plot.task
+    
+    pt = pt.orig
+    pt$axes = 1:3
+    pt$label = NULL
+    pt$size = NULL
+    pt = plyr::compact(pt)
+    
+    df.plot =  do.call(plot_ordination,
+                       c(list(ph,ord,justDF=T),
+                         pt
+                       ))
+
     pl = do.call(plot_ordination,
                  c(list(ph,ord),
-                   ord.task$plot.task
+                  pt          
                  ))
-    report$add(pl,
-               caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
+    
+    if(!is.null(pt.orig$size)) {
+      pl = pl + geom_point(aes_string(size=pt.orig$size))
+    }
+    
+    caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
                Plot used parameters %s.",
-                               arg.list.as.str(ord.task$ordinate.task),
-                               arg.list.as.str(ord.task$plot.task))
-    )
+                    arg.list.as.str(ord.task$ordinate.task),
+                    arg.list.as.str(pt))
+    report$add(pl,caption = caption)
+
+    pt = pt.orig
+    caption=sprintf("Ordination plot in 3D. Ordination performed with parameters %s. 
+               Plot used parameters %s.",
+                    arg.list.as.str(ord.task$ordinate.task),
+                    arg.list.as.str(pt))
+    
+    report$add.widget(plot.scatter.js3d(df.plot[,1:3],df.plot,labels=pt$label,color=pt$color,size=pt$size),
+                      caption = caption)
   }
   report$pop.section()  
 }
@@ -5791,6 +5859,22 @@ make.geom <- function(geom,data,options,options.data=list(),options.fixed=list()
             options.fixed
           )
   )
+}
+
+igraph.to.d3net <- function(g,vertex.data=NULL) {
+  vertex.name = as.character(as_ids(V(g)))
+  vertex.ind = seq_along(vertex.name) - 1 #JS zero offset
+  names(vertex.ind) = vertex.name
+  edge = as_data_frame(g)
+  edge$source = vertex.ind[edge$from]
+  edge$target = vertex.ind[edge$to]
+  if(!is.null(vertex.data)) {
+    vertex.data = vertex.data[vertex.name, , drop = FALSE]
+    if(!nrow(vertex.data)) {
+      stop("Some graph vertices are missing from vertex data table")
+    }
+  }
+  return (list(egde=edge,vertex=data.frame(name=vertex.name),vertex.data=vertex.data))
 }
 
 mgsat.plot.igraph.vertex.options = list(size=4,alpha=0.75)
@@ -5877,6 +5961,79 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
   return(p)
 }
 
+scale.to.range <- function(x,quant.min=0.1,quant.max=0.9) {
+  require(vegan)
+  q = quantile(x,c(quant.min,quant.max))
+  x[x<q[1]] = q[1]
+  x[x>q[2]] = q[2]
+  return (decostand(x,method="range"))
+}
+
+mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL, 
+                               vertex.options = mgsat.plot.igraph.vertex.options,
+                               vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
+                               edge.options = mgsat.plot.igraph.edge.options,
+                               ...) 
+{
+  require(networkD3)
+  vertex.options = update.list(mgsat.plot.igraph.vertex.options,vertex.options)
+  vertex.text.options = update.list(mgsat.plot.igraph.vertex.text.options,vertex.text.options)
+  edge.options = update.list(mgsat.plot.igraph.edge.options,edge.options)
+  if (vcount(g) < 2) {
+    stop("The graph you provided, `g`, has too few vertices.")
+  }
+  
+  x = igraph.to.d3net(g,vertex.data = vertex.data)
+  edge = x$egde
+  vertex.data = x$vertex.data
+  if(is.null(vertex.data)) {
+    vertex.data = x$vertex
+  }
+  vertex.data$vertex.name = x$vertex$name
+
+  radiusCalculation=NULL
+  Nodesize=NULL
+  if(is.numeric(vertex.options$size)) {
+    radiusCalculation=JS(vertex.options$size)
+  }
+  else {
+    Nodesize = ".Nodesize"
+    vertex.data$.Nodesize = scale.to.range(vertex.data[,vertex.options$size])
+    radiusCalculation=JS(sprintf('Math.sqrt(d.nodesize)*6+3'))
+  }
+  Group = vertex.options$color
+  colorScale = NULL
+  if(!is.null(Group)) {
+    if(is.numeric(vertex.data[,Group])) {
+      vertex.data[,Group] = signif(vertex.data[,Group],6)
+      q = quantile(vertex.data[,Group],c(0.1,0.5,0.9))
+      colorScale=JS(sprintf('d3.scale.linear()
+                     .domain([%s, %s, %s])
+                     .range(["blue", "grey", "red"])',q[1],q[2],q[3]))
+    }
+    else {
+      colorScale=JS('d3.scale.category10()')
+    }
+  }
+  NodeID = vertex.text.options$label
+  opacity = vertex.options$alpha
+  p = forceNetwork(Links = edge, 
+               Nodes = vertex.data,
+               Source = "source", 
+               Target = "target",
+               NodeID = NodeID,
+               Group = Group, 
+               Nodesize =  Nodesize, 
+               opacity = opacity,
+               legend=T,
+               zoom = T, 
+               clickAction = 'd.fixed = !d.fixed',
+              radiusCalculation=radiusCalculation,
+              colourScale = colorScale)
+  return(p)
+}
+
+
 network.spiec.easi.options = list(
   method='mb', 
   lambda.min.ratio=1e-2, 
@@ -5935,6 +6092,14 @@ network.report <- function(m_a,
                  )
     )
     report$add(gp,caption=caption)
+    
+    gp = do.call(mgsat.plot.igraph.d3net,
+                 c(list(gr),
+                   plot.task
+                 )
+    )
+    report$add.widget(gp,caption=caption)
+    
   }
   report$pop.section()  
 }

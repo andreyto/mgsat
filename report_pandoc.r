@@ -237,7 +237,6 @@ format.report.section.as.file<-function(x=NULL) {
   format.section.path.as.file(x$path)
 }
 
-
 pandoc.as.printed.return <- function(x,attrs="") {
   x = capture.output(print(x))
   paste0('\n', repChar('`', 7), 
@@ -412,8 +411,16 @@ PandocAT$methods(add.widget = function(x,new.paragraph=T,
   if(missing(height)) {
     height = evalsOptions("height")
   }
-    
-  report$add(sprintf('<iframe src="%s" width=%s height=%s> </iframe>',
+  iframe.tpl = '<iframe style="max-width=100%" 
+        src="fn" 
+        sandbox="allow-same-origin allow-scripts" 
+        width="100%" 
+        height="%s" 
+        scrolling="no" 
+        seamless="seamless" 
+        frameBorder="0"></iframe>'
+  iframe.tpl = '<iframe src="%s" width="%s" height="%s"> </iframe>'
+  report$add(sprintf(iframe.tpl,
                      fn,
                      width,
                      height))
@@ -797,7 +804,7 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
                             make.unique=F,
                             dir=".",
                             section.path=sub.path)
-    fp.sub.md = paste(fp.sub,".md",sep="")
+    fp.sub.md = paste(fp.sub,".Rmd",sep="") #".md"
     #print(paste("fp.sub=",fp.sub))
     
     if(is.null(fp.all[[fp.sub.md]])) {
@@ -808,7 +815,7 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
       sub.level.prev = get.sub.level.section.path(f_sections[[i.el-1]])
       sub.level = get.sub.level.section.path(section)
       if(sub.level > sub.level.prev) {
-        cat(pandoc.link.verbatim.return(paste(fp.sub,".html",sep=""),"Subreport"), 
+        cat(pandoc.link.verbatim.return(paste(fp.sub,".html",sep=""),"Subreport"), #".html"
             file = fp.sub.md.prev, append = TRUE)
         if(section[[length(section)]]$has.header) {
           write.el(f_body[[i.el-1]],fp.sub.md)
