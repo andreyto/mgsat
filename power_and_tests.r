@@ -180,6 +180,8 @@ split_count_df<-function(dat,col_ignore=c()) {
     m = NULL
   }
   attr = dat[mask_col_ignore]
+  rownames(attr) = rownames(dat)
+  rownames(m) = rownames(dat)
   list(count=m,attr=attr)
 }
 
@@ -668,7 +670,15 @@ contrast.to.reference <- function(x,id.ref,drop.ref=T) {
   res
 }
 
-
+rownames.set.m_a <- function(m_a,x,set.attr.field=T) {
+  x = as.character(x)
+  rownames(m_a$count) = x
+  rownames(m_a$attr) = x
+  if(set.attr.field) {
+    m_a$attr$SampleID = x
+  }
+  m_a
+}
 
 ## subset method that will use the same subset argument on all data objects in m_a
 subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL,na.index.is.false=T) {
@@ -1832,7 +1842,7 @@ split.by.total.levels.data.frame <- function(x) {
   return(list(colnam[1:ind.split],colnam[(ind.split+1):length(colnam)]))
 }
 
-generate.colors.mgsat <- function(x,value=c("colors","palette"),discrete=F) {
+generate.colors.mgsat <- function(x,value=c("colors","palette"),brewer.pal.name="Accent") {
   require(RColorBrewer)
   value = value[[1]]
   if(is.character(x)) {
@@ -1846,11 +1856,15 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),discrete=F) {
   else if(is.factor(x)) {
     lev = levels(x)
     if(!is.ordered(x)) {
-      n.color.orig = 8
-      palette = brewer.pal(n.color.orig, "Accent")
+      pal.info = brewer.pal.info[brewer.pal.name,]
+      n.color.orig = pal.info$maxcolors
+      if(length(lev)<n.color.orig) {
+        n.color.orig = length(lev)
+      }
+      palette = brewer.pal(n.color.orig, brewer.pal.name)
       #get.palette = colorRampPalette(palette)
       #palette = get.palette(max(length(features),n.color.orig))
-      palette = rep_len(palette,max(length(lev),1000))
+      palette = rep_len(palette,length(lev))
     }
     else {
       palette = rainbow(length(lev))
@@ -1864,6 +1878,75 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),discrete=F) {
   }
   return(ret)
 }
+
+
+pairs.scatter.plot <- function(m_a,group=NULL,tooltip=NULL,color=NULL,...) {
+  require(pairsD3)
+  count = m_a$count
+  attr = m_a$attr
+  if(!is.null(group)) {
+    group = eval(parse(text=group),attr)
+  }
+  if(!is.null(tooltip)) {
+    tooltip = eval(parse(text=tooltip),attr)
+  }
+  if(is.null(color) && !is.null(group)) {
+    color = generate.colors.mgsat(group,value="palette",brewer.pal.name = "Set1")
+  }
+  make.global(name="dbg")
+  pairsD3(x=count,
+          group=group,
+          tooltip=tooltip,
+          big=T,
+          col=color,
+          ...)
+}
+
+pairs.scatter.plot.rbokeh <- function(m_a,
+                                width.cell=200,
+                                height.cell=200,
+                                tools=c("pan", "wheel_zoom", "box_zoom", "box_select", "reset"),
+                                lod_threshold=10) {
+  require(rbokeh)
+  var.names = colnames(m_a$count)
+  data = join_count_df(m_a)
+  nms <- expand.grid(var.names, rev(var.names), stringsAsFactors = FALSE)
+  n.nms = length(var.names)
+  nms$yaxis <- rep(c(TRUE, rep(FALSE, n.nms-1)), n.nms)
+  nms$xaxis <- c(rep(FALSE, (n.nms-1)*n.nms), rep(TRUE, n.nms))
+  #nms$h <- height.cell
+  #nms$w <- width.cell
+  #nms$h[nms$xaxis] <- height.cell
+  #nms$w[nms$yaxis] <- width.cell
+  splom_list <- vector("list", n.nms*n.nms)
+  make.global(name="dbg")
+  color = "Species"
+  for(i in seq_along(splom_list)) {
+    
+    if(i==1) legend = T
+    else legend = F
+    
+    pl = figure(width = width.cell, height = height.cell,
+                tools = tools, min_border = 2, lod_threshold = lod_threshold)
+    pl = eval(parse(text=sprintf('ly_points(pl,%s, %s, data = data,
+              color = %s, hover = Species, size = Petal.Length*2, legend = %s)',nms$Var1[i],nms$Var2[i],color,legend)))
+    pl = pl %>% x_axis(visible = nms$xaxis[i]) %>% y_axis(visible = nms$yaxis[i])
+    pl = pl %>% theme_axis(c("x", "y"),major_label_orientation = "vertical")
+    splom_list[[i]] = pl
+  }
+  
+  grid_plot(splom_list, nrow = n.nms, ncol = n.nms, same_axes = c(T,T), link_data = TRUE, simplify_axes = T) %>% 
+    tool_save() %>% tool_resize()
+  #saveWidget(paired.scatter.plot(split_count_df(iris,col_ignore = "Species")),"tmp.html",selfcontained = F)
+}
+
+dev.editable.svg <- function(file, width=800, height=600,bg="white",...) {
+  ## this graphics device saves text as text, unlike the default grDevices::svg that
+  ## converts text into curves. InkScape or Adobe tools can be used to edit SVG files.
+  library(RSvgDevice)
+  devSVG(file = file, width = width/72, height = height/72, bg = bg,...)
+}
+
 
 require(scales) # trans_new() is in the scales library
 signed_sqrt_trans = function() trans_new("signed_sqrt", function(x) sign(x)*sqrt(abs(x)), function(x) sign(x)*sqrt(abs(x)))
@@ -5815,10 +5898,10 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                        c(list(ph,ord,justDF=T),
                          pt
                        ))
-
+    
     pl = do.call(plot_ordination,
                  c(list(ph,ord),
-                  pt          
+                   pt          
                  ))
     
     if(!is.null(pt.orig$size)) {
@@ -5830,7 +5913,7 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                     arg.list.as.str(ord.task$ordinate.task),
                     arg.list.as.str(pt))
     report$add(pl,caption = caption)
-
+    
     pt = pt.orig
     caption=sprintf("Ordination plot in 3D. Ordination performed with parameters %s. 
                Plot used parameters %s.",
@@ -5970,10 +6053,10 @@ scale.to.range <- function(x,quant.min=0.1,quant.max=0.9) {
 }
 
 mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL, 
-                               vertex.options = mgsat.plot.igraph.vertex.options,
-                               vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
-                               edge.options = mgsat.plot.igraph.edge.options,
-                               ...) 
+                                     vertex.options = mgsat.plot.igraph.vertex.options,
+                                     vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
+                                     edge.options = mgsat.plot.igraph.edge.options,
+                                     ...) 
 {
   require(networkD3)
   vertex.options = update.list(mgsat.plot.igraph.vertex.options,vertex.options)
@@ -5990,7 +6073,7 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
     vertex.data = x$vertex
   }
   vertex.data$vertex.name = x$vertex$name
-
+  
   radiusCalculation=NULL
   Nodesize=NULL
   if(is.numeric(vertex.options$size)) {
@@ -6018,18 +6101,18 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
   NodeID = vertex.text.options$label
   opacity = vertex.options$alpha
   p = forceNetwork(Links = edge, 
-               Nodes = vertex.data,
-               Source = "source", 
-               Target = "target",
-               NodeID = NodeID,
-               Group = Group, 
-               Nodesize =  Nodesize, 
-               opacity = opacity,
-               legend=T,
-               zoom = T, 
-               clickAction = 'd.fixed = !d.fixed',
-              radiusCalculation=radiusCalculation,
-              colourScale = colorScale)
+                   Nodes = vertex.data,
+                   Source = "source", 
+                   Target = "target",
+                   NodeID = NodeID,
+                   Group = Group, 
+                   Nodesize =  Nodesize, 
+                   opacity = opacity,
+                   legend=T,
+                   zoom = T, 
+                   clickAction = 'd.fixed = !d.fixed',
+                   radiusCalculation=radiusCalculation,
+                   colourScale = colorScale)
   return(p)
 }
 
