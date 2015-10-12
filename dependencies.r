@@ -44,6 +44,7 @@ vanilla_packages = c(
   ##being relatively fast
   "exactRankTests",
   "data.table",
+  "dplyr",
   ##ROC curve power analysis for biomarker verification
   "pROC",
   ##interpolation and numerical derivatives (including for ROC analysis)
@@ -72,7 +73,9 @@ vanilla_packages = c(
 
 vanilla_packages_github = c(
   "zdk123/SpiecEasi",
-  "juba/scatterD3"
+  "juba/scatterD3",
+  "bokeh/rbokeh",
+  "bwlewis/doRedis"
 )
 
 bio_packages = c(
