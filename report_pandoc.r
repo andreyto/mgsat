@@ -404,11 +404,11 @@ PandocAT$methods(add.widget = function(x,new.paragraph=T,
     .self$add.p(caption)
   }
   
-  if(missing(width)) {
+  if(is.null(width)) {
     width = evalsOptions("width")
   }
 
-  if(missing(height)) {
+  if(is.null(height)) {
     height = evalsOptions("height")
   }
   iframe.tpl = '<iframe style="max-width=100%" 
