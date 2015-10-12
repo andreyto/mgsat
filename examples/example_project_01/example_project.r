@@ -71,15 +71,17 @@ summary.meta.diet <- function(m_a) {
 }
 
 
-new_ordination.task <- function(main.meta.var,norm.method) {
+new_ordination.task <- function(main.meta.var,norm.method,label=NULL,size=NULL) {
   if(norm.method=="prop") {
     ord.method = "CCA"
+    distance.0="bray"
   }
   else {
     ord.method = "RDA"
+    distance.0="euclidean"
   }
   within(mgsat.16s.task.template$test.counts.task$ordination.task, {
-    distance="euclidean"
+    distance=distance.0
     ord.tasks = list(
       list(
         ordinate.task=list(
@@ -88,7 +90,9 @@ new_ordination.task <- function(main.meta.var,norm.method) {
         ),
         plot.task=list(
           type="samples",
-          color=main.meta.var
+          color=main.meta.var,
+          label = label,
+          size = size
           ##other arguments to phyloseq:::plot_ordination
         )
       ),
@@ -100,7 +104,9 @@ new_ordination.task <- function(main.meta.var,norm.method) {
         ),
         plot.task=list(
           type="samples",
-          color=main.meta.var
+          color=main.meta.var,
+          label = label,
+          size = size
           ##other arguments to phyloseq:::plot_ordination
         )
       )          
@@ -193,7 +199,7 @@ gen.tasks.diet <- function() {
         km.diversity=0
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID")      
       
     })
     
@@ -251,7 +257,7 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID") 
       
     })
     
@@ -336,7 +342,7 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")            
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID") 
       
     })
     
@@ -390,13 +396,26 @@ gen.tasks.diet <- function() {
       extra.method.task = within(extra.method.task, {
         
         func = function(m_a,m_a.norm,res.tests,norm.count.task.extra) {
+          group.attr = "Sample.type"
           test.dist.matr.within.between(m_a=m_a,
-                                        group.attr="Sample.type",
+                                        group.attr=group.attr,
                                         block.attr="MatchedGroupID",
                                         n.perm=4000,
                                         dist.metr="euclidian",
                                         norm.count.task=norm.count.task.extra
           )
+          require(d3heatmap)
+          require(graphics)
+          ord = order(m_a.norm$attr[,group.attr])
+          labRow = as.character(m_a.norm$attr$SampleID[ord])
+          p = d3heatmap(m_a.norm$count[ord,],
+                        Rowv=F,
+                        Colv=F,
+                        labRow = labRow,
+                        yaxis_width=label.size.points(labRow),
+                        color="Reds")
+          report$add.widget(p,caption="Dynamic Heatmap of normalized abundance")
+          
         }
         
         norm.count.task.extra = within(norm.count.task, {
@@ -497,7 +516,7 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID")
       
       
       extra.method.task = within(extra.method.task, {
@@ -625,13 +644,13 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr")            
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID")
       
     })
     
   })
   
-  #return (list(task2.1))
+  #return (list(task2,task2.1))
   return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
