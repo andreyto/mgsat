@@ -9,7 +9,7 @@ vanilla_packages = c(
   "ggplot2",
   "vegan", 
   #"BiodiversityR", 
-  "LiblineaR", 
+  ###"LiblineaR", 
   ## glmnet is exported to snow cluster by c060, but it
   ## forgets to load it first, so we do it here
   "glmnet",
@@ -23,9 +23,8 @@ vanilla_packages = c(
   #"elasticnet", 
   #"BioMark", 
   "HMP", 
-  "BatchJobs", 
+  ##"BatchJobs", 
   "boot",
-  "vegan",
   #"knitr",
   "lattice",
   "date",
@@ -73,23 +72,24 @@ vanilla_packages = c(
 
 vanilla_packages_github = c(
   "zdk123/SpiecEasi",
-  "juba/scatterD3",
+  ###"juba/scatterD3",
   "bokeh/rbokeh",
-  "bwlewis/doRedis"
+  "bwlewis/doRedis",
+  "smartinsightsfromdata/rpivotTable"
 )
 
 bio_packages = c(
   "multtest",
   "GeneSelector",
   "RColorBrewer",
-  "Heatplus",
+  ###"Heatplus",
   "DESeq2",
   "ComplexHeatmap",
-  "phyloseq",
+  "phyloseq"
   ##third-party R implementation of Holmes 2012 model-based 
   ##and classification clustering algorithm.
   ##Needs GSL installed on the system in order to build
-  "DirichletMultinomial"
+  ###"DirichletMultinomial"
 )
 
 install_required_packages <- function() {
