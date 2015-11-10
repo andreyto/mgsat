@@ -47,10 +47,20 @@ set_trace_options<-function(try.debug=T) {
 ## can be used in debugging
 ## if NULL is passed, the parents (calling) environment 
 ## is cloned and assigned to a global variable passed in name
-make.global <- function(var=NULL,name=NULL) {
+make.global <- function(var=NULL,name=NULL,except=c("report.section")) {
   if(is.null(var)) {
     stopifnot(!is.null(name))
-    var = as.environment(as.list(parent.frame(), all.names=TRUE))
+    p.e = parent.frame()
+    if(name=="global") {
+      t.e = globalenv()
+      for(n in ls(p.e, all.names=TRUE)) {
+        if(! (n %in% except) ) assign(n, get(n, p.e), t.e)
+      }
+      return()
+    }
+    else {
+      var = as.environment(as.list(p.e, all.names=TRUE))
+    }
   }
   if(is.null(name)) {
     name = deparse(substitute(var))
@@ -66,6 +76,18 @@ take_first<-function(x,n) {
 str_blank <- function(x) {
   return (nchar(gsub("\\s","",x))==0)
 }
+
+## Take named list and replace values with data frame columns
+## if original values match data frame column names; otherwise
+## keep original values
+interpret.args.in.df <- function(args,data) {
+  library(plyr)
+  args = plyr::compact(args)
+  names = colnames(data)
+  args = lapply(args,function(x) if(length(x) && is.character(x) && (x %in% names)) data[,x] else x)
+  args
+}
+
 
 ## convert accented characters to regular ASCII equivalents
 str_to_ascii <- function(x) iconv(x,to="ASCII//TRANSLIT")
@@ -1848,10 +1870,13 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),brewer.pal.name=
   if(is.character(x)) {
     x = factor(x)
   }
+  else if(is.logical(x)) {
+    x = factor(x)
+  }
   if(is.numeric(x)) {
     require(lattice)
     at = do.breaks(range(x), 30)
-    ret = level.colors(x, at = at,col.regions = rainbow)
+    ret = level.colors(x, at = at,col.regions = topo.colors)
   }
   else if(is.factor(x)) {
     lev = levels(x)
@@ -2376,6 +2401,68 @@ balanced.sample <- function(x, grouped = TRUE, reps = 0) {
   return(seq2)
 }
 
+
+mgsat.find.outliers <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list()) {
+  library(Rlof)
+  library(fitdistrplus)
+  x = as.matrix(x)
+  stopifnot(length(k)==1)
+  if(k<1) {
+    k = round(nrow(x)*k)
+  }
+  lof.val = do.call(lof,c(
+    list(x,k,cores=NULL),
+    lof.dist.args
+  ))
+  dist.par = fitdist(lof.val,"gamma")
+  p.val = p.adjust(pgamma(lof.val,dist.par$estimate["shape"],dist.par$estimate["rate"],lower.tail = F),pval.adjust)
+  rn = rownames(x)
+  if(!is.null(rn)) {
+    names(p.val) = rn
+  }
+  return (list(p.val.adj=p.val,lof.val=lof.val,dist.par=dist.par))
+}
+
+mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list(),
+                                         ordinate.args=list(method="NMDS",k=3),do.plot=T) {
+  library(phyloseq)
+  if(inherits(x,"dist")) {
+    m_a = list(attr=data.frame(name=labels(x),row.names = labels(x)))
+    ordinate.args$distance = x
+  }
+  else {
+    m_a = list(count=as.matrix(x,rownames.force=T))
+  }
+  ph = m_a.to.phyloseq(m_a)
+  if(is.null(ordinate.args$method)) {
+    ordinate.args$method = "NMDS"
+    ordinate.args$k = 3
+  }
+  ord = do.call(phyloseq.ordinate,c(
+    list(ph),
+    ordinate.args
+  ))
+
+  ndim = ord$ndim
+  if(is.null(ndim)) {
+    ndim = 2
+  }
+  
+  ord.df = plot_ordination(ph, ord, type="samples",axes=1:ndim,justDF = T)
+  out.res = mgsat.find.outliers(ord.df[,1:ndim],k=k,pval.adjust = pval.adjust,lof.dist.args=lof.dist.args)
+  out.res$ord = ord
+  if(do.plot) {
+    if(ndim>=3) {
+      out.res$pl3d = plot_ordination.3d(ph,ord,type="samples",
+                                color=log(out.res$p.val.adj),
+                                axes=1:ndim,
+                                labels=paste("ID:",names(out.res$p.val.adj),
+                                             "p.val.adj: ",format(out.res$p.val.adj,digits=3))
+      )
+    }
+  }
+  return (out.res)
+}
 
 ## If hill=T (default) return Hill numbers, otherwise - 
 ## Renyi entropies. Column names are prepended with N for Hill and
@@ -3583,9 +3670,20 @@ read.data.project.yap <- function(taxa.summary.file,
 ## Note that physeq constructor will convert all fields in attr.taxa to strings
 m_a.to.phyloseq <- function(m_a,attr.taxa=NULL) {
   require(phyloseq)
-  otu = otu_table(m_a$count, taxa_are_rows = F)
+  if(is.null(m_a$count) && is.null(m_a$attr)) {
+    stop("Need at least some data for the samples")
+  }
   ##need at least two columns or some phyloseq methods lose the dimension (not using drop=F)
-  tax = data.frame(Feature=colnames(m_a$count),Dummy=colnames(m_a$count))
+  if(is.null(m_a$count)) {
+    count = matrix(0,nrow(m_a$attr),2)
+    rownames(count) = rownames(m_a$attr)
+    colnames(count) = paste("Dummy",seq(ncol(count)),sep=".")
+  }
+  else {
+    count = m_a$count
+  }
+  otu = otu_table(count, taxa_are_rows = F)
+  tax = data.frame(Feature=colnames(count),Dummy=colnames(count))
   rownames(tax) = tax[,"Feature"]
   if(!is.null(attr.taxa)) {
     attr.taxa = as.data.frame(attr.taxa)
@@ -5864,13 +5962,88 @@ heatmap.combined.report <- function(m_a,
 
 plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,...) {
   require(threejs)
-  scatterplot3js(xyz,
-                 labels = if(!is.null(labels)) data[,labels] else NULL,
-                 color = if(!is.null(color)) generate.colors.mgsat(data[,color]) else NULL,
-                 size = if(!is.null(size)) data[,size] else NULL,
-                 ...
+  args = list(color=color,labels=labels,size=size)
+  args = interpret.args.in.df(args,data)
+  if(!is.null(args$color) && length(args$color) > 1) {
+    args$color = generate.colors.mgsat(args$color)
+  }
+  do.call(scatterplot3js,
+          c(list(xyz),
+            args,
+            list(...)
+          )
   )
 }
+
+## Wrapper around phyloseq::ordinate
+phyloseq.ordinate <- function(physeq, method = "DCA", distance = "bray", formula = NULL, ...) {
+  args = list(...)
+  
+  library(phyloseq)
+  ## Call metaMDS directly when distance matrix is provided because phyloseq::ordinate
+  ## fails to pass k parameter to metaMDS
+  
+  ord.func = "ordinate"
+  ord.args = c(list(physeq,method=method,distance=distance),args)
+  
+  if (method == "NMDS") {
+    if (inherits(distance, "dist")) {
+      ord.func = "metaMDS"
+      ord.args = c(list(distance),args)
+    }
+  }
+  
+  ord = do.call(ord.func,
+                ord.args
+  )
+  return (ord)  
+}
+
+plot_ordination.2d <- function(physeq,ordination,
+                               type = "samples", axes = 1:2,
+                               ggplot.extra=list(),
+                               ...) {
+  library(phyloseq)
+  pt = list(...)
+
+  df.plot =  plot_ordination(physeq,ordination,type=type,axes=axes,justDF = T)
+
+  if(is.null(pt$alpha)) {
+    ##helps with overplotting
+    pt$alpha = 0.5
+  }
+
+  df.names = colnames(df.plot)
+  pl = ggplot(df.plot,aes_string(x=df.names[1],y=df.names[2]))
+  
+  pl = pl + make.geom(geom_point,data=df.plot,
+                      options=pt)
+  
+  if(!is.null(ggplot.extra)) {
+    for(g in ggplot.extra) {
+      pl = pl + g
+    }
+  }
+  return (pl)
+}
+
+plot_ordination.3d <- function(physeq,ordination,
+                               type = "samples", axes = 1:3,
+                               ...) {
+  library(phyloseq)
+  pt = list(...)
+  
+  df.plot =  plot_ordination(physeq,ordination,type=type,axes=axes,justDF = T)
+  
+  df.names = colnames(df.plot)
+  pl = do.call(plot.scatter.js3d,
+          c(list(df.plot[,1:3],df.plot),
+          pt))
+                    
+  
+  return (pl)
+}
+
 
 ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T) {
   require(phyloseq)
@@ -5882,31 +6055,40 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     if(!is.null(ord.task$ordinate.task$formula)) {
       ord.task$ordinate.task$formula = as.formula(sprintf("~%s",ord.task$ordinate.task$formula))
     }
-    ord = do.call(ordinate,
-                  c(list(ph,distance=distance),
-                    ord.task$ordinate.task
-                  ))
+    
+    ## Call metaMDS directly when distance matrix is provided because phyloseq::ordinate
+    ## fails to pass k parameter to metaMDS
+    
+    ord.func = "phyloseq.ordinate"
+    ord.args = c(list(ph,distance=distance),ord.task$ordinate.task)
+    
+
+    ord = do.call(ord.func,
+                  ord.args
+                  )
+    
     pt.orig = ord.task$plot.task
+    if(is.null(pt.orig$axes)) {
+      pt.orig$axes = 1:2
+    }
+    if(is.null(pt.orig$type)) {
+      pt.orig$type = "samples"
+    }
     
     pt = pt.orig
-    pt$axes = 1:3
-    pt$label = NULL
-    pt$size = NULL
-    pt = plyr::compact(pt)
+    pt$axes = NULL
+    pt$type = NULL
+    pt.ggplot.extra = pt$ggplot.extra
+    pt$ggplot.extra = NULL
     
-    df.plot =  do.call(plot_ordination,
-                       c(list(ph,ord,justDF=T),
+    pt = plyr::compact(pt)
+
+    pl =  do.call(plot_ordination.2d,
+                       c(list(ph,ord,type=pt.orig$type,
+                              axes=pt.orig$axes,
+                              ggplot.extra=pt.ggplot.extra),
                          pt
                        ))
-    
-    pl = do.call(plot_ordination,
-                 c(list(ph,ord),
-                   pt          
-                 ))
-    
-    if(!is.null(pt.orig$size)) {
-      pl = pl + geom_point(aes_string(size=pt.orig$size))
-    }
     
     caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
                Plot used parameters %s.",
@@ -5914,16 +6096,31 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                     arg.list.as.str(pt))
     report$add(pl,caption = caption)
     
+    ##We have to redo NMDS for 3D plot if the original number of requested ordination dimensions
+    ##was less than 3
+    if(ord.task$ordinate.task$method == "NMDS") {
+      if(is.null(ord.task$ordinate.task$k) || ord.task$ordinate.task$k<3) {
+        ord.args$k = 3
+        ord = do.call(ord.func,
+                      ord.args
+                      )        
+        
+      }
+    }
+    
     pt = pt.orig
+    pt$axes = 1:3
+    
     caption=sprintf("Ordination plot in 3D. Ordination performed with parameters %s. 
                Plot used parameters %s.",
                     arg.list.as.str(ord.task$ordinate.task),
                     arg.list.as.str(pt))
-    
-    report$add.widget(plot.scatter.js3d(df.plot[,1:3],df.plot,labels=pt$label,color=pt$color,size=pt$size),
+    report$add.widget(plot_ordination.3d(
+        ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size),
                       caption = caption)
   }
   report$pop.section()  
+  #ordination.report(m_a,res=NULL,distance=as.dist(d.direct.mat),ord.tasks=list(list(ordinate.task=list(method="NMDS"),plot.task=list(type="samples",color="Genotype",size=5)),sub.report=F))
 }
 
 make.geom <- function(geom,data,options,options.data=list(),options.fixed=list(),include.data=F) {
@@ -6058,7 +6255,7 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
                                      edge.options = mgsat.plot.igraph.edge.options,
                                      ...) 
 {
-  require(networkD3)
+  library(networkD3)
   vertex.options = update.list(mgsat.plot.igraph.vertex.options,vertex.options)
   vertex.text.options = update.list(mgsat.plot.igraph.vertex.text.options,vertex.text.options)
   edge.options = update.list(mgsat.plot.igraph.edge.options,edge.options)
@@ -6125,7 +6322,7 @@ network.spiec.easi.options = list(
 
 network.spiec.easi <- function(count,
                                ...) {
-  require(SpiecEasi)
+  library(SpiecEasi)
   report$add.package.citation("SpiecEasi")
   options = update.list(network.spiec.easi.options,list(...))
   #se.est = dbg.cache$se.est

@@ -44,6 +44,7 @@ vanilla_packages = c(
   "exactRankTests",
   "data.table",
   "dplyr",
+  "tidyr",
   ##ROC curve power analysis for biomarker verification
   "pROC",
   ##interpolation and numerical derivatives (including for ROC analysis)
@@ -67,7 +68,8 @@ vanilla_packages = c(
   ## htmlwidgets-based packages
   "htmlwidgets",
   "d3heatmap",
-  "threejs"
+  "threejs",
+  "networkD3"
 )
 
 vanilla_packages_github = c(
@@ -82,7 +84,7 @@ bio_packages = c(
   "multtest",
   "GeneSelector",
   "RColorBrewer",
-  ###"Heatplus",
+  "Heatplus",
   "DESeq2",
   "ComplexHeatmap",
   "phyloseq"
