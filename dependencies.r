@@ -69,7 +69,8 @@ vanilla_packages = c(
   "htmlwidgets",
   "d3heatmap",
   "threejs",
-  "networkD3"
+  "networkD3",
+  "pairsD3"
 )
 
 vanilla_packages_github = c(
