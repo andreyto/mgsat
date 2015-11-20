@@ -784,6 +784,33 @@ cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
   m_a
 }
 
+long_data.to.m_a <- function(dat,
+                             col.attr,
+                             col.count,
+                             fun.aggregate = mean,
+                             fill=0,
+                             value.var = "Value",
+                             row.names=NULL,
+                             ...
+) {
+  library(data.table)
+  
+  dat.cast = dcast.data.table(as.data.table(dat),sprintf("%s~%s",paste(col.attr,collapse="+"),paste(col.count,collapse="+")),
+                              fun.aggregate = fun.aggregate,fill=fill,value.var = value.var,...)
+  
+  dat.cast = setDF(dat.cast)
+  if(!is.null(row.names)) {
+    rownames(dat.cast) = eval(parse(text=row.names),dat.cast)
+    dat.cast$SampleID = rownames(dat.cast)
+  }
+  else {
+    rownames(dat.cast) = paste("S",1:nrow(dat.cast),sep="")
+    dat.cast$SampleID = rownames(dat.cast)
+  }
+  split_count_df(dat.cast,col_ignore = unique(c("SampleID",col.attr)))
+  
+}
+
 quant.mask <- function(x,prob,drop.zero=T) {
   if(drop.zero) {
     x.q = x[x>0]
@@ -1894,6 +1921,7 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),brewer.pal.name=
     else {
       palette = rainbow(length(lev))
     }
+    names(palette) = lev
     if(value=="colors") {
       ret = palette[x]
     }
@@ -1906,7 +1934,7 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),brewer.pal.name=
 
 
 pairs.scatter.plot <- function(m_a,group=NULL,tooltip=NULL,color=NULL,...) {
-  require(pairsD3)
+  library(pairsD3)
   count = m_a$count
   attr = m_a$attr
   if(!is.null(group)) {
@@ -7772,6 +7800,50 @@ group.mean.ratio <- function(count,group,row.names.pref="") {
   x = (group.mean[2,-1] / (group.mean[1,-1]+.Machine$double.eps))
   row.names(x) = paste(row.names.pref,paste(group.mean[2,1],group.mean[1,1],sep=".by."),sep=".")
   return (as.matrix(x))
+}
+
+## http://stackoverflow.com/questions/32513189/fast-and-elegant-way-to-calculate-fold-change-between-several-groups-for-many-va
+fold.change <- function(mat,key,aggr.fun=mean,comb.fun=function(x,y) "/"(x,y),
+                        out.format=c("long","wide")){
+  library(purrr)
+  library(plyr)
+  out.format = out.format[1]
+  key = as.data.frame(key)
+  key.names = colnames(key)
+  mat = as.matrix(mat)
+  x <- data.frame(key,mat) %>%  slice_rows(key.names) %>% by_slice(map, aggr.fun)
+
+  key.grouped = as.data.frame(x[,1:length(key.names),drop=F])
+  x <- as.matrix(x[,-(1:length(key.names)),drop=F])
+
+  # calculate changes between all rows
+  i <- combn(nrow(x), 2)
+  x <- comb.fun(x[i[1,],,drop=F] , x[i[2,],,drop=F])
+  key.1 = key.grouped[i[1,],,drop=F]
+  key.2 = key.grouped[i[2,],,drop=F]
+  colnames(x) = colnames(mat)
+  rownames(x) <- paste(
+    maply(key.1,paste,sep=".",.expand=F),
+    maply(key.2,paste,sep=".",.expand=F),
+    sep = "-")
+  rownames(key.1) = rownames(x)
+  rownames(key.2) = rownames(x)
+  
+  ret = list(key.1=key.1,key.2=key.2,long=x)
+  if(out.format == "wide") {
+    stopifnot(ncol(key.1)==1)
+    stopifnot(ncol(x)==1)
+    key.grouped = key.grouped[,1]
+    n = length(key.grouped)
+    m = matrix(0,nrow=n,ncol=n,dimnames = list(key.grouped,key.grouped))
+    for(i in 1:nrow(x)) {
+      m[key.1[i,1],key.2[i,1]] = x[i,1]
+      m[key.2[i,1],key.1[i,1]] = 1/x[i,1]
+    }
+    diag(m) = 1
+    ret$wide = m
+  }
+  return (ret)
 }
 
 group.log.fold.change <- function(count,group,base=2) {
