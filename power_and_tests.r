@@ -227,7 +227,9 @@ join_count_df<-function(m_a) {
 
 new.m_a <- function(count=NULL,attr=NULL) {
   if(is.null(attr)) {
-    attr = data.frame(SampleID=rownames(count))
+    if(!is.null(count)) {
+      attr = data.frame(SampleID=rownames(count))
+    }
   }
   list(count=count,attr=attr)
 }
