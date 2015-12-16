@@ -433,6 +433,8 @@ PandocAT$methods(add = function(x,new.paragraph=T,
                                 caption=NULL,
                                 show.image.links=T,
                                 caption.type=NULL,
+                                graph.output = pander::evalsOptions("graph.output"),
+                                hi.res = pander::evalsOptions("hi.res"),
                                 ...) {
   
   timer           <- proc.time()
@@ -443,7 +445,15 @@ PandocAT$methods(add = function(x,new.paragraph=T,
   else {
     env = NULL
   }
-  res             <- evals(deparse(match.call()[[2]]),env=env,...)
+  ## work around pander bug in v.0.6.0 where hi.res is created as a broken symlink plots/normal.res
+  ## instead of just normal.res
+  if(graph.output == 'svg') {
+    hi.res = F
+  }
+  res             <- pander::evals(deparse(match.call()[[2]]),env=env,
+                                   graph.output = graph.output,
+                                   hi.res = hi.res,
+                                   ...)
   if(new.paragraph) {
     .self$add.p("")
   }
@@ -571,7 +581,7 @@ PandocAT$methods(add.table = function(x,
                                        row.names=show.row.names,
                                        row.names.header=T)    
     caption = paste(caption,
-                    "Full dataset is also saved in a delimited text file",
+                    "Full dataset is also saved in a delimited text file (click to download and open e.g. in Excel)",
                     pandoc.link.return(file.name,pandoc.verbatim.return(file.name))
     )
   }
@@ -717,12 +727,15 @@ PandocAT$methods(make.file.name = function(name.base="",
   return(fn)
 })
 
+## Save data as a delimited text file
+## ... are optional arguments to write.table
 PandocAT$methods(write.table.file = function(data,
                                              name.base,
                                              make.unique=T,
                                              descr=NULL,
                                              row.names=F,
-                                             row.names.header=T) {
+                                             row.names.header=T,
+                                             ...) {
   ## if we write row.names, Excel shifts header row to the left when loading
   if(row.names && row.names.header) {
     data = cbind(rownames=rownames(data),data)
@@ -732,7 +745,8 @@ PandocAT$methods(write.table.file = function(data,
   write.table(data,
               fn,
               sep="\t",
-              row.names = row.names)
+              row.names = row.names,
+              ...)
   if (!is.null(descr)) {
     .self$add.descr(paste("Wrote",descr,"to file",
                           pandoc.link.return(fn,fn)))
