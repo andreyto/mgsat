@@ -122,6 +122,13 @@ replace.col.names<-function(allnames,oldnames,newnames,do.checks=T) {
   return(allnames)
 }
 
+sub.col.names <- function(x,pattern,replacement,...) {
+  cn = colnames(x)
+  cn.new = sub(pattern,replacement,cn,...)
+  colnames(x) = cn.new
+  x
+}
+
 ## Update fields in named list x with fields in named list y
 ## The semantics as in Python dict.update()
 update.list <- function(x,y) {
@@ -187,6 +194,51 @@ missing.join.keys.report <- function(x,y,by,do.report=T,name.x="x",name.y="y",re
   }
   return(x_y)
 }
+
+## Wrapper around dcast.data.table that allows to specify
+## value.var="..." to mean "all variables not used in formula",
+## reorder value columns by RHS of the formula and use RHS as
+## a prefix of the output columnsrather than suffix as default.
+dcast.ext.data.table <- function(data,formula,sep = "_", 
+                                 value.var = "...",
+                                 value.is.suffix = T,
+                                 order.by.rhs = T,
+                                 ...) {
+  library(data.table)
+  library(stringr)
+  library(dplyr)
+  if(any(value.var=="...")) {
+    value.var = setdiff(colnames(data),all.vars(formula))
+  }
+  if(value.is.suffix || order.by.rhs) {
+    use.sep = "@#%$^&*!" #something not likely to be in the value data
+  }
+  else {
+    use.sep = sep
+  }
+  x = dcast.data.table(data = data,formula = formula,value.var = value.var, sep = use.sep,...)
+  if(value.is.suffix || order.by.rhs) {
+    cn = colnames(x)
+    mask.val.col = grepl(use.sep,cn,fixed = T)
+    cn.val.col = cn[mask.val.col]
+    cn.other.col = cn[!mask.val.col]
+    ##split by our unique separator and swap columns
+    cn.val.col.spl = as.data.frame(str_split_fixed(cn.val.col,fixed(use.sep),2)[,c(2,1)])
+    cn.val.col.spl$name = cn.val.col
+    if(order.by.rhs) {
+      cn.val.col.spl = dplyr::arrange_(cn.val.col.spl,colnames(tmp$cn.val.col.spl))
+      setcolorder(x,c(cn.other.col,cn.val.col.spl$name))
+    }
+    if(!value.is.suffix){
+      cn.val.col.spl = cn.val.col.spl[,c(2,1,3)]
+    }
+    cn.val.col.spl$new_name = paste(cn.val.col.spl[,1],cn.val.col.spl[,2],sep = sep)
+    setnames(x,cn.val.col.spl$name,cn.val.col.spl$new_name)
+  }
+  x
+}
+
+
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
   mask_col_ignore = names(dat) %in% col_ignore
