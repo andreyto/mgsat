@@ -4071,13 +4071,18 @@ mgsat.16s.task.template = within(list(), {
 
 
 start.cluster.project <- function() {
-  cl<-makeCluster(getOption("mc.cores", 2L),type = "SOCK") #number of CPU cores
-  registerDoSNOW(cl)
+  library(doParallel)
+  library(parallel)
+  node.cores = getOption("mc.cores", 2L)
+  cl<-parallel::makeCluster(node.cores)
+  registerDoParallel(cl)
   return(cl)
 }
 
 stop.cluster.project <- function(cl) {
-  stopCluster(cl)
+  if(!is.null(cl)) {
+    stopCluster(cl)
+  }
 }
 
 ## create new MGSAT result object
