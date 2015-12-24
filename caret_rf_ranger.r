@@ -3,7 +3,12 @@ loadNamespace("caret")
 
 ## our constant, not part of the caret interface
 
-make.rangerCaretRfeFuncs <- function(rerank=F,dependent.varID = ".ranger.dependent.varID",selectSize=caret::pickSizeBest) {
+make.rangerCaretRfeFuncs <- function(rerank=F,
+                                     dependent.varID = ".ranger.dependent.varID",
+                                     selectSize=caret::pickSizeBest,
+                                     fit.args.first=list(),
+                                     fit.args.other=fit.args.first,
+                                     fit.args.last=fit.args.first) {
   list(
   
 
@@ -20,10 +25,21 @@ function (x, y, first, last, ...)
   ##need to always compute with importance in rerank mode of rfeControl,
   ##otherwise get "out of bound" error. This happens with buil-in rfFuncs
   ##object too.
-  importance = if(rerank || first) "impurity" else "none"
+  importance = if(rerank || first || last) "impurity" else "none"
   #print(paste("first=",first,"last=",last,"dim=",ncol(x),"importance=",importance))
-  ranger::ranger(data = x, dependent.variable.name = dependent.varID, 
-                  importance = importance, write.forest = T, ...)
+  
+  if(first) fit.args = fit.args.first
+  else if(last) fit.args = fit.args.last
+  else fit.args = fit.args.other
+  
+  do.call(ranger::ranger,
+          c(
+          list(data = x, dependent.variable.name = dependent.varID, 
+                  importance = importance, write.forest = T, 
+                 ...),
+          fit.args
+          )
+  )
 
 }
 ,
