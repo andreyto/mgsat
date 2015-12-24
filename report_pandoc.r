@@ -587,11 +587,19 @@ PandocAT$methods(add.table = function(x,
   }
   
   if(show.first.rows > 0) {
-    x = x[1:show.first.rows,,drop=F]
+    if(inherits(x,"data.table")) x = x[1:show.first.rows]
+    else x = x[1:show.first.rows,,drop=F]
   }
   if(show.first.cols > 0) {
-    x = x[,1:show.first.cols,drop=F]
+    if(inherits(x,"data.table")) x = x[,1:show.first.cols,with=F]
+    else x = x[,1:show.first.cols,drop=F]
   }
+  
+  ## With data.table, I am getting this message:
+  ## `data.table inherits from data.frame (from v1.5) but this data.table does not`
+  ## when calling `rn = rownames()` below. Converting to data.frame here to get rid of it.
+  
+  if(inherits(x,"data.table")) x = as.data.frame(x)
   
   if(!show.row.names) {
     rownames(x) <- NULL
