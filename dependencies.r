@@ -27,7 +27,6 @@ vanilla_packages = c(
   "boot",
   #"knitr",
   "lattice",
-  "date",
   "timeDate",
   #for llist
   "Hmisc",
