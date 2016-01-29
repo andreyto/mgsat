@@ -160,6 +160,20 @@ colnames.as.factor <- function(x,ordered=F) {
   factor(rn,levels=rn,ordered=ordered)
 }
 
+## Wrapper for functions from various packages that recode values in a vector
+recode.values <- function(x,...,flavor=c("car","DescTools")) {
+  flavor = flavor[[1]]
+  if(flavor == "car") {
+    car::Recode(x,...)
+  }
+  else if(flavor == "DescTools") {
+    DescTools::Recode(x,...)
+  }
+  else {
+    stop(sprintf("Unknown flavor value: %s",flavor))
+  }
+}
+
 ## Call quantcut and return its result as ordered factor
 quantcut.ordered <- function(x,na.rm=T,...) {
   ##contrary to the docs, na.rm is ignored by quantcut causing stop, do it manually here
@@ -2010,10 +2024,10 @@ pairs.scatter.plot <- function(m_a,group=NULL,tooltip=NULL,color=NULL,...) {
 }
 
 pairs.scatter.plot.rbokeh <- function(m_a,
-                                width.cell=200,
-                                height.cell=200,
-                                tools=c("pan", "wheel_zoom", "box_zoom", "box_select", "reset"),
-                                lod_threshold=10) {
+                                      width.cell=200,
+                                      height.cell=200,
+                                      tools=c("pan", "wheel_zoom", "box_zoom", "box_select", "reset"),
+                                      lod_threshold=10) {
   require(rbokeh)
   var.names = colnames(m_a$count)
   data = join_count_df(m_a)
@@ -2524,7 +2538,7 @@ mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=
     list(ph),
     ordinate.args
   ))
-
+  
   ndim = ord$ndim
   if(is.null(ndim)) {
     ndim = 2
@@ -2536,10 +2550,10 @@ mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=
   if(do.plot) {
     if(ndim>=3) {
       out.res$pl3d = plot_ordination.3d(ph,ord,type="samples",
-                                color=log(out.res$p.val.adj),
-                                axes=1:ndim,
-                                labels=paste("ID:",names(out.res$p.val.adj),
-                                             "p.val.adj: ",format(out.res$p.val.adj,digits=3))
+                                        color=log(out.res$p.val.adj),
+                                        axes=1:ndim,
+                                        labels=paste("ID:",names(out.res$p.val.adj),
+                                                     "p.val.adj: ",format(out.res$p.val.adj,digits=3))
       )
     }
   }
@@ -5979,13 +5993,19 @@ heatmap.combined.report <- function(m_a,
   if(length(attr.annot.names)>0) {
     main.meta.var = attr.annot.names[[1]]
   }
-  if(km.abund<1) {
-    split = pamk(m_a.norm$count, metric=clustering_distance_rows)$pamobject$clustering
-    split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
+  if(nrow(m_a.norm$count) >= 6) {
+    if(km.abund<1) {
+      split = pamk(m_a.norm$count, metric=clustering_distance_rows)$pamobject$clustering
+      split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
+    }
+    else {
+      split = pam(m_a.norm$count, k=km.abund, metric=clustering_distance_rows)$clustering
+      split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
+    }
   }
   else {
-    split = pam(m_a.norm$count, k=km.abund, metric=clustering_distance_rows)$clustering
-    split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
+    split = NULL
+    split.descr = "Not splitting clusters due to low number of observations"
   }
   caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
                          main.meta.var,split.descr)
@@ -6003,12 +6023,14 @@ heatmap.combined.report <- function(m_a,
                             row_names_gp = gpar(fontsize = 8))
   report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-  if(!is.null(main.meta.var)) {
-    g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-    report$add(g.t,caption = caption.g.test)
+  if(!is.null(split)) {
+    if(!is.null(main.meta.var)) {
+      g.t = g.test(m_a.norm$attr[,main.meta.var],split)
+      report$add(g.t,caption = caption.g.test)
+    }
+    m_a.norm$attr$.Heatmap.Cluster.Split = split
   }
   
-  m_a.norm$attr$.Heatmap.Cluster.Split = split
   export.taxa.meta(m_a.norm,
                    label="htmap",
                    descr="Data used for heatmap with added row cluster splits (clustering by abundance profile)",
@@ -6017,12 +6039,20 @@ heatmap.combined.report <- function(m_a,
   
   if(!is.null(get.diversity(res.tests,type="diversity"))) {
     div = log(get.diversity(res.tests,type="diversity")$e)
-    if(km.diversity<1) {
-      split = pamk(div, metric="pearson")$pamobject$clustering
+    if(nrow(div) >= 6) {
+      
+      if(km.diversity<1) {
+        split = pamk(div, metric="pearson")$pamobject$clustering
+      }
+      else {
+        split = pam(div, k=km.diversity, metric="pearson")$clustering
+      }    
     }
     else {
-      split = pam(div, k=km.diversity, metric="pearson")$clustering
-    }    
+      split = NULL
+      split.descr = "Not splitting clusters due to low number of observations"
+    }
+    
     h.d = Heatmap(div,name="Renyi diversity indices",
                   cluster_columns=F,
                   show_row_names = F, 
@@ -6033,11 +6063,13 @@ heatmap.combined.report <- function(m_a,
     h = h.d + h
     report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
                width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-    if(!is.null(main.meta.var)) {
-      g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-      report$add(g.t,caption = caption.g.test)
+    if(!is.null(split)) {
+      if(!is.null(main.meta.var)) {
+        g.t = g.test(m_a.norm$attr[,main.meta.var],split)
+        report$add(g.t,caption = caption.g.test)
+      }
+      m_a.norm$attr$.Heatmap.Cluster.Split = split
     }
-    m_a.norm$attr$.Heatmap.Cluster.Split = split
     m_a.norm$count = div
     export.taxa.meta(m_a.norm,
                      label="htmap",
@@ -6092,14 +6124,14 @@ plot_ordination.2d <- function(physeq,ordination,
                                ...) {
   library(phyloseq)
   pt = list(...)
-
+  
   df.plot =  plot_ordination(physeq,ordination,type=type,axes=axes,justDF = T)
-
+  
   if(is.null(pt$alpha)) {
     ##helps with overplotting
     pt$alpha = 0.5
   }
-
+  
   df.names = colnames(df.plot)
   pl = ggplot(df.plot,aes_string(x=df.names[1],y=df.names[2]))
   
@@ -6124,9 +6156,9 @@ plot_ordination.3d <- function(physeq,ordination,
   
   df.names = colnames(df.plot)
   pl = do.call(plot.scatter.js3d,
-          c(list(df.plot[,1:3],df.plot),
-          pt))
-                    
+               c(list(df.plot[,1:3],df.plot),
+                 pt))
+  
   
   return (pl)
 }
@@ -6149,10 +6181,10 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     ord.func = "phyloseq.ordinate"
     ord.args = c(list(ph,distance=distance),ord.task$ordinate.task)
     
-
+    
     ord = do.call(ord.func,
                   ord.args
-                  )
+    )
     
     pt.orig = ord.task$plot.task
     if(is.null(pt.orig$axes)) {
@@ -6169,13 +6201,13 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     pt$ggplot.extra = NULL
     
     pt = plyr::compact(pt)
-
+    
     pl =  do.call(plot_ordination.2d,
-                       c(list(ph,ord,type=pt.orig$type,
-                              axes=pt.orig$axes,
-                              ggplot.extra=pt.ggplot.extra),
-                         pt
-                       ))
+                  c(list(ph,ord,type=pt.orig$type,
+                         axes=pt.orig$axes,
+                         ggplot.extra=pt.ggplot.extra),
+                    pt
+                  ))
     
     caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
                Plot used parameters %s.",
@@ -6183,28 +6215,31 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                     arg.list.as.str(pt))
     report$add(pl,caption = caption)
     
-    ##We have to redo NMDS for 3D plot if the original number of requested ordination dimensions
-    ##was less than 3
-    if(ord.task$ordinate.task$method == "NMDS") {
-      if(is.null(ord.task$ordinate.task$k) || ord.task$ordinate.task$k<3) {
-        ord.args$k = 3
-        ord = do.call(ord.func,
-                      ord.args
-                      )        
-        
+    if(nrow(m_a$count) > 3) {
+      
+      ##We have to redo NMDS for 3D plot if the original number of requested ordination dimensions
+      ##was less than 3
+      if(ord.task$ordinate.task$method == "NMDS") {
+        if(is.null(ord.task$ordinate.task$k) || ord.task$ordinate.task$k<3) {
+          ord.args$k = 3
+          ord = do.call(ord.func,
+                        ord.args
+          )        
+          
+        }
       }
-    }
-    
-    pt = pt.orig
-    pt$axes = 1:3
-    
-    caption=sprintf("Ordination plot in 3D. Ordination performed with parameters %s. 
+      
+      pt = pt.orig
+      pt$axes = 1:3
+      
+      caption=sprintf("Ordination plot in 3D. Ordination performed with parameters %s. 
                Plot used parameters %s.",
-                    arg.list.as.str(ord.task$ordinate.task),
-                    arg.list.as.str(pt))
-    report$add.widget(plot_ordination.3d(
+                      arg.list.as.str(ord.task$ordinate.task),
+                      arg.list.as.str(pt))
+      report$add.widget(plot_ordination.3d(
         ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size),
-                      caption = caption)
+        caption = caption)
+    }
   }
   report$pop.section()  
   #ordination.report(m_a,res=NULL,distance=as.dist(d.direct.mat),ord.tasks=list(list(ordinate.task=list(method="NMDS"),plot.task=list(type="samples",color="Genotype",size=5)),sub.report=F))
@@ -7871,10 +7906,10 @@ fold.change <- function(mat,key,aggr.fun=mean,comb.fun=function(x,y) "/"(x,y),
   key.names = colnames(key)
   mat = as.matrix(mat)
   x <- data.frame(key,mat) %>%  slice_rows(key.names) %>% by_slice(map, aggr.fun)
-
+  
   key.grouped = as.data.frame(x[,1:length(key.names),drop=F])
   x <- as.matrix(x[,-(1:length(key.names)),drop=F])
-
+  
   # calculate changes between all rows
   i <- combn(nrow(x), 2)
   x <- comb.fun(x[i[1,],,drop=F] , x[i[2,],,drop=F])
