@@ -2162,10 +2162,12 @@ plot.abund.meta <- function(m_a,
   if(is.null(id.var.dodge)) {
     fill="feature"
     color="feature"
+    palette.levels = factor(features,levels=features)
   }
   else {
     fill=id.var.dodge
     color=id.var.dodge
+    palette.levels = factor(unique(dat[,id.var.dodge]))
   }
   
   make.facet.formula <- function(df,vars) {
@@ -2353,11 +2355,11 @@ plot.abund.meta <- function(m_a,
   
   if(color.palette=="brew") {
     n.color.orig = 8
-    palette = brewer.pal(n.color.orig, "Accent")
+    #palette = brewer.pal(n.color.orig, "Accent")
     #get.palette = colorRampPalette(palette)
     #palette = get.palette(max(length(features),n.color.orig))
-    palette = rep_len(palette,max(length(features),1000))
-    palette = generate.colors.mgsat(factor(features,levels=features),value="palette")    
+    #palette = rep_len(palette,max(length(features),1000))
+    palette = generate.colors.mgsat(palette.levels,value="palette")    
     gp = gp + 
       scale_fill_manual(values = palette) +
       scale_color_manual(values = palette)
@@ -2384,7 +2386,8 @@ plot.abund.meta <- function(m_a,
   if (!is.null(file_name)) {
     ggsave(file_name)
   }
-  
+  #make.global(name="dbg")
+  #stop("DEBUG")
   return (new_mgsatres(plot=gp,dat.summary=dat.summary,dat.melt=dat.melt))
 }
 
@@ -3470,7 +3473,7 @@ plot.profiles <- function(m_a,
         
         for(id.var.dodge in id.vars.dodge) {
           
-          report$add.header(paste(id.var.dodge$descr,"bars. Iterating over orientation and, optionally, scaling"))
+          report$add.header(paste(id.var.dodge$descr,"plots. Iterating over orientation and, optionally, scaling"))
           report$push.section(report.section)
           sqrt.scale = show.profile.task$sqrt.scale
           for(other.params in list(
@@ -3483,7 +3486,7 @@ plot.profiles <- function(m_a,
           )) {
             
             report$add.header(paste(feature.descr, 
-                                    other.params$descr, "Iterating over bar geometry"))
+                                    other.params$descr, "Iterating over plot geometry"))
             report$push.section(report.section)
             
             for(geom in show.profile.task$geoms) {
@@ -4721,7 +4724,8 @@ deseq2.report <- function(m_a,
                           formula.rhs,
                           test.task=list(),
                           result.tasks=list(list()),
-                          round.to.int=T
+                          round.to.int=T,
+                          alpha=0.05
 ) {
   report.section = report$add.header("DESeq2 tests and data normalization",section.action="push")
   report$add.package.citation("DESeq2")
@@ -4734,6 +4738,9 @@ deseq2.report <- function(m_a,
                   test.task)
   )
   res.all = foreach(result.task=result.tasks) %do% {
+    if(is.null(result.task$alpha)) {
+      result.task$alpha = alpha
+    }
     res = do.call(results,
                   c(list(object=dds),
                     result.task)
@@ -5451,6 +5458,9 @@ test.counts.project <- function(m_a,
   if(do.deseq2) {
     tryCatchAndWarn({ 
       ##drop "other" category with norm method "ident"
+      if(is.null(deseq2.task$alpha)) {
+        deseq2.task$alpha = alpha
+      }
       res$deseq2 = do.call(deseq2.report,c(list(m_a=m_a.abs),deseq2.task))
     })
   }
@@ -5993,9 +6003,10 @@ heatmap.combined.report <- function(m_a,
   if(length(attr.annot.names)>0) {
     main.meta.var = attr.annot.names[[1]]
   }
-  if(nrow(m_a.norm$count) >= 6) {
+  n.obs = nrow(m_a.norm$count)
+  if(n.obs >= 6) {
     if(km.abund<1) {
-      split = pamk(m_a.norm$count, metric=clustering_distance_rows)$pamobject$clustering
+      split = pamk(m_a.norm$count, krange = 1:min(n.obs-2,10), metric=clustering_distance_rows)$pamobject$clustering
       split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
     }
     else {
@@ -6039,10 +6050,11 @@ heatmap.combined.report <- function(m_a,
   
   if(!is.null(get.diversity(res.tests,type="diversity"))) {
     div = log(get.diversity(res.tests,type="diversity")$e)
-    if(nrow(div) >= 6) {
+    n.obs = nrow(div)
+    if(n.obs >= 6) {
       
       if(km.diversity<1) {
-        split = pamk(div, metric="pearson")$pamobject$clustering
+        split = pamk(div, krange = 1:min(n.obs-2,10), metric="pearson")$pamobject$clustering
       }
       else {
         split = pam(div, k=km.diversity, metric="pearson")$clustering
