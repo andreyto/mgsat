@@ -664,7 +664,7 @@ PandocAT$methods(add.p = function(x,rule=F,echo=T,...) {
 })
 
 PandocAT$methods(add.descr = function(x,...) {
-  .self$add.p(pandoc.strong.return(x),...)
+  .self$add.p(x,...)
 })
 
 PandocAT$methods(add.package.citation = function(x,...) {
