@@ -1984,8 +1984,16 @@ split.by.total.levels.data.frame <- function(x) {
   return(list(colnam[1:ind.split],colnam[(ind.split+1):length(colnam)]))
 }
 
-generate.colors.mgsat <- function(x,value=c("colors","palette"),brewer.pal.name="Accent") {
-  require(RColorBrewer)
+ggplot.hue.colors <- function(n) {
+  hues = seq(15, 375, length=n+1)
+  grDevices::hcl(h=hues, l=65, c=100)[1:n]
+}
+
+generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer","ggplot"),brewer.pal.name="Accent") {
+  family = family[[1]]
+  if(family=="brewer") library(RColorBrewer)
+  else if(family=="ggplot") library(ggplot2)
+  
   value = value[[1]]
   if(is.character(x)) {
     x = factor(x)
@@ -2001,12 +2009,17 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),brewer.pal.name=
   else if(is.factor(x)) {
     lev = levels(x)
     if(!is.ordered(x)) {
+      if(family=="brewer") {
       pal.info = brewer.pal.info[brewer.pal.name,]
       n.color.orig = pal.info$maxcolors
       if(length(lev)<n.color.orig) {
         n.color.orig = length(lev)
       }
       palette = brewer.pal(n.color.orig, brewer.pal.name)
+      }
+      else if(family=="ggplot") {
+        palette = ggplot.hue.colors(length(lev)) 
+      }
       #get.palette = colorRampPalette(palette)
       #palette = get.palette(max(length(features),n.color.orig))
       palette = rep_len(palette,length(lev))
