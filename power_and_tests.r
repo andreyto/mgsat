@@ -92,7 +92,7 @@ interpret.args.in.df <- function(args,data) {
 ## convert accented characters to regular ASCII equivalents
 str_to_ascii <- function(x) iconv(x,to="ASCII//TRANSLIT")
 
-str_dedent <- function(x,n_header=1) {
+str_dedent <- function(x,n_header=1,ignore_length_of_blank_lines=T) {
   lines_full = str_split(x,"\n")[[1]]
   n_lines = length(lines_full)
   n_header = min(n_header,n_lines)
@@ -105,12 +105,16 @@ str_dedent <- function(x,n_header=1) {
   len_full = unlist(str_length(lines_full))
   lines_trimmed = str_trim(lines_full,"left")
   len_trimmed = unlist(str_length(lines_trimmed))
-  len_dedent = min(len_full - len_trimmed)
+  len_diff = len_full - len_trimmed
+  if(ignore_length_of_blank_lines) {
+    len_diff = len_diff[len_trimmed>0]
+  }
+  len_dedent = min(len_diff)
   lines_padded = unlist(str_pad(lines_trimmed,len_full - len_dedent,side="left"))
   return (str_c(c(lines_header,lines_padded),collapse = "\n"))
   }
-  make.global(name="global")
   #str_c(lines_padded,collapse = "\n")
+  stop("Should not get here")
 }
 
 label.size.points <- function(x,what="width",resolution=72) {
