@@ -4520,7 +4520,7 @@ show.feature.meta <- function(m_a,
                                            group.var.msg),
                                      section.action="push")
   
-  id.vars = c(x.var,group.var)
+  id.vars = unique(c(x.var,group.var))
   dat = cbind(m_a$attr[,id.vars,drop=F],count)
   dat = melt.abund.meta(dat,id.vars=id.vars,attr.names=id.vars,value.name=value.name)
   dat$.x.var = dat[,x.var]
@@ -4534,6 +4534,7 @@ show.feature.meta <- function(m_a,
       #geom_smooth(aes(group=group,color=group), method='lm', formula=y~x+I(x^2)+I(x^3)) + 
       stat_smooth(method=smooth_method, size = 1, se = T,method.args=list(degree=1)) +
       ylab(paste(value.name,"of",feature.name))
+
     gr.range = ddply(dat.feature,group.var,summarise,
                      range = max(.x.var) - min(.x.var))
     for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
