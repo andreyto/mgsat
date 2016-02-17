@@ -4532,7 +4532,7 @@ show.feature.meta <- function(m_a,
       geom_point() +
       #geom_line(alpha=0.3, linetype=3) + 
       #geom_smooth(aes(group=group,color=group), method='lm', formula=y~x+I(x^2)+I(x^3)) + 
-      stat_smooth(method=smooth_method, se = T,degree=1,size=1) +
+      stat_smooth(method=smooth_method, size = 1, se = T,method.args=list(degree=1)) +
       ylab(paste(value.name,"of",feature.name))
     gr.range = ddply(dat.feature,group.var,summarise,
                      range = max(.x.var) - min(.x.var))
