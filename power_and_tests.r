@@ -2030,6 +2030,7 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer
     names(palette) = lev
     if(value=="colors") {
       ret = palette[x]
+      names(ret) = NULL
     }
     else {
       ret = palette
@@ -6134,15 +6135,17 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,...) {
   require(threejs)
   args = list(color=color,labels=labels,size=size)
   args = interpret.args.in.df(args,data)
+
   if(!is.null(args$color) && length(args$color) > 1) {
     args$color = generate.colors.mgsat(args$color)
   }
-  do.call(scatterplot3js,
+  pl = do.call(scatterplot3js,
           c(list(xyz),
             args,
             list(...)
           )
   )
+  pl
 }
 
 ## Wrapper around phyloseq::ordinate
