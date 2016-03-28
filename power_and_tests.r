@@ -2867,7 +2867,7 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
 ## Value: named list(e=expected species count,se=standard error of e (if se=T in arguments))
 rarefy.mgsat <- function (x, sample, se = FALSE, MARGIN = 1, include.max = T) 
 {
-  require(foreach)
+  library(foreach)
   x <- as.matrix(x)
   if(MARGIN==2) {
     x = t(x)
@@ -2948,7 +2948,7 @@ mgsat.divrich.accum.plots <- function(m_a,is.raw.count.data=T,do.plot.profiles=T
   
   if(is.raw.count.data) {
     max.n = max(rowSums(m_a$count))
-    res.rar = rarefy.mgsat(m_a$count, sample = seq(1,max.n,length.out = 30), se = FALSE, include.max = T) 
+    res.rar <- rarefy.mgsat(m_a$count, sample = seq(1,max.n,length.out = 30), se = FALSE, include.max = T) 
     if(do.plot.profiles) {
       plot.profiles.task$show.profile.task = within(plot.profiles.task$show.profile.task,{
         geoms = c("line_obs")
@@ -6115,8 +6115,8 @@ heatmap.combined.report <- function(m_a,
     h = h.d + h
     report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
                width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-    if(!is.null(split)) {
-      if(!is.null(main.meta.var)) {
+    if(!is.null(split) && num.levels(split)>1) {
+      if(!is.null(main.meta.var) && num.levels(m_a.norm$attr[,main.meta.var])>1) {
         g.t = g.test(m_a.norm$attr[,main.meta.var],split)
         report$add(g.t,caption = caption.g.test)
       }
