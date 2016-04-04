@@ -6075,7 +6075,7 @@ heatmap.combined.report <- function(m_a,
   report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(split)) {
-    if(!is.null(main.meta.var)) {
+    if(num.levels(split)>1 && !is.null(main.meta.var) && num.levels(m_a.norm$attr[,main.meta.var])>1) {
       g.t = g.test(m_a.norm$attr[,main.meta.var],split)
       report$add(g.t,caption = caption.g.test)
     }
@@ -6115,8 +6115,8 @@ heatmap.combined.report <- function(m_a,
     h = h.d + h
     report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
                width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-    if(!is.null(split) && num.levels(split)>1) {
-      if(!is.null(main.meta.var) && num.levels(m_a.norm$attr[,main.meta.var])>1) {
+    if(!is.null(split)) {
+      if(num.levels(split)>1 && !is.null(main.meta.var) && num.levels(m_a.norm$attr[,main.meta.var])>1) {
         g.t = g.test(m_a.norm$attr[,main.meta.var],split)
         report$add(g.t,caption = caption.g.test)
       }
