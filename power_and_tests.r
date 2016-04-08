@@ -2555,7 +2555,7 @@ balanced.sample <- function(x, grouped = TRUE, reps = 0) {
 }
 
 
-mgsat.find.outliers <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list()) {
+mgsat.find.outliers <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list(),alpha=alpha) {
   library(Rlof)
   library(fitdistrplus)
   x = as.matrix(x)
@@ -2573,11 +2573,15 @@ mgsat.find.outliers <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list()) {
   if(!is.null(rn)) {
     names(p.val) = rn
   }
-  return (list(p.val.adj=p.val,lof.val=lof.val,dist.par=dist.par))
+  
+  return (list(p.val.adj=p.val,lof.val=lof.val,dist.par=dist.par,alpha=alpha,
+               ind.outlier=which(p.val<=alpha)))
 }
 
 mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list(),
-                                         ordinate.args=list(method="NMDS",k=3),do.plot=T) {
+                                         ordinate.args=list(method="NMDS",k=3),do.plot=T,
+                                         alpha=0.01,
+                                         do.report=T) {
   library(phyloseq)
   if(inherits(x,"dist")) {
     m_a = list(attr=data.frame(name=labels(x),row.names = labels(x)))
@@ -2602,7 +2606,7 @@ mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=
   }
   
   ord.df = plot_ordination(ph, ord, type="samples",axes=1:ndim,justDF = T)
-  out.res = mgsat.find.outliers(ord.df[,1:ndim],k=k,pval.adjust = pval.adjust,lof.dist.args=lof.dist.args)
+  out.res = mgsat.find.outliers(ord.df[,1:ndim],k=k,pval.adjust = pval.adjust,lof.dist.args=lof.dist.args,alpha=alpha)
   out.res$ord = ord
   if(do.plot) {
     if(ndim>=3) {
@@ -2612,7 +2616,34 @@ mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=
                                         labels=paste("ID:",names(out.res$p.val.adj),
                                                      "p.val.adj: ",format(out.res$p.val.adj,digits=3))
       )
+      if(do.report) {
+        report$add.widget(out.res$pl3d,
+                   caption = "Ordination plot with observations colored according to p-value from
+                   outlier detection procedure")
+      }
+      out.res$pl3d.outlier = plot_ordination.3d(ph,ord,type="samples",
+                                        color=(seq_along(out.res$p.val.adj) %in% out.res$ind.outlier),
+                                        axes=1:ndim,
+                                        labels=paste("ID:",names(out.res$p.val.adj),
+                                                     "p.val.adj: ",format(out.res$p.val.adj,digits=3))
+      )
+      if(do.report) {
+        report$add.widget(out.res$pl3d.outlier,
+                   caption = "Ordination plot with observations colored according to assigned
+                   outlier status")
+      }
     }
+  }
+  if(do.report) {
+    out.df = data.frame(id=names(out.res$p.val.adj),
+               p.val.adj=out.res$p.val.adj,
+               is.outlier=(seq_along(out.res$p.val.adj) %in% out.res$ind.outlier))
+    if(is.null(out.df$id)) {
+      out.df$id = seq_along(out.df$p.val.adj)
+    }
+    out.df = out.df[order(out.df$p.val.adj),,drop=F]
+    report$add.table(out.df,
+                     caption = "Results of outlier detection")
   }
   return (out.res)
 }
