@@ -64,6 +64,8 @@ vanilla_packages = c(
   "arm",
   ## mixed() to get p-values for lmer
   "afex",
+  ## outlier detection
+  "Rlof",
   ## htmlwidgets-based packages
   "htmlwidgets",
   "d3heatmap",
