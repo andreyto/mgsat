@@ -117,6 +117,21 @@ str_dedent <- function(x,n_header=1,ignore_length_of_blank_lines=T) {
   stop("Should not get here")
 }
 
+file.dep.updated <- function(dep,targ) {
+  dep = unlist(dep)
+  targ = unlist(targ)
+  if(!all(file.exists(targ))) {
+    return (T)
+  }
+  if(!all(file.exists(dep))) {
+    return (T)
+  }
+  for(dt in file.mtime(dep)) for(tt in file.mtime(targ)) {
+    if(dt > tt) return (T)
+  }
+  return (F)
+}
+
 label.size.points <- function(x,what="width",resolution=72) {
   require(graphics)
   if(what=="width") {
