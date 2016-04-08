@@ -246,11 +246,13 @@ pandoc.as.printed.return <- function(x,attrs="") {
          '\n', repChar('`', 7), '\n')
 }
 
-pandoc.special.symb = "\\-\\[\\]`*_{}()#+!~|"
+pandoc.special.symb = "\\-\\[\\]`*_{}()#+!~"
 
 pandoc.escape.special <- function(x) {
-  gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",
+  x = gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",
        format(x,digits=panderOptions("digits")),perl=T)
+  ##the only way to have backstick is table cells is to use special symbol
+  gsub('[|]','&#124;',x)
 }
 
 pandoc.link.verbatim.return <- function(url,text=NULL) {
