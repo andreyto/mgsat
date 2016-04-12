@@ -117,6 +117,35 @@ str_dedent <- function(x,n_header=1,ignore_length_of_blank_lines=T) {
   stop("Should not get here")
 }
 
+order.factor.by.numeric.prefix <- function(x,pad=list(0,' ',NULL)) {
+  library(stringr)
+  pad = pad[[1]]
+  x = factor(x)
+  xlev = levels(x)
+  patt = "(.*[0-9])([^0-9]*$)"
+  xlevpref = str_match(xlev,patt)[,-1]
+  xlevnum = as.numeric(xlevpref[,1])
+  xlevpref = xlevpref[order(xlevnum),]
+  #pad_wid = max(str_length(xlevpref[,1]))
+  if(!is.null(pad)) {
+    x_reformat <- function(x,pad=' ') {
+      x = paste(format(as.numeric(x[,1]),
+                   preserve.width="common",drop0trailing=T,trim=F),
+            x[,2],
+            sep="")
+      if(pad!=' ') {
+        xtr = str_trim(x,side = "left")
+        x = str_pad(xtr,str_length(x),side="left",pad=pad)
+      }
+      x
+    }
+    xlev = x_reformat(xlevpref,pad=pad)
+    xpref = str_match(as.character(x),patt)[,-1]
+    x = x_reformat(xpref,pad=pad)
+  }
+  factor(x,xlev,ordered = T)
+}
+
 file.dep.updated <- function(dep,targ) {
   dep = unlist(dep)
   targ = unlist(targ)
@@ -2554,32 +2583,114 @@ balanced.sample <- function(x, grouped = TRUE, reps = 0) {
   return(seq2)
 }
 
+mgsat.lof <- function (data, k, cores = NULL, ...) 
+{
+  library(Rlof) #we use internal function here
+  library(foreach)
+  library(doParallel)
+  
+  if (is.null(k)) 
+    stop("k is missing")
+  if (!is.numeric(k)) 
+    stop("k is not numeric")
+  if (!is.numeric(cores) && !is.null(cores)) 
+    stop("cores is not numeric")
+  is.dist = inherits(data,"dist")
+  data <- as.matrix(data)
+  if (!is.numeric(data)) 
+    stop("the data contains non-numeric data type")
+  v.k <- as.integer(k)
+  if (max(v.k) >= dim(data)[1]) 
+    stop("the maximum k value has to be less than the length of the data")
+  distdata <- mgsat.f.dist.to.knn(data, max(v.k), cores, is.dist, ...)
+  p <- dim(distdata)[2L]
+  dist.start <- as.integer((dim(distdata)[1])/2)
+  dist.end <- dim(distdata)[1]
+  ik <- numeric()
+  registerDoParallel(cores = cores)
+  m.lof <- foreach(ik = v.k, .combine = cbind) %dopar% {
+    lrddata <- Rlof:::f.reachability(distdata, ik)
+    v.lof <- rep(0, p)
+    for (i in 1:p) {
+      nneigh <- sum(!is.na(distdata[c((dist.start + 1):dist.end), 
+                                    i]) & (distdata[c((dist.start + 1):dist.end), 
+                                                    i] <= distdata[(dist.start + ik), i]))
+      v.lof[i] <- sum(lrddata[distdata[(1:nneigh), i]]/lrddata[i])/nneigh
+    }
+    v.lof
+  }
+  if (length(v.k) > 1) 
+    colnames(m.lof) <- v.k
+  return(m.lof)
+}
+
+mgsat.f.dist.to.knn <- function (dataset, neighbors, cores, is.dist=F, ...) 
+{
+  library(foreach)
+  library(doParallel)
+  if(is.dist) {
+    m.dist <- dataset
+  }
+  else {
+    m.dist <- as.matrix(distmc(dataset, ...))
+  }
+  num.col <- dim(m.dist)[2]
+  l.knndist <- lapply(c(1:num.col), function(i) {
+    order.x <- order(m.dist[, i])
+    kdist <- m.dist[, i][order.x[neighbors + 1]]
+    numnei <- sum(m.dist[, i] <= kdist)
+    data.frame(v.order = order.x[2:numnei], v.dist = m.dist[, 
+                                                            i][order.x[2:numnei]])
+  })
+  rm(m.dist)
+  maxnum <- max(unlist(lapply(l.knndist, function(x) {
+    dim(x)[1]
+  })))
+  registerDoParallel(cores = cores)
+  i <- numeric()
+  knndist <- foreach(i = 1:num.col, .combine = cbind) %dopar% 
+  {
+    len <- dim(l.knndist[[i]])[1]
+    c(l.knndist[[i]]$v.order, rep(NA, (maxnum - len)), 
+      l.knndist[[i]]$v.dist, rep(NA, (maxnum - len)))
+  }
+  knndist
+}
 
 mgsat.find.outliers <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list(),alpha=alpha) {
   library(Rlof)
   library(fitdistrplus)
-  x = as.matrix(x)
+  if(inherits(x,"dist")) {
+    n.obs = attr(x,"Size")
+    rn = labels(x)
+  } else {
+    n.obs = nrow(x)
+    rn = rownames(x)
+  }
   stopifnot(length(k)==1)
   if(k<1) {
-    k = round(nrow(x)*k)
+    k = round(n.obs*k)
   }
-  lof.val = do.call(lof,c(
+  lof.val = do.call(mgsat.lof,c(
     list(x,k,cores=NULL),
     lof.dist.args
   ))
   dist.par = fitdist(lof.val,"gamma")
   p.val = p.adjust(pgamma(lof.val,dist.par$estimate["shape"],dist.par$estimate["rate"],lower.tail = F),pval.adjust)
-  rn = rownames(x)
   if(!is.null(rn)) {
     names(p.val) = rn
   }
-  
+  make.global(name="global")
   return (list(p.val.adj=p.val,lof.val=lof.val,dist.par=dist.par,alpha=alpha,
                ind.outlier=which(p.val<=alpha)))
 }
 
-mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list(),
-                                         ordinate.args=list(method="NMDS",k=3),do.plot=T,
+mgsat.find.outliers.ordinate <- function(x,
+                                         k=0.5,
+                                         lof.on.ordinate=T,
+                                         pval.adjust="BH",
+                                         lof.dist.args=list(),
+                                         ordinate.args=list(method="MDS",k=3),do.plot=T,
                                          alpha=0.01,
                                          do.report=T) {
   library(phyloseq)
@@ -2592,7 +2703,7 @@ mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=
   }
   ph = m_a.to.phyloseq(m_a)
   if(is.null(ordinate.args$method)) {
-    ordinate.args$method = "NMDS"
+    ordinate.args$method = "MDS"
     ordinate.args$k = 3
   }
   ord = do.call(phyloseq.ordinate,c(
@@ -2602,11 +2713,15 @@ mgsat.find.outliers.ordinate <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=
   
   ndim = ord$ndim
   if(is.null(ndim)) {
-    ndim = 2
+    ndim = 3
   }
   
   ord.df = plot_ordination(ph, ord, type="samples",axes=1:ndim,justDF = T)
-  out.res = mgsat.find.outliers(ord.df[,1:ndim],k=k,pval.adjust = pval.adjust,lof.dist.args=lof.dist.args,alpha=alpha)
+  out.res = mgsat.find.outliers(if(lof.on.ordinate) ord.df[,1:ndim] else x,
+                                k=k,
+                                pval.adjust = pval.adjust,
+                                lof.dist.args=lof.dist.args,
+                                alpha=alpha)
   out.res$ord = ord
   if(do.plot) {
     if(ndim>=3) {
