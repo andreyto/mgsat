@@ -101,45 +101,52 @@ str_dedent <- function(x,n_header=1,ignore_length_of_blank_lines=T) {
     return (x)
   }
   else {
-  lines_full = lines_full[(n_header+1):n_lines]
-  len_full = unlist(str_length(lines_full))
-  lines_trimmed = str_trim(lines_full,"left")
-  len_trimmed = unlist(str_length(lines_trimmed))
-  len_diff = len_full - len_trimmed
-  if(ignore_length_of_blank_lines) {
-    len_diff = len_diff[len_trimmed>0]
-  }
-  len_dedent = min(len_diff)
-  lines_padded = unlist(str_pad(lines_trimmed,len_full - len_dedent,side="left"))
-  return (str_c(c(lines_header,lines_padded),collapse = "\n"))
+    lines_full = lines_full[(n_header+1):n_lines]
+    len_full = unlist(str_length(lines_full))
+    lines_trimmed = str_trim(lines_full,"left")
+    len_trimmed = unlist(str_length(lines_trimmed))
+    len_diff = len_full - len_trimmed
+    if(ignore_length_of_blank_lines) {
+      len_diff = len_diff[len_trimmed>0]
+    }
+    len_dedent = min(len_diff)
+    lines_padded = unlist(str_pad(lines_trimmed,len_full - len_dedent,side="left"))
+    return (str_c(c(lines_header,lines_padded),collapse = "\n"))
   }
   #str_c(lines_padded,collapse = "\n")
   stop("Should not get here")
 }
 
-order.factor.by.numeric.prefix <- function(x,pad=list(0,' ',NULL)) {
+## Given character vector that has values as numbers with optional
+## character suffix, create a factor with levels ordered numerically.
+## Optionally, pad 
+order.factor.by.numeric.prefix <- function(x,pad=NULL) {
   library(stringr)
-  pad = pad[[1]]
   x = factor(x)
   xlev = levels(x)
   patt = "(.*[0-9])([^0-9]*$)"
   xlevpref = str_match(xlev,patt)[,-1]
   xlevnum = as.numeric(xlevpref[,1])
   xlevpref = xlevpref[order(xlevnum),]
-  #pad_wid = max(str_length(xlevpref[,1]))
-  if(!is.null(pad)) {
-    x_reformat <- function(x,pad=' ') {
+  x_reformat <- function(x,pad=' ') {
+    if(!is.null(pad)) {
       x = paste(format(as.numeric(x[,1]),
-                   preserve.width="common",drop0trailing=T,trim=F),
-            x[,2],
-            sep="")
+                       preserve.width="common",drop0trailing=T,trim=F),
+                x[,2],
+                sep="")
       if(pad!=' ') {
         xtr = str_trim(x,side = "left")
         x = str_pad(xtr,str_length(x),side="left",pad=pad)
       }
-      x
     }
-    xlev = x_reformat(xlevpref,pad=pad)
+    else {
+      x = paste(x[,1],x[,2],sep="")
+    }
+    x
+  }
+  xlev = x_reformat(xlevpref,pad=pad)
+  if(!is.null(pad)) {
+    
     xpref = str_match(as.character(x),patt)[,-1]
     x = x_reformat(xpref,pad=pad)
   }
@@ -2054,12 +2061,12 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer
     lev = levels(x)
     if(!is.ordered(x)) {
       if(family=="brewer") {
-      pal.info = brewer.pal.info[brewer.pal.name,]
-      n.color.orig = pal.info$maxcolors
-      if(length(lev)<n.color.orig) {
-        n.color.orig = length(lev)
-      }
-      palette = brewer.pal(n.color.orig, brewer.pal.name)
+        pal.info = brewer.pal.info[brewer.pal.name,]
+        n.color.orig = pal.info$maxcolors
+        if(length(lev)<n.color.orig) {
+          n.color.orig = length(lev)
+        }
+        palette = brewer.pal(n.color.orig, brewer.pal.name)
       }
       else if(family=="ggplot") {
         palette = ggplot.hue.colors(length(lev)) 
@@ -2733,26 +2740,26 @@ mgsat.find.outliers.ordinate <- function(x,
       )
       if(do.report) {
         report$add.widget(out.res$pl3d,
-                   caption = "Ordination plot with observations colored according to p-value from
+                          caption = "Ordination plot with observations colored according to p-value from
                    outlier detection procedure")
       }
       out.res$pl3d.outlier = plot_ordination.3d(ph,ord,type="samples",
-                                        color=(seq_along(out.res$p.val.adj) %in% out.res$ind.outlier),
-                                        axes=1:ndim,
-                                        labels=paste("ID:",names(out.res$p.val.adj),
-                                                     "p.val.adj: ",format(out.res$p.val.adj,digits=3))
+                                                color=(seq_along(out.res$p.val.adj) %in% out.res$ind.outlier),
+                                                axes=1:ndim,
+                                                labels=paste("ID:",names(out.res$p.val.adj),
+                                                             "p.val.adj: ",format(out.res$p.val.adj,digits=3))
       )
       if(do.report) {
         report$add.widget(out.res$pl3d.outlier,
-                   caption = "Ordination plot with observations colored according to assigned
+                          caption = "Ordination plot with observations colored according to assigned
                    outlier status")
       }
     }
   }
   if(do.report) {
     out.df = data.frame(id=names(out.res$p.val.adj),
-               p.val.adj=out.res$p.val.adj,
-               is.outlier=(seq_along(out.res$p.val.adj) %in% out.res$ind.outlier))
+                        p.val.adj=out.res$p.val.adj,
+                        is.outlier=(seq_along(out.res$p.val.adj) %in% out.res$ind.outlier))
     if(is.null(out.df$id)) {
       out.df$id = seq_along(out.df$p.val.adj)
     }
@@ -4696,7 +4703,7 @@ show.feature.meta <- function(m_a,
       #geom_smooth(aes(group=group,color=group), method='lm', formula=y~x+I(x^2)+I(x^3)) + 
       stat_smooth(method=smooth_method, size = 1, se = T,method.args=list(degree=1)) +
       ylab(paste(value.name,"of",feature.name))
-
+    
     gr.range = ddply(dat.feature,group.var,summarise,
                      range = max(.x.var) - min(.x.var))
     for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
@@ -6296,15 +6303,15 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,...) {
   require(threejs)
   args = list(color=color,labels=labels,size=size)
   args = interpret.args.in.df(args,data)
-
+  
   if(!is.null(args$color) && length(args$color) > 1) {
     args$color = generate.colors.mgsat(args$color)
   }
   pl = do.call(scatterplot3js,
-          c(list(xyz),
-            args,
-            list(...)
-          )
+               c(list(xyz),
+                 args,
+                 list(...)
+               )
   )
   pl
 }
