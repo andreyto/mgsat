@@ -119,8 +119,10 @@ str_dedent <- function(x,n_header=1,ignore_length_of_blank_lines=T) {
 
 ## Given character vector that has values as numbers with optional
 ## character suffix, create a factor with levels ordered numerically.
-## Optionally, pad 
-order.factor.by.numeric.prefix <- function(x,pad=NULL) {
+## Optionally, lef-pad and right-align the levels (and data values)
+## so that lexicographic string sort would order them numerically.
+## Returns either ordered (default) or unordered factor.
+order.factor.by.numeric.prefix <- function(x,pad=NULL,ordered=T) {
   library(stringr)
   x = factor(x)
   xlev = levels(x)
@@ -150,7 +152,7 @@ order.factor.by.numeric.prefix <- function(x,pad=NULL) {
     xpref = str_match(as.character(x),patt)[,-1]
     x = x_reformat(xpref,pad=pad)
   }
-  factor(x,xlev,ordered = T)
+  factor(x,xlev,ordered = ordered)
 }
 
 file.dep.updated <- function(dep,targ) {
@@ -2687,17 +2689,23 @@ mgsat.find.outliers <- function(x,k=0.5,pval.adjust="BH",lof.dist.args=list(),al
   if(!is.null(rn)) {
     names(p.val) = rn
   }
-  make.global(name="global")
   return (list(p.val.adj=p.val,lof.val=lof.val,dist.par=dist.par,alpha=alpha,
                ind.outlier=which(p.val<=alpha)))
 }
 
+##TODO: comparing MDS and NMDS plots with outliers selected from the original
+##distance matrix for sequence dissimilarity of HBV HBe protein, it appears
+##that NMDS matches the original distances much better than MDS - the detected outliers
+##are on the periphery of the plot, while for MDS they are often inside the large clusters.
+##On the other hand, MDS plots seem to visually separate HBV genotypes better.
+##We need to test on synthetic datasets that MDS ordination as implemented does not
+##mismatch IDs and order of the observations.
 mgsat.find.outliers.ordinate <- function(x,
                                          k=0.5,
                                          lof.on.ordinate=T,
                                          pval.adjust="BH",
                                          lof.dist.args=list(),
-                                         ordinate.args=list(method="MDS",k=3),do.plot=T,
+                                         ordinate.args=list(method="NMDS",k=3),do.plot=T,
                                          alpha=0.01,
                                          do.report=T) {
   library(phyloseq)
@@ -2710,7 +2718,7 @@ mgsat.find.outliers.ordinate <- function(x,
   }
   ph = m_a.to.phyloseq(m_a)
   if(is.null(ordinate.args$method)) {
-    ordinate.args$method = "MDS"
+    ordinate.args$method = "NMDS"
     ordinate.args$k = 3
   }
   ord = do.call(phyloseq.ordinate,c(
@@ -2723,8 +2731,14 @@ mgsat.find.outliers.ordinate <- function(x,
     ndim = 3
   }
   
-  ord.df = plot_ordination(ph, ord, type="samples",axes=1:ndim,justDF = T)
-  out.res = mgsat.find.outliers(if(lof.on.ordinate) ord.df[,1:ndim] else x,
+  if(lof.on.ordinate) {
+    ord.df = plot_ordination(ph, ord, type="samples",axes=1:ndim,justDF = T)
+    out.data = ord.df[,1:ndim,drop=F]
+  }
+  else {
+    out.data = x
+  }
+  out.res = mgsat.find.outliers(out.data,
                                 k=k,
                                 pval.adjust = pval.adjust,
                                 lof.dist.args=lof.dist.args,
@@ -6299,7 +6313,9 @@ heatmap.combined.report <- function(m_a,
   }
 }
 
-plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,...) {
+## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
+## which result in wrong labels typically shown on busy plots
+plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,renderer="canvas",...) {
   require(threejs)
   args = list(color=color,labels=labels,size=size)
   args = interpret.args.in.df(args,data)
@@ -6310,6 +6326,7 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,...) {
   pl = do.call(scatterplot3js,
                c(list(xyz),
                  args,
+                 list(renderer=renderer),
                  list(...)
                )
   )
@@ -6376,9 +6393,8 @@ plot_ordination.3d <- function(physeq,ordination,
   
   df.plot =  plot_ordination(physeq,ordination,type=type,axes=axes,justDF = T)
   
-  df.names = colnames(df.plot)
   pl = do.call(plot.scatter.js3d,
-               c(list(df.plot[,1:3],df.plot),
+               c(list(df.plot[,seq_along(axes),drop=F],df.plot),
                  pt))
   
   
