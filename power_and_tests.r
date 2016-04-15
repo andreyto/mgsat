@@ -330,7 +330,51 @@ dcast.ext.data.table <- function(data,formula,sep = "_",
   x
 }
 
+## Return either shallow or deep copy of MultipleAlignment object with masked rows and/or
+## columns dropped as requested. Shallow means that a new MSA object us returned that was
+## created by assignment operator and its masked modified according to drop.rows and drop.columns
+## arguments. Deep means that new object has underlying sequences modified accordingly and mask
+## is empty. type.out ="XStringSet" always implies `deep`.
+masked.copy.ali <- function(ali, drop.rows = T, drop.columns = T, deep = F, type.out = c("MultipleAlignment","XStringSet")) {
+  library(Biostrings)
+  type.out = type.out[[1]]
+  ##What conversions below do:
+  ##assignment creates a shallow copy that has independent masking attribute
+  ##unmasked() would return AAStringSet with masks stripped
+  ##that one could be converted back to AAMultipleAlignment to be able
+  ##to set only needed masks on a new object.
+  ##
+  ##as(ali,"XStringSeq") returns a proper type stringset with masked
+  ##regions cut out, which is then converted back to AAMultipleAlignment.
+  ##Not clear how many deep copies are actually made in the process.
+  if(!drop.rows && !drop.columns && type.out=="XStringSet") {
+    ret = unmasked(ali)
+  }
+  else {
+    ret = ali
+    if(!drop.rows) {
+      rowmask(ret) = NULL
+    }
+    if(!drop.columns) {
+      colmask(ret) = NULL
+    }
+    if(deep || type.out == "XStringSet") {
+      #as(as.character(ret),class(ret)[[1]])
+      ##This is a generic way to reconstruct object with the same type as ali.
+      ret = as(ret,"XStringSet")
+      if(type.out == "MultipleAlignment"){
+        ret = do.call(class(ali)[[1]],list(ret))
+      }
+    }
+  }
+  return (ret)
+}
 
+get.consensus.from.ali <- function(ali,drop.rows=T,drop.columns=F,...) {
+  ## consensusString gives an error on MultipleAlignment object even if it has no mask set
+  ## need to give it XStringSet
+  consensusString(masked.copy.ali(ali,drop.rows = drop.rows,drop.columns = drop.columns, type.out = "XStringSet"),...)
+}
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
   mask_col_ignore = names(dat) %in% col_ignore
@@ -3993,10 +4037,16 @@ m_a.to.phyloseq <- function(m_a,attr.taxa=NULL) {
   if(is.null(m_a$count) && is.null(m_a$attr)) {
     stop("Need at least some data for the samples")
   }
+  attr = m_a$attr
+  if(inherits(attr,"data.table")) {
+    attr = as.data.frame(attr)
+    ##input data table must have row names in 'rn' field
+    rownames(attr) = attr$rn
+  }
   ##need at least two columns or some phyloseq methods lose the dimension (not using drop=F)
   if(is.null(m_a$count)) {
-    count = matrix(0,nrow(m_a$attr),2)
-    rownames(count) = rownames(m_a$attr)
+    count = matrix(0,nrow(attr),2)
+    rownames(count) = rownames(attr)
     colnames(count) = paste("Dummy",seq(ncol(count)),sep=".")
   }
   else {
@@ -4015,7 +4065,7 @@ m_a.to.phyloseq <- function(m_a,attr.taxa=NULL) {
     tax.d = tax
   }
   tax = tax_table(as.matrix(tax))
-  attr = sample_data(m_a$attr)
+  attr = sample_data(attr)
   phyloseq(otu,tax,attr)
 }
 
