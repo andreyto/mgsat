@@ -250,7 +250,7 @@ pandoc.special.symb = "\\-\\[\\]`*_{}()#+!~"
 
 pandoc.escape.special <- function(x) {
   x = gsub(paste('([',pandoc.special.symb,'])',sep=''),"\\\\\\1",
-       format(x,digits=panderOptions("digits")),perl=T)
+           format(x,digits=panderOptions("digits")),perl=T)
   ##the only way to have backstick is table cells is to use special symbol
   gsub('[|]','&#124;',x)
 }
@@ -345,7 +345,7 @@ PandocAT$methods(priv.append.index = function(type) {
   return(val)
 })
 
-PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) {
+PandocAT$methods(format.caption = function(caption,section=NULL,type=NULL) {
   if(!is.null(caption)) {  
     if(is.null(type)) {
       type = ""
@@ -373,47 +373,59 @@ PandocAT$methods(priv.format.caption = function(caption,section=NULL,type=NULL) 
 
 
 PandocAT$methods(add.widget = function(x,new.paragraph=T,
-                                caption=NULL,
-                                show.image.links=T,
-                                width = 800,
-                                height = 800,
-                                ...) {
+                                       caption=NULL,
+                                       show.image.links=T,
+                                       width = 800,
+                                       height = 800,
+                                       data.export = NULL,
+                                       data.export.descr = NULL,
+                                       show.inline = T,
+                                       ...) {
   
   require(htmlwidgets)
   
   if(new.paragraph) {
     .self$add.p("")
   }
-
+  
   name.base=paste(str.to.file.name(caption,20),".html",sep="")
   
   fn = .self$make.file.name(name.base,dir=.self$widget.dir,make.unique=T)
   
   saveWidget(x,fn,selfcontained = F,libdir=.self$widget.deps.dir)
   
-  caption.res = sprintf("Click to see widget file in full window: %s.",
-                              pandoc.link.verbatim.return(fn))
-
+  caption.res = sprintf("Click to see HTML widget file in full window: %s",
+                        pandoc.link.verbatim.return(fn))
+  
   caption.type = "widget"
-
+  
   if(!is.null(caption)) {
-    caption = .self$priv.format.caption(caption,type=caption.type)
+    caption = .self$format.caption(caption,type=caption.type)
   }
   
   caption = paste(caption,caption.res)
   
+  if(!is.null(data.export)) {
+    caption = sprintf("%s. Dataset is also saved here: %s", 
+                      caption,
+                      pandoc.link.verbatim.return(data.export))
+    if(!is.null(data.export.descr)) {
+      caption = sprintf("%s, %s",caption,data.export.descr)
+    }
+  }
+  
   if(!is.null(caption)) {
     .self$add.p(caption)
   }
-  
-  if(is.null(width)) {
-    width = evalsOptions("width")
-  }
-
-  if(is.null(height)) {
-    height = evalsOptions("height")
-  }
-  iframe.tpl = '<iframe style="max-width=100%" 
+  if(show.inline) {
+    if(is.null(width)) {
+      width = evalsOptions("width")
+    }
+    
+    if(is.null(height)) {
+      height = evalsOptions("height")
+    }
+    iframe.tpl = '<iframe style="max-width=100%" 
         src="fn" 
         sandbox="allow-same-origin allow-scripts" 
         width="100%" 
@@ -421,12 +433,12 @@ PandocAT$methods(add.widget = function(x,new.paragraph=T,
         scrolling="no" 
         seamless="seamless" 
         frameBorder="0"></iframe>'
-  iframe.tpl = '<iframe src="%s" width="%s" height="%s"> </iframe>'
-  report$add(sprintf(iframe.tpl,
-                     fn,
-                     width,
-                     height))
-  
+    iframe.tpl = '<iframe src="%s" width="%s" height="%s"> </iframe>'
+    report$add(sprintf(iframe.tpl,
+                       fn,
+                       width,
+                       height))
+  }
   return(x)
 })
 
@@ -487,7 +499,7 @@ PandocAT$methods(add = function(x,new.paragraph=T,
     }
   }
   if(!is.null(caption)) {
-    caption = .self$priv.format.caption(caption,type=caption.type)
+    caption = .self$format.caption(caption,type=caption.type)
   }
   if(nzchar(caption.res)) {
     caption = paste(caption,caption.res)
@@ -546,7 +558,7 @@ PandocAT$methods(add.table = function(x,
     caption = pandoc.escape.special(caption)
   }
   
-  caption = .self$priv.format.caption(caption,type="table")
+  caption = .self$format.caption(caption,type="table")
   
   if(is.null(x) || nrow(x)==0) {
     if(!skip.if.empty) {
@@ -636,7 +648,7 @@ PandocAT$methods(add.vector = function(x,name=NULL,
                                        ...) {
   if(is.null(x) || length(x)==0) {
     if(!is.null(caption)) {
-      .self$add.p(.self$priv.format.caption(caption))
+      .self$add.p(.self$format.caption(caption))
     }
     return(.self$add.p("Empty dataset"))
   }
@@ -675,7 +687,7 @@ PandocAT$methods(add.package.citation = function(x,...) {
 
 PandocAT$methods(add.printed = function(x,caption=NULL,echo=T,...) {
   if(!is.null(caption)) {
-    .self$add.p(.self$priv.format.caption(caption))
+    .self$add.p(.self$format.caption(caption))
   }
   return(.self$add.p(pandoc.as.printed.return(x,...),echo=echo))
 })
