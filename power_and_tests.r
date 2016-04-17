@@ -330,12 +330,23 @@ dcast.ext.data.table <- function(data,formula,sep = "_",
   x
 }
 
+## return x converted to class of `other`.
+## This calls the constructor of other, which must exist,
+## and passes x along with the remaining aurguments
+call.ctor <- function(other,x,...) {
+  do.call(class(other)[[1]],
+          c(list(x),list(...)))
+}
+
 ## Return either shallow or deep copy of MultipleAlignment object with masked rows and/or
 ## columns dropped as requested. Shallow means that a new MSA object us returned that was
 ## created by assignment operator and its masked modified according to drop.rows and drop.columns
 ## arguments. Deep means that new object has underlying sequences modified accordingly and mask
 ## is empty. type.out ="XStringSet" always implies `deep`.
 masked.copy.ali <- function(ali, drop.rows = T, drop.columns = T, deep = F, type.out = c("MultipleAlignment","XStringSet")) {
+  ##this to make sure that we can call the AAMultipleAlignment constructor as class(ali) if
+  ##the ali object is msaAAMultipleAlignment as returned by msa::msa()
+  ali = as(ali,"MultipleAlignment")
   library(Biostrings)
   type.out = type.out[[1]]
   ##What conversions below do:
@@ -363,17 +374,93 @@ masked.copy.ali <- function(ali, drop.rows = T, drop.columns = T, deep = F, type
       ##This is a generic way to reconstruct object with the same type as ali.
       ret = as(ret,"XStringSet")
       if(type.out == "MultipleAlignment"){
-        ret = do.call(class(ali)[[1]],list(ret))
+        ret = call.ctor(ali,ret)
       }
     }
   }
   return (ret)
 }
 
+ungapped.seq.ali <- function(ali,drop.rows = T,drop.columns = T) {
+  ss = masked.copy.ali(ali,
+                       drop.rows = drop.rows,
+                       drop.columns = drop.columns,
+                       type.out = "XStringSet")
+  call.ctor(ss,gsub("-","",ss,fixed = T),use.names=T)
+}
+
 get.consensus.from.ali <- function(ali,drop.rows=T,drop.columns=F,...) {
   ## consensusString gives an error on MultipleAlignment object even if it has no mask set
   ## need to give it XStringSet
   consensusString(masked.copy.ali(ali,drop.rows = drop.rows,drop.columns = drop.columns, type.out = "XStringSet"),...)
+}
+
+## Reorder rows of MultipleSequenceAlignment.
+## order.names is a sequence of row names to put first.
+## The order of the remaining rows can be optionally randomized.
+## Existings masks will be retained.
+reorder.rows.ali <- function(ali,order.names,random.rest=T) {
+  rmask = rowmask(ali)
+  cmask = colmask(ali)
+  seq = unmasked(ali)
+  rmask.bool = rep(F,length(seq))
+  names(rmask.bool) = names(seq)
+  rmask.bool[as.integer(rmask)] = T
+  headseq = seq[order.names]
+  headrmask.bool = rmask.bool[order.names]
+  rest.bool = !(names(seq) %in% order.names)
+  tailseq = seq[rest.bool]
+  tailrmask.bool = rmask.bool[rest.bool]
+  if(random.rest) {
+    ind.rnd = sample.int(length(tailseq))
+    tailseq = tailseq[ind.rnd]
+    tailrmask.bool = tailrmask.bool[ind.rnd]
+  }
+  seq = c(
+    headseq,
+    tailseq
+  )
+  rmask.bool = c(
+    headrmask.bool,
+    tailrmask.bool
+  )
+  call.ctor(ali,seq,
+                        rowmask=as(rmask.bool,"NormalIRanges"),
+                        colmask=cmask)
+}
+
+alignment.report <- function (x,
+                              caption=NULL,
+                              export.to.file=T,
+                              show.inline=F,
+                              show.first.rows=200,
+                              show.first.cols=200,
+                              skip.if.empty=F,
+                              add.widget.args=list(),
+                              ...) {
+  if(export.to.file) {
+    library(Biostrings)
+    library(msa)
+    name.base=paste(str.to.file.name(caption,20),".fasta",sep="")
+    ali.file = report$make.file.name(name.base,make.unique=T)
+    writeXStringSet(as(x,"AAStringSet"),ali.file,format = "fasta")
+    ali.file.descr = "In FASTA format"
+  }
+  else {
+    ali.file=NULL
+  }
+  library(rbiojsmsa)
+  do.call(report$add.widget,
+          c(
+            list(rbiojsmsa(x,...),
+                 caption = caption,
+                 data.export=ali.file,
+                 data.export.descr=ali.file.descr,
+                 show.inline=show.inline
+            ),
+            add.widget.args
+          )
+  )
 }
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
