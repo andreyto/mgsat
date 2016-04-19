@@ -381,6 +381,31 @@ masked.copy.ali <- function(ali, drop.rows = T, drop.columns = T, deep = F, type
   return (ret)
 }
 
+get.mask.of.unmasked.rows.ali <- function(ali) {
+  bm = rep(T,nrow(ali))
+  bm[as.integer(rowmask(ali))] = F
+  bm
+}
+
+## maskGaps can give an error on alignments w/o any gaps -
+## this function supresses such errors and return the
+## original alignment unaltered
+mask.gaps.ali <- function(ali,...) {
+  ok = T
+  msg = NULL
+  x = tryCatch(maskGaps(ali,...),
+           error = function(e) { 
+             ok <<- F
+             msg <<- e$message
+             }
+           )
+  if(!ok) {
+    stopifnot(grepl(".*subscript out of bounds.*",msg))
+    x = ali
+  }
+  x
+}
+
 ungapped.seq.ali <- function(ali,drop.rows = T,drop.columns = T) {
   ss = masked.copy.ali(ali,
                        drop.rows = drop.rows,
@@ -2237,7 +2262,6 @@ pairs.scatter.plot <- function(m_a,group=NULL,tooltip=NULL,color=NULL,...) {
   if(is.null(color) && !is.null(group)) {
     color = generate.colors.mgsat(group,value="palette",brewer.pal.name = "Set1")
   }
-  make.global(name="dbg")
   pairsD3(x=count,
           group=group,
           tooltip=tooltip,
@@ -2263,7 +2287,6 @@ pairs.scatter.plot.rbokeh <- function(m_a,
   #nms$h[nms$xaxis] <- height.cell
   #nms$w[nms$yaxis] <- width.cell
   splom_list <- vector("list", n.nms*n.nms)
-  make.global(name="dbg")
   color = "Species"
   for(i in seq_along(splom_list)) {
     
@@ -5747,8 +5770,6 @@ test.counts.project <- function(m_a,
   
   report.section = report$add.header("Data analysis",section.action="push")
   
-  make.global(m_a)
-  
   res = new_mgsatres()
   
   ##drop feature "other"
@@ -5847,8 +5868,6 @@ test.counts.project <- function(m_a,
     m_a.norm = res.aan$m_a.norm
     m_a.abs = res.aan$m_a.abs
   }
-  
-  make.global(m_a.norm)
   
   if(do.genesel) {
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
