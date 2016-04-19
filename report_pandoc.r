@@ -542,7 +542,7 @@ PandocAT$methods(pop.section = function(...) {
 })
 
 PandocAT$methods(add.table = function(x,
-                                      show.row.names=F,
+                                      show.row.names=is.matrix(x),
                                       echo=T,
                                       caption=NULL,
                                       wrap.vals=T,
@@ -632,6 +632,7 @@ PandocAT$methods(add.table = function(x,
       x = t(as.matrix(x))
     }
     rownames(x) = rn
+    colnames(x) = pandoc.escape.special(colnames(x))
   }
   
   .self$add.p(caption)
