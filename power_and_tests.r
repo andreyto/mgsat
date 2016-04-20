@@ -414,10 +414,20 @@ ungapped.seq.ali <- function(ali,drop.rows = T,drop.columns = T) {
   call.ctor(ss,gsub("-","",ss,fixed = T),use.names=T)
 }
 
-get.consensus.from.ali <- function(ali,drop.rows=T,drop.columns=F,...) {
-  ## consensusString gives an error on MultipleAlignment object even if it has no mask set
-  ## need to give it XStringSet
-  consensusString(masked.copy.ali(ali,drop.rows = drop.rows,drop.columns = drop.columns, type.out = "XStringSet"),...)
+##If threshold==0, take a simple majority vote at each position
+get.consensus.from.ali <- function(ali,drop.rows=T,drop.columns=F,threshold=0.5,...) {
+  library(Biostrings)
+  seq = masked.copy.ali(ali,drop.rows = drop.rows,drop.columns = drop.columns, type.out = "XStringSet")
+  if(threshold==0) {
+    library(stringr)
+    conmat = consensusMatrix(seq,...)
+    str_c(rownames(conmat)[max.col(t(conmat))],collapse = "")
+  }
+  else {
+    ## consensusString gives an error on MultipleAlignment object even if it has no mask set
+    ## need to give it XStringSet
+    consensusString(seq,threshold=threshold,...)
+  }
 }
 
 ## Reorder rows of MultipleSequenceAlignment.
