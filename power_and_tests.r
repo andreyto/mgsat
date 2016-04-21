@@ -49,7 +49,9 @@ set_trace_options<-function(try.debug=T) {
 ## is cloned and assigned to a global variable passed in name
 make.global <- function(var=NULL,name=NULL,except=c("report.section")) {
   if(is.null(var)) {
-    stopifnot(!is.null(name))
+    if(is.null(name)) {
+      name="global"
+    }
     p.e = parent.frame()
     if(name=="global") {
       t.e = globalenv()
@@ -338,6 +340,22 @@ call.ctor <- function(other,x,...) {
           c(list(x),list(...)))
 }
 
+mgsat.msa <- function(x,msa.method="Muscle",...) {
+  library(rMSA)
+  if(msa.method=="Muscle") {
+    y = rMSA::muscle(x,...)
+  }
+  else if(msa.method=="MAFFT") {
+    library(data.table)
+    nmap = data.table(orig=names(x))[,tmp:=as.character(.I)]
+    names(x) = nmap$tmp
+    y = rMSA::mafft(x,...)
+    stopifnot(names(y)==nmap$tmp)
+    rownames(y) = nmap$orig
+  }
+  as(y,"MultipleAlignment") #drop derived class in case it is there
+}
+
 ## Return either shallow or deep copy of MultipleAlignment object with masked rows and/or
 ## columns dropped as requested. Shallow means that a new MSA object us returned that was
 ## created by assignment operator and its masked modified according to drop.rows and drop.columns
@@ -414,6 +432,30 @@ ungapped.seq.ali <- function(ali,drop.rows = T,drop.columns = T) {
   call.ctor(ss,gsub("-","",ss,fixed = T),use.names=T)
 }
 
+remove.end.stop.seq <- function(x) {
+  ind = (subseq(x,-1) == '*')
+  subseq(x[ind],-1) = NULL
+  x
+}
+
+##If you do not want to count here stops (`*`) at the end of AA sequences,
+##remove them prior to this call with remove.end.stops.seq()
+nongenic.frequency.seq <- function(x,degen.symb=NULL,out.format=c("rowSums","matrix")) {
+  out.format = out.format[[1]]
+  if(is.null(degen.symb)) {
+    if(inherits(x,"AAStringSet")) {
+      degen.symb = "BJZX*+." #see ?AAString for meaning
+    }
+    else stop("Not implemented yet")
+  }
+  degen.symb = unlist(strsplit(degen.symb,""))
+  res = letterFrequency(x,degen.symb)
+  if(out.format=="rowSums") {
+    res = rowSums(res)
+  }
+  res
+}
+
 ##If threshold==0, take a simple majority vote at each position
 get.consensus.from.ali <- function(ali,drop.rows=T,drop.columns=F,threshold=0.5,...) {
   library(Biostrings)
@@ -475,7 +517,6 @@ alignment.report <- function (x,
                               ...) {
   if(export.to.file) {
     library(Biostrings)
-    library(msa)
     name.base=paste(str.to.file.name(caption,20),".fasta",sep="")
     ali.file = report$make.file.name(name.base,make.unique=T)
     writeXStringSet(as(x,"AAStringSet"),ali.file,format = "fasta")
