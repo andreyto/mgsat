@@ -113,10 +113,10 @@ install_required_packages <- function() {
   }
 }
 
-packages = c(vanilla_packages,bio_packages)
+packages.to.autoload = c("ggplot2","pander","doSNOW","data.table")
 
 load_required_packages <- function() {
-  for (package in packages) {
+  for (package in packages.to.autoload) {
     suppressMessages(library(package,character.only=T))
   }  
 }
