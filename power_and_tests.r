@@ -405,6 +405,13 @@ get.mask.of.unmasked.rows.ali <- function(ali) {
   bm
 }
 
+filter.ali <- function(ali,rn,drop.rows = T, drop.columns = T, deep = F, type.out = c("MultipleAlignment","XStringSet")) {
+  row.sel = rownames(ali) %in% rn
+  rowmask(ali,append="union") = IRanges(start=!row.sel)
+  masked.copy.ali(ali,drop.rows = drop.rows, drop.columns = drop.columns, deep = deep, type.out = type.out)
+}
+
+
 ## maskGaps can give an error on alignments w/o any gaps -
 ## this function supresses such errors and return the
 ## original alignment unaltered
@@ -506,6 +513,76 @@ reorder.rows.ali <- function(ali,order.names,random.rest=T) {
                         colmask=cmask)
 }
 
+## see vignette phangorn-specials
+add.gap.level.phyDat <- function(phdat) {
+  contr = attr(phdat,"contrast")
+  lev = attr(phdat,"levels")
+  lev = c(lev,"-")
+  contr = cbind(contr,`-`=0)
+  contr["-",] = 0
+  contr["-","-"] = 1
+  contr["?","-"] = 1
+  phyDat(phdat,type="USER",contrast=contr)
+}
+
+alignment.as.phyDat <- function(ali,method=c("file","memory"),with.gaps=F) {
+  library(phangorn)
+  library(Biostrings)
+  method = method[[1]]
+  if(method == "memory") {
+  ##directly; as.matrix() removes masked positions
+  mat = Biostrings::as.matrix(ali)
+  ##phangorn::as.phyDat is broken for AA unless type argument is
+  ##provided, we just use this internal function
+  if(inherits(ali,"AAMultipleAlignment")) {
+    phdat = phangorn:::phyDat.AA(mat)
+  }
+  else {
+    phdat = phangorn::as.phyDat(mat)
+  }
+  }
+  else if(method == "file") {
+    ali.file = tempfile("tmp.phydat_convert.",tmpdir=getwd(),fileext=".fasta")
+    writeXStringSet(as(ali,"XStringSet"),ali.file,format = "fasta")
+    type = "DNA"
+    if(inherits(ali,"AAMultipleAlignment")) {
+      type = "AA"
+    }
+    phdat = phangorn::read.phyDat(ali.file, format="fasta", type=type)
+    unlink(ali.file)
+  }
+  else stop(sprintf("Unknown method: %s",method))
+  if(with.gaps) {
+    phdat = add.gap.level.phyDat(phdat)
+  }
+  phdat
+}
+
+get.seq.from.phyDat <- function(x,to_upper=T) {
+  #library(matrixStats)
+  library(Biobase)
+  library(stringr)
+  cn = attr(x,"levels")
+  index = attr(x,"index")
+  seq = list()
+  ## looping like this we maintain all attributes of x,
+  ## as opposed to using lapply and return new list
+  for(i in seq_along(x)) {
+    y = x[[i]]
+    colnames(y) = cn
+    rn = cn[max.col(y)]
+    ##gap is a row of equal values if gap was not a level in phyDat
+    #rn[rowMin(y) == rowMax(y)] = "-"
+    rownames(y) = rn
+    x[[i]] = y
+    seq = c(seq,str_c(rn[index],collapse = ""))
+  }
+  seq=unlist(seq)
+  if(to_upper) seq = str_to_upper(seq)
+  names(seq) = names(x)
+  list(phdat=x,seq=seq)
+}
+
 alignment.report <- function (x,
                               caption=NULL,
                               export.to.file=T,
@@ -538,6 +615,9 @@ alignment.report <- function (x,
           )
   )
 }
+
+
+
 
 count_matr_from_df<-function(dat,col_ignore=c()) {
   mask_col_ignore = names(dat) %in% col_ignore
@@ -2756,45 +2836,37 @@ export.taxa.meta <- function(m_a,
 }
 
 ## Generate index into x that selects equal number
-## of elements reps for each level of x. If resp==0,
-## reps will be set to the smallest level count.
-## Adopted from balanced.specaccum {BiodiversityR}
+## of elements for each level of x. If target==0,
+## target will be set to the smallest level count.
+## If target is a character vector of levels,
+## target will be set to the smallest count among
+## only those levels
+## If drop.smaller, indexes for levels below target
+## will be removed. Otherwise, they will be returned
+## with the original number of elements, but in random
+## order.
 ## If there is a need to also balance within a specific
 ## strata (e.g. by phenotype but preserving as many
 ## family connections as possible), then we will have
 ## to use methods from package `sampling`.
-balanced.sample <- function(x, grouped = TRUE, reps = 0) {
-  x = factor(x)
-  n <- length(x)
-  levs <- levels(x)
-  minimum <- min(summary(x))
-  if (reps > 0) {
-    alllevs <- summary(x)
-    goodlevs <- alllevs > (reps - 1)
-    levs <- names(alllevs[goodlevs])
-    minimum <- reps
+
+balanced.sample <- function(x, target=NULL, drop.smaller=T) {
+  library(data.table)
+  x = data.table(lev=factor(x))[,ind:=.I]
+  if(is.null(target)) target = levels(x$lev)
+  if(is.character(target)) {
+    n.target = min(x[lev %in% target,.N,by=lev]$N)
   }
-  nl <- length(levs)
-  seq2 <- array(nl * minimum)
-  seq1 <- sample(n)
-  strat <- sample(nl)
-  count <- 0
-  for (i in 1:nl) {
-    for (j in 1:n) {
-      if (x[seq1[j]] == levs[strat[i]]) {
-        count <- count + 1
-        if (count > i * minimum) {
-          count <- count - 1
-        }
-        seq2[count] <- seq1[j]
-      }
-    }
+  else {
+    n.target = target
   }
-  if (grouped == FALSE) {
-    seq3 <- sample(seq2)
-    seq2 <- seq3
+  x = x[,.(ind=ind[sample(.N,min(.N,n.target))],
+       n.target=n.target,
+       n.lev=.N),by = lev]
+  if(drop.smaller) {
+    x = x[n.lev<n.target]
   }
-  return(seq2)
+  x$ind
 }
 
 mgsat.lof <- function (data, k, cores = NULL, ...) 
