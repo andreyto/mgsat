@@ -356,7 +356,7 @@ PandocAT$methods(format.caption = function(caption,section=NULL,type=NULL) {
     }
     if(nzchar(ind)) {
       anchor = sprintf('%s.%s',type,ind)
-      anchor.name = sprintf("%s %s.",capitalize(type),ind)
+      anchor.name = sprintf("%s %s.",Hmisc::capitalize(type),ind)
       name = pandoc.anchor.return(anchor,anchor.name)
     }
     else {
