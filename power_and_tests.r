@@ -583,6 +583,109 @@ get.seq.from.phyDat <- function(x,to_upper=T) {
   list(phdat=x,seq=seq)
 }
 
+reconstruct.ancestors <- function(ali,tree) {
+  phdat = alignment.as.phyDat(ali,method = "file",with.gaps = T)
+  library(phangorn)
+  library(ape)
+  tree.file = "pratchet.tree"
+  if(!file.exists(tree.file)) {
+    tree.opt = pratchet(phdat,start=tree,maxit = 100,k=5)
+    write.tree(tree,tree.file,tree.names = T)
+  }
+  else {
+    tree.opt = read.tree(tree.file,tree.names = T)
+  }
+  
+  tree.opt = acctran(tree.opt, phdat)
+  anc.mpr = ancestral.pars(tree.opt, phdat, "ACCTRAN") #"MPR"
+  res = get.seq.from.phyDat(anc.mpr)
+  res$tree = tree.opt
+  res
+}
+
+##TODO: use optional tree$node.label (see ?phylo)
+get.tree.node.label <- function(tree,node.ind) {
+  if(node.ind<=length(tree$tip.label)) {
+    node.lab = tree$tip.label[node.ind]
+  }
+  else {
+    node.lab = as.character(node.ind)
+  }
+  node.lab
+}
+
+##TODO: use optional tree$node.label (see ?phylo)
+get.tree.node.ind <- function(tree,node.label) {
+  ind = seq(length(tree$tip.label)+tree$Nnode)
+  names(ind) = c(tree$tip.label,as.character(ind[(length(tree$tip.label)+1):length(ind)]))
+  ind[node.label]
+}
+
+get.tree.node.medoid <- function(tree,format=c("index","label")) {
+  library(ape)
+  library(Biobase)
+  format = format[[1]]
+  d.nd = as.matrix(ape::dist.nodes(tree))
+  ## note that passing node number as string to ape::root segfaults R
+  node.med = as.numeric(rownames(d.nd)[which.min(rowSums(d.nd))][1])
+  if(format=="label") {
+    node.med = get.tree.node.label(tree,node.med)
+  }
+  node.med
+}
+
+get.tree.mrca <- function(tree,tips,format=c("index","label")) {
+  library(ape)
+  node.med = ape::getMRCA(tree,tips)
+  if(format=="label") {
+    node.med = get.tree.node.label(tree,node.med)
+  }
+  node.med
+}
+
+get.center.of.tree <- function(tree,nodes=NULL,format=c("index","label")) {
+  library(ape)
+  library(Biobase)
+  format = format[[1]]
+  if(is.null(nodes)) nodes = seq(length(tree$tip.label))
+  else nodes = get.tree.node.ind(tree,nodes)
+  d.nd = as.matrix(ape::dist.nodes(tree))
+  ## only consider distances to selected nodes
+  d.nd = d.nd[,nodes]  
+  node.med = as.numeric(rownames(d.nd)[which.min(rowMedians(d.nd))][1])
+  if(format=="label") {
+    node.med = get.tree.node.label(tree,node.med)
+  }
+  node.med
+}
+
+
+balance.alignment.rows.by.group <- function(ali,ali.attr,group.attr.name,group.target) {
+  ali = masked.copy.ali(ali,drop.rows = T,drop.columns = T,deep = T)
+  ali.attr = filter.seq.attr.by.ali(ali,ali.attr,drop.rows=T)
+  ali.attr = ali.attr[balanced.sample(ali.attr[[group.attr.name]],
+                                      target=group.target,
+                                      drop.smaller = F)]
+  ali = filter.ali(ali,ali.attr$rn)
+  list(ali=ali,ali.attr=ali.attr)
+}
+
+filter.seq.attr.by.ali <- function(ali,seq.attr,drop.rows=T) {
+  setkey(seq.attr,rn)
+  rn = rownames(ali)
+  if(drop.rows) rn = rn[get.mask.of.unmasked.rows.ali(ali)]
+  seq.attr = seq.attr[rn,nomatch=0]
+  stopifnot(nrow(seq.attr)==length(rn))
+  seq.attr
+}
+
+cluster.with.dist.cutoff <- function(d,h) {
+  cl.res = hclust(d)
+  gr = cutree(cl.res,h = h)
+  stopifnot(all(labels(d)==names(gr)))
+  list(group=gr,clust=cl.res)
+}
+
 alignment.report <- function (x,
                               caption=NULL,
                               export.to.file=T,
@@ -6625,7 +6728,7 @@ phyloseq.ordinate <- function(physeq, method = "DCA", distance = "bray", formula
   
   if (method == "NMDS") {
     if (inherits(distance, "dist")) {
-      ord.func = "metaMDS"
+      ord.func = vegan::metaMDS
       ord.args = c(list(distance),args)
     }
   }
