@@ -439,6 +439,14 @@ ungapped.seq.ali <- function(ali,drop.rows = T,drop.columns = T) {
   call.ctor(ss,gsub("-","",ss,fixed = T),use.names=T)
 }
 
+ungapped.export.ali <- function(ali,file.name,drop.rows = T,drop.columns = T,name = NULL) {
+  if(!is.null(name)) {
+    rownames(ali) = paste(rownames(ali),name)
+  }
+  seq = ungapped.seq.ali(ali,drop.rows = drop.rows,drop.columns = drop.columns)
+  writeXStringSet(seq,file.name,format = "fasta")
+}
+
 remove.end.stop.seq <- function(x) {
   ind = (subseq(x,-1) == '*')
   subseq(x[ind],-1) = NULL
@@ -588,7 +596,7 @@ reconstruct.ancestors <- function(ali,tree) {
   library(phangorn)
   library(ape)
   tree.file = "pratchet.tree"
-  if(!file.exists(tree.file)) {
+  if(T || !file.exists(tree.file)) {
     tree.opt = pratchet(phdat,start=tree,maxit = 100,k=5)
     write.tree(tree,tree.file,tree.names = T)
   }
@@ -689,26 +697,44 @@ cluster.with.dist.cutoff <- function(d,h) {
 alignment.report <- function (x,
                               caption=NULL,
                               export.to.file=T,
+                              ungapped.export.to.file=F,
+                              ungapped.drop.rows=T,
+                              ungapped.drop.columns=T,
                               show.inline=F,
                               show.first.rows=200,
                               show.first.cols=200,
                               skip.if.empty=F,
                               add.widget.args=list(),
+                              name=NULL,
                               ...) {
   if(export.to.file) {
     library(Biostrings)
     name.base=paste(str.to.file.name(caption,20),".fasta",sep="")
     ali.file = report$make.file.name(name.base,make.unique=T)
-    writeXStringSet(as(x,"AAStringSet"),ali.file,format = "fasta")
+    s = as(x,"XStringSet")
+    if(!is.null(name)) {
+      names(s) = paste(names(s),name)
+    }
+    writeXStringSet(s,ali.file,format = "fasta")
     ali.file.descr = "In FASTA format"
   }
   else {
     ali.file=NULL
   }
+  if(ungapped.export.to.file) {
+    name.base=paste(str.to.file.name(caption,20),".ungapped.fasta",sep="")
+    ungapped.file = report$make.file.name(name.base,make.unique=T)
+    ungapped.export.ali(x,ungapped.file,drop.rows=ungapped.drop.rows,drop.columns=ungapped.drop.columns,name=name)
+    ungapped.file.descr = "Ungapped sequences in FASTA format."
+  }
+  else {
+    ungapped.file=NULL
+  }
+  
   library(rbiojsmsa)
   do.call(report$add.widget,
           c(
-            list(rbiojsmsa(x,...),
+            list(rbiojsmsa(x,name=name,...),
                  caption = caption,
                  data.export=ali.file,
                  data.export.descr=ali.file.descr,
@@ -717,6 +743,9 @@ alignment.report <- function (x,
             add.widget.args
           )
   )
+  if(!is.null(ungapped.file)) {
+    report$add.file(ungapped.file,caption=paste(caption,ungapped.file.descr,sep=". "))
+  }
 }
 
 
