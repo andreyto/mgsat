@@ -541,6 +541,37 @@ PandocAT$methods(pop.section = function(...) {
   return(pop.report.section(...))
 })
 
+PandocAT$methods(add.file = function(x,
+                                      caption=NULL,
+                                      wrap.caption=T,
+                                      skip.if.empty=F,
+                                      ...) {
+  if (wrap.caption && !is.null(caption)) {
+    caption = pandoc.escape.special(caption)
+  }
+  
+  caption = .self$format.caption(caption,type="dataset")
+  
+  if(is.null(x)) {
+    if(!skip.if.empty) {
+      if(!is.null(caption)) {
+        .self$add.p(caption)
+      }
+      return(.self$add.p("Empty dataset"))
+    }
+    else {
+      return(.self)
+    }
+  }
+    caption = paste(caption,
+                    "Dataset is saved in a file (click to download)",
+                    pandoc.link.verbatim.return(x)
+    )
+
+  return(.self$add.p(caption))
+})
+
+
 PandocAT$methods(add.table = function(x,
                                       show.row.names=is.matrix(x),
                                       echo=T,
