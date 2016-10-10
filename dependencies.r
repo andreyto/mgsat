@@ -4,6 +4,7 @@ vanilla_packages = c(
   "gtools", #pos = "package:base", 
   "reshape2",
   "plyr",
+  "purrr",
   # for str_split with max splits
   "stringr", 
   "ggplot2",

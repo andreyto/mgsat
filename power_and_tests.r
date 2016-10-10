@@ -3,7 +3,7 @@ set_trace_options<-function(try.debug=T) {
   #tell our custom tryCatchAndWarn not to catch anything
   options(try.debug=try.debug)
   #setup more verbose error reporting
-  #set warn to 2 to convert warinings to errors
+  #set warn to 2 to convert warinings to errors; 0 - to keep going
   options(warn = 0, keep.source = TRUE, error = 
             quote({ 
               cat("Environment:\n", file=stderr()); 
@@ -43,10 +43,23 @@ set_trace_options<-function(try.debug=T) {
 
 
 
-## bind variable to the global environment
+## bind variables in the current scope to the global environment
 ## can be used in debugging
 ## if NULL is passed, the parents (calling) environment 
 ## is cloned and assigned to a global variable passed in name
+## except – list of names not to make global (in case there are already globals with these names that should be preserved).
+## Example:
+## Somewhere in the calling stack of your code, write:
+## make.global()
+## stop(“DEBUG”)
+## Then, all local variables before the stop() will become global. Note: sometimes something slips inside R interpreter, and make.global() does nothing, 
+## or takes a few seconds of idle shell to take effect. Make.global(name=“dbg”) is more robust. It creates new environment, and copies local variables into it.
+## You access them like dbg$var_name
+## Another use pattern:
+## You have some local variable var_name, then:
+## make.global(var_name)
+## The above only makes var_name global. Note: these are copies as per usual R semantics, not reference.
+## Beware to start new session for production (non-debugging runs), otherwise you can get tripped by the global variables that you created during debugging.
 make.global <- function(var=NULL,name=NULL,except=c("report.section")) {
   if(is.null(var)) {
     if(is.null(name)) {
@@ -83,7 +96,6 @@ str_blank <- function(x) {
 ## if original values match data frame column names; otherwise
 ## keep original values
 interpret.args.in.df <- function(args,data) {
-  library(plyr)
   args = plyr::compact(args)
   names = colnames(data)
   args = lapply(args,function(x) if(length(x) && is.character(x) && (x %in% names)) data[,x] else x)
@@ -259,20 +271,19 @@ quantcut.ordered <- function(x,na.rm=T,...) {
   ##contrary to the docs, na.rm is ignored by quantcut causing stop, do it manually here
   if(na.rm) {
     x.nna = x[!is.na(x),drop=F]
-    qq.nna = quantcut(x.nna,...)
+    qq.nna = gtools::quantcut(x.nna,...)
     y = factor(rep(NA,length(x)),levels=c(levels(qq.nna),NA))
     y[!is.na(x)] = qq.nna
   }
   else {
-    y = quantcut(x)
+    y = gtools::quantcut(x)
   }
   ordered(y)
 }
 
 
 missing.join.keys.report <- function(x,y,by,do.report=T,name.x="x",name.y="y",report.only.keys=F) {
-  require(dplyr)
-  x_y = anti_join(x,y,by=by)
+  x_y = dplyr::anti_join(x,y,by=by)
   if(report.only.keys) {
     if(!is.null(names(by))) {
       by_x = names(by)
@@ -799,6 +810,7 @@ new.m_a <- function(count=NULL,attr=NULL) {
 
 as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
   
+  library(DESeq2)
   if(round.to.int) {
     m_a$count = round(m_a$count)
   }
@@ -917,7 +929,7 @@ norm.clr.default <- function(x.f, offset=0, base=2, tol=.Machine$double.eps) {
 #' @method clr matrix
 #' @export
 norm.clr.matrix <- function(x.f, mar=1, ...) {
-  y = aaply(x.f, mar, norm.clr, ...)
+  y = plyr::aaply(x.f, mar, norm.clr, ...)
   if(mar==2) {
     y = t(y)
   }
@@ -952,7 +964,7 @@ norm.alr.default <- function(x.f, divcomp=1, offset=1, base=2, remove.divcomp=TR
 }
 
 norm.alr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
-  ##TODO: optimize by doing matrix operations here instead of aaply
+  ##TODO: optimize by doing matrix operations here instead of plyr::aaply
   if(is.character(divcomp)) {
     name.divcomp = divcomp
     divcomp = match(divcomp,colnames(x.f))
@@ -960,7 +972,7 @@ norm.alr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
       stop(sprintf("One and one only feature name should match the divider component name %s",name.divcomp))
     }
   }
-  y = aaply(x.f, mar, norm.alr, divcomp=divcomp, remove.divcomp=F, ...)
+  y = plyr::aaply(x.f, mar, norm.alr, divcomp=divcomp, remove.divcomp=F, ...)
   if(mar==2) {
     y = t(y)
   }
@@ -1001,7 +1013,7 @@ norm.fr.default <- function(x.f, divcomp=1, offset=1, remove.divcomp=TRUE,
 }
 
 norm.fr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
-  ##TODO: optimize by doing matrix operations here instead of aaply
+  ##TODO: optimize by doing matrix operations here instead of plyr::aaply
   if(is.character(divcomp)) {
     name.divcomp = divcomp
     divcomp = match(divcomp,colnames(x.f))
@@ -1009,7 +1021,7 @@ norm.fr.matrix <- function(x.f, mar=1, divcomp=1, remove.divcomp=T, ...) {
       stop(sprintf("One and one only feature name should match the divider component name %s",name.divcomp))
     }
   }
-  y = aaply(x.f, mar, norm.fr, divcomp=divcomp, remove.divcomp=F, ...)
+  y = plyr::aaply(x.f, mar, norm.fr, divcomp=divcomp, remove.divcomp=F, ...)
   if(mar==2) {
     y = t(y)
   }
@@ -1026,7 +1038,7 @@ norm.fr.data.frame <- function(x.f, ...) {
 
 #' @method clr on results of DESeq2 Rlog transform. x.f is not used
 norm.clr.rlog.dds <- function(x.f,dds,...) {
-  aaply(rlog.dds(dds,...),1,function(x) (x - mean(x)))
+  plyr::aaply(rlog.dds(dds,...),1,function(x) (x - mean(x)))
 }
 
 #' @method results of DESeq2 Rlog transform. x.f is not used
@@ -1035,8 +1047,8 @@ norm.rlog.dds <- function(x.f,dds,...) {
 }
 
 #' @method extract Rlog transformed values from DESeq2 object as sample-row matrix
-rlog.dds <- function(dds,blind=T,fast=T,fitType="local") {
-  t(assay(rlog(dds,blind=blind,fast=fast,fitType=fitType)))
+rlog.dds <- function(dds,blind=T,fitType="local") {
+  t(assay(rlog(dds,blind=blind,fitType=fitType)))
 }
 
 
@@ -1046,7 +1058,7 @@ rlog.dds <- function(dds,blind=T,fast=T,fitType="local") {
 ## under the square root and make the function behave more
 ## like (A + log(x)/B). Generally, for variance stabilization,
 ## it is assumed that x >> 1. Thus, if you are applying it to
-## simple proportions, set theta to some large number.
+## simple proportions, set theta to some large number (~100).
 ihs <- function(x,theta=1) {
   asinh(theta*x)/theta
 }
@@ -1089,10 +1101,10 @@ boxcox <- function(x,lambda1,lambda2=0) {
 boxcox.transform.vec <- function(x) {
   l.2 = T
   if(!all(x>0)) {
-    b = boxcoxfit(x,lambda2=T)
+    b = geoR::boxcoxfit(x,lambda2=T)
   }
   else {
-    b = boxcoxfit(x)
+    b = geoR::boxcoxfit(x)
     l.2 = F
   }
   #b = try(boxcoxfit(x,lambda2=T),TRUE)
@@ -1126,7 +1138,7 @@ norm.boxcox.default <- function(x.f) {
 }
 
 norm.boxcox.matrix <- function(x.f, mar=2, ...) {
-  y = aaply(x.f, mar, norm.boxcox, ...)
+  y = plyr::aaply(x.f, mar, norm.boxcox, ...)
   if(mar==2) {
     y = t(y)
   }
@@ -1352,7 +1364,7 @@ cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
 long_data.to.m_a <- function(dat,
                              col.attr,
                              col.count,
-                             fun.aggregate = mean,
+                             fun.aggregate = function(x) mean(x,na.rm = T),
                              fill=0,
                              value.var = "Value",
                              row.names=NULL,
@@ -1786,7 +1798,7 @@ power.koren<-function() {
   #data = count.filter(data,col_ignore=data_factors,min_max_frac=0.1,min_row_sum=0)
   data_col = melt(data,id.vars=data_factors,variable.name="feature",value.name="freq")
   data_time = merge(data_col[data_col$time==1,],data_col[data_col$time==2,],by=c("id_repl","feature"))
-  data_time_summary = ddply(data_time,c("feature"),summarize,
+  data_time_summary = plyr::ddply(data_time,c("feature"),summarize,
                             mean.x=mean(freq.x), sd.x=sd(freq.x), n.x = length(freq.x),
                             mean.y=mean(freq.y), sd.y=sd(freq.y), n.y = length(freq.y),
                             mean_paired=mean(freq.x-freq.y),
@@ -1997,7 +2009,7 @@ dirmult.comp.gamma <- function(pi,theta) {
 }
 
 assert.non.zero.dm.par <- function(dm.par) {
-  all.pi = laply(dm.par,function(l){l$pi})
+  all.pi = plyr::laply(dm.par,function(l){l$pi})
   stopifnot(all(colSums(all.pi)>0))
 }
 
@@ -2086,8 +2098,8 @@ power.dirmult.range<-function(
   
   submitJobs(reg, ids=batch.jobs.chunked.ids(reg,n.chunks=10))
   
-  #reduceResultsDataFrame loses column names, so we use ldply on a list:
-  res.all = ldply(reduceResultsList(reg,fun=function(job,res,all_features,test_features,alpha) {
+  #reduceResultsDataFrame loses column names, so we use plyr::ldply on a list:
+  res.all = plyr::ldply(reduceResultsList(reg,fun=function(job,res,all_features,test_features,alpha) {
     test.ad.res = res$ad.res$aov.tab$"Pr(>F)"[1]
     r2.ad = res$ad.res$aov.tab$R2[1]
     test.wil.res = res$test.wil.res
@@ -2105,7 +2117,7 @@ power.dirmult.range<-function(
   all_features=all_features,
   alpha=alpha)
   )
-  res = ddply(res.all,c("eta"),
+  res = plyr::ddply(res.all,c("eta"),
               function(x,alpha) { 
                 first = 
                   summarize(x[,-which(names(x) %in% all_features)],
@@ -2122,7 +2134,7 @@ power.dirmult.range<-function(
               alpha = alpha
   )
   res = res[order(res$eta),]
-  col.names.features = laply(names(res)[names(res) %in% test_features],function(x){paste(x,"Mann-Whitney U power")})
+  col.names.features = plyr::laply(names(res)[names(res) %in% test_features],function(x){paste(x,"Mann-Whitney U power")})
   colnames(res) = c(c("Parameter scaling coeff.", "Modified Cramer Phi", 
                       "Gen. Wald-type p-value", "Adonis R2", "Adonis power"),
                     col.names.features)
@@ -2240,7 +2252,7 @@ read.mothur.otu.shared <- function(file_name,sanitize=T) {
 read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu",taxa.levels.mix=0) {
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   row.names(data) = data$OTU
-  data$Taxa = laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),
+  data$Taxa = plyr::laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),
                     function(x,taxa.level) {
                       if(!is.taxa.level.otu(taxa.level)) {
                         ##only look that deep in lineage
@@ -2350,7 +2362,7 @@ multi.mothur.to.abund.df <- function(data,level) {
 
 mgrast.to.abund.df <- function(data,level) {
   x = data[,c("project_sample_id",level,"abundance")]
-  x = ddply(x,c("project_sample_id",level),summarize,abundance=sum(abundance))
+  x = plyr::ddply(x,c("project_sample_id",level),summarize,abundance=sum(abundance))
   x = dcast(x,list("project_sample_id",level),value.var="abundance",fill=0.)
   row.names(x) = x$project_sample_id
   x$project_sample_id = NULL
@@ -2433,7 +2445,7 @@ melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
   if(!is.null(data$.record.id)) {
     id.vars = c(".record.id",id.vars)
   }
-  return (melt(data,id.vars=id.vars,measure.vars=feature.names,variable.name="feature",value.name=value.name))
+  return (reshape2::melt(data,id.vars=id.vars,measure.vars=feature.names,variable.name="feature",value.name=value.name))
 }
 
 sort.factor.by.total <- function(factor.val,sort.val,ordered=F) {
@@ -2448,8 +2460,7 @@ order.levels <- function(lev,keys) {
 }
 
 split.by.total.levels.data.frame <- function(x) {
-  require(plyr)
-  cuprod = cumprod(colwise(function(y) length(levels(factor(y))))(x))
+  cuprod = cumprod(plyr::colwise(function(y) length(levels(factor(y))))(x))
   cuprod.max = cuprod[length(cuprod)][1,]
   ind.split = which(cuprod >= (cuprod.max/2))[1]
   colnam = colnames(x)
@@ -2617,7 +2628,7 @@ plot.abund.meta <- function(m_a,
   if(!is.null(ci)) {
     ci.m = dcast(melt(ci,varnames=c(".record.id","feature","var")),.record.id+feature~var)
     n.rec.dat = nrow(dat)
-    dat = join(dat,ci.m,by=c(".record.id","feature"),type="left",match="first")
+    dat = plyr::join(dat,ci.m,by=c(".record.id","feature"),type="left",match="first")
     stopifnot(nrow(dat)==n.rec.dat)
   }
   
@@ -2635,8 +2646,8 @@ plot.abund.meta <- function(m_a,
   dat$.record.id = factor(dat$.record.id,levels=rownames.sorted)
   
   if(make.summary.table) {
-    dat.summary = eval(parse(text=sprintf('ddply(dat, c("feature",id.vars),
-        summarise,
+    dat.summary = eval(parse(text=sprintf('plyr::ddply(dat, c("feature",id.vars),
+        plyr::summarise,
         mean = mean(%s,na.rm=T),
         sd = sd(%s,na.rm=T),
         median = median(%s,na.rm=T),
@@ -2664,7 +2675,7 @@ plot.abund.meta <- function(m_a,
     ##violin will fail the entire facet if one feature has zero variance,
     ##so we perturb data a tiny bit
     val = dat[,value.name]
-    sd_dodge = max(abs(val))*1e-6
+    sd_dodge = max(abs(val),na.rm = T)*1e-6
     dat[,value.name] = val + rnorm(length(val),0,sd_dodge)
   }
   
@@ -2702,9 +2713,9 @@ plot.abund.meta <- function(m_a,
     aes_s = aes_string(x=".record.id",y=value.name,
                        fill = fill,color = color)
     gp = ggplot(dat, aes_s)
-    
+
     gp = gp + geom_bar(position="stack",stat="identity") 
-    
+
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
@@ -2734,10 +2745,12 @@ plot.abund.meta <- function(m_a,
     ## coord_flip().
     ## Because of the above, we switch between two representations: vertical with
     ## coord_trans(y = "sqrt") and horizontal (flipped) with original linear coords
+    ## 2016-10-05 - it looks like using 'group' breaks things now
+    ## ,group = if(length(id.var.dodge) > 0) id.var.dodge else NULL
     aes_s = aes_string(x="feature",y=value.name,
-                       fill = fill,color = color,group = id.vars)
+                       fill = fill,color = color)
     gp = ggplot(dat, aes_s)
-    
+
     if(geom == "bar") {
       pos_dod = position_dodge(width=0.7) #0.9
       gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
@@ -2754,7 +2767,7 @@ plot.abund.meta <- function(m_a,
       gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
     }
     else if(geom == "boxplot") {
-      gp = gp + geom_boxplot(fill=NA,na.value=NA,notch=F)
+      gp = gp + geom_boxplot(fill=NA,na.rm=T,notch=F)
     }
     else if(geom == "dotplot") {
       gp = gp + geom_dotplot(binaxis = "y", stackdir = "center", binpositions="all")
@@ -2780,7 +2793,7 @@ plot.abund.meta <- function(m_a,
     else {
       stop(paste("Unexpected parameter value: geom = ",geom))
     }
-    
+
     #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
     #coord_flip()+
     #geom_boxplot(color="black")+
@@ -2791,9 +2804,11 @@ plot.abund.meta <- function(m_a,
     #labels facet with number of cases
     if(flip.coords) {
       gp = gp + coord_flip()
+      gp_dbg5 = gp
     }
     if(sqrt.scale) {
       gp = gp + coord_trans(y = "signed_sqrt")
+      gp_dbg6 = gp
     }
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
@@ -2806,6 +2821,7 @@ plot.abund.meta <- function(m_a,
                       drop=T,margins=facet_grid.margins)
     }
     gp = gp + wr
+    gp_dbg7 = gp
     
     if(!is.null(id.var.dodge)) {
       legend.position = "right"
@@ -2817,7 +2833,7 @@ plot.abund.meta <- function(m_a,
   if(length(id.vars.facet) > 0) {
     feature.names = as.character(features)
     #this will be used to label each facet with number of cases in it
-    facet.cnt <- ddply(.data=data, id.vars.facet, function(x,feature.names) 
+    facet.cnt <- plyr::ddply(.data=data, id.vars.facet, function(x,feature.names) 
     { c(.n=nrow(x),
         .y=mean(colMeans(as.matrix(x[,feature.names]),na.rm=T),
                 names=F,na.rm=T),
@@ -2842,6 +2858,7 @@ plot.abund.meta <- function(m_a,
                   colour="black", 
                   inherit.aes=F, 
                   parse=FALSE)
+      gp_dbg8 = gp
     }
   }
   else {
@@ -2855,6 +2872,7 @@ plot.abund.meta <- function(m_a,
       gp = gp + 
         scale_x_discrete(breaks=NULL) +
         scale_y_continuous(expand = c(0,0))
+      gp_dbg9 = gp
     }
   }
   
@@ -2872,6 +2890,7 @@ plot.abund.meta <- function(m_a,
     gp = gp + 
       scale_fill_manual(values = palette) +
       scale_color_manual(values = palette)
+    gp_dbg10 = gp
   }
   else if(color.palette=="hue") {
     gp = gp +     
@@ -2886,17 +2905,17 @@ plot.abund.meta <- function(m_a,
           plot.title = element_text(size = rel(2)),
           axis.text.x = element_text(size = rel(0.85),angle=90),
           axis.text.y = element_text(size = rel(0.85)))
+  gp_dbg11 = gp
   
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
+      gp_dbg12 = gp
     }
   }
   if (!is.null(file_name)) {
     ggsave(file_name)
   }
-  #make.global(name="dbg")
-  #stop("DEBUG")
   return (new_mgsatres(plot=gp,dat.summary=dat.summary,dat.melt=dat.melt))
 }
 
@@ -2996,7 +3015,7 @@ balanced.sample <- function(x, target=NULL, drop.smaller=T) {
        n.target=n.target,
        n.lev=.N),by = lev]
   if(drop.smaller) {
-    x = x[n.lev<n.target]
+    x = x[n.lev>=n.target]
   }
   x$ind
 }
@@ -3296,12 +3315,12 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   else {
     pool = m_a$attr[,group.attr]
     do.stratify = T
-    n.rar.rep = round(max(min(10000*(3000/ncol(m_a$count)),n.rar.rep * min(nrow(m_a$count),20)),n.rar.rep))
   }
   count = m_a$count
   if(!(do.stratify || do.rarefy)) {
     n.rar.rep = 1
   }
+  make.global(name="dbg1")
   ##somehow just supplying .combine="+" generates an error,
   ##but both the function below or skipping .combine and
   ##applying Reduce("+",...) on the returned list work fine
@@ -3309,7 +3328,8 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   x = foreach(seq(n.rar.rep),.packages=c("vegan"),
               .combine=plus,
               .export=c("balanced.sample"),
-              .final=function(x) (x/n.rar.rep)) %dopar% 
+              #DEBUG
+              .final=function(x) (x/n.rar.rep)) %do% #%dopar% 
               {
                 if(do.stratify) {
                   strat.ind = balanced.sample(pool)
@@ -3777,7 +3797,7 @@ mgsat.plot.richness.samples <- function(rich,var.names=c("chao","jack1","boot"))
   e.m = melt(e,"Group",var.names,variable.name="Index",value.name="e")
   se.m = melt(se,"Group",var.names.se,variable.name="Index",value.name="se")
   
-  data = join(e.m,se.m,by=c("Group","Index"))
+  data = plyr::join(e.m,se.m,by=c("Group","Index"))
   dodge <- position_dodge(width=0.9)  
   pl = ggplot(data, aes(x = Index, y = e, fill = Group)) +  
     geom_bar(position = dodge,stat="identity",width=0.8) + 
@@ -4184,14 +4204,14 @@ plot.profiles <- function(m_a,
                   if(!is.null(dat.summary)) {
                     report$add.table(dat.summary,caption=paste("Summary table.",gr.by.msg))
                   }
+                  caption=paste(sprintf("%s %s",feature.descr,gr.by.msg),
+                                if(!is.null(pl.par$ord)) 
+                                {sprintf("Sorting order of features is %s.",pl.par$ord_descr)} 
+                                else {""},
+                                geom.descr,"plot.")
                   
-                  report$add(pl.hist,
-                             caption=paste(sprintf("%s %s",feature.descr,gr.by.msg),
-                                           if(!is.null(pl.par$ord)) 
-                                           {sprintf("Sorting order of features is %s.",pl.par$ord_descr)} 
-                                           else {""},
-                                           geom.descr,"plot.")
-                  )
+                  report$add(pl.hist,caption = caption)
+
                 })
               }              
             }
@@ -4555,7 +4575,7 @@ mgsat.16s.task.template = within(list(), {
     
     norm.count.task = within(list(), {
       method = "norm.ihs.prop"
-      method.args = list(theta=1000)
+      method.args = list(theta=1)
       drop.features=list("other")
       ##method="norm.rlog.dds"
       ##method.args=list(dds=NA) #signals to pull Deseq2 object
@@ -4703,6 +4723,7 @@ mgsat.16s.task.template = within(list(), {
       count.filter.options=NULL                                                
       drop.unclassified=T
       method="network.spiec.easi"
+      ## see network.spiec.easi.options for default options that can be overriden here
       method.options=list()
       descr=""
     }) 
@@ -5009,13 +5030,19 @@ cohens.d.from.mom <- function(mean.gr,var.gr,n.gr) {
   md/csd                        ## cohen's d
 }
 
-show.distr <- function(x,binwidth=NULL) {
+show.distr <- function(x,binwidth=NULL,dens=T) {
   #because aes leaves its expressions unevaluated, we need
   #to bind the value of x as data frame parameter of ggplot
-  ggplot(data.frame(x=x),aes(x=x))+
-    geom_histogram(aes(y=..density..),
-                   binwidth=binwidth,color="black",fill=NA)+
+  pl = ggplot(data.frame(x=x),aes(x=x))
+  if (dens) {
+    pl = pl + geom_histogram(aes(y=..density..),
+                   binwidth=binwidth,color="black",fill=NA) +
     geom_density()
+  }
+  else {
+    pl = pl + geom_histogram(binwidth=binwidth,color="black",fill=NA)
+  }
+  pl
   #stat_density()
   #hist(x,
   #     freq = F,
@@ -5025,12 +5052,18 @@ show.distr <- function(x,binwidth=NULL) {
   #      col = "firebrick2", lwd = 3)
 }
 
-show.distr.group <- function(x,group) {
+show.distr.group <- function(x,group,binwidth=NULL,dens=T) {
   #because aes leaves its expressions unevaluated, we need
   #to bind the value of x as data frame parameter of ggplot
-  ggplot(data.frame(x=x,Group=group),aes(x=x,fill=Group))+
-    #geom_histogram(alpha=0.2, position="identity")+
-    geom_density(alpha=0.2,aes(y = ..density..))
+  pl = ggplot(data.frame(x=x,Group=group),aes(x=x,fill=Group))
+  if(dens) {
+    pl = pl + geom_density(alpha=0.2,aes(y = ..density..))
+  }
+  else {
+    pl = pl + geom_histogram(alpha=0.5,binwidth=binwidth,position = "identity") + 
+      geom_density(aes(y = ..count..,color=Group),fill=NA,alpha=1,size=rel(3))
+  }
+  pl
 }
 
 show.trend <- function(meta.data,x,y,group,title="Group trends") {
@@ -5133,7 +5166,7 @@ show.feature.meta <- function(m_a,
       stat_smooth(method=smooth_method, size = 1, se = T,method.args=list(degree=1)) +
       ylab(paste(value.name,"of",feature.name))
     
-    gr.range = ddply(dat.feature,group.var,summarise,
+    gr.range = plyr::ddply(dat.feature,group.var,plyr::summarise,
                      range = max(.x.var) - min(.x.var))
     for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
       pl = pl + stat_summary(aes_string(x=x.var, y=value.name,color=group.var),
@@ -5161,7 +5194,7 @@ show.feature.meta <- function(m_a,
 ##Extra argument q=dfmax+1 to make this function compatible with 
 ##the parameter list for stabs::stabsel (see how this is used in
 ##stabsel.report to contrain the number of selected variables in the model).
-cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL,  n.cvs = 400, standardize=T,...) {
+cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL,  n.cvs = 400, standardize=T, foreach.errorhandling = "remove", ...) {
   ##on a single fold set picking alpha is extremely unstable - returned alpha is all
   ##over the place from one invocation to another. We run it on multiple sets
   ##of splits, average the error curve (see cv.glmnet help page), and pick the best
@@ -5185,9 +5218,9 @@ cv.glmnet.alpha <- function(y, x, family, q=NULL, seed=NULL,  n.cvs = 400, stand
     dfmax = ncol(x) + 1
   }
   
-  .errorhandling = "remove"
+  .errorhandling = foreach.errorhandling
   if(getOption("try.debug",F)) {
-    .errorhandling = "stop"
+    #.errorhandling = "stop"
   }
   
   cv.res <- foreach(alpha=alphas,
@@ -5364,6 +5397,7 @@ deseq2.report <- function(m_a,
                           round.to.int=T,
                           alpha=0.05
 ) {
+  library(DESeq2)
   report.section = report$add.header("DESeq2 tests and data normalization",section.action="push")
   report$add.package.citation("DESeq2")
   dds = as.dds.m_a(m_a=m_a,
@@ -5802,6 +5836,7 @@ test.counts.adonis.report <- function(m_a,
                                       col.trans="range",
                                       data.descr="proportions of counts",
                                       norm.count.task=NULL) {
+  library(vegan)
   report$add.header(paste("PermANOVA (adonis) analysis of ",data.descr))
   report$add.package.citation("vegan")  
   is.dist = inherits(m_a$count,"dist")
@@ -6100,6 +6135,8 @@ test.counts.project <- function(m_a,
     })
   }
   
+  report$add.header("Default transformations for further data analysis",section.action="push")
+  report$add.descr("Specific methods can override these and use their own normalization.")
   ## this is done after an optional call to deseq2 in case the norm.method
   ## wants deseq2 normalization
   
@@ -6107,7 +6144,6 @@ test.counts.project <- function(m_a,
                                 res.tests=res,
                                 descr="data analysis (unless modified by specific methods)",
                                 norm.count.task)
-  
   if(do.aggr.after.norm && !is.null(aggr.after.norm.task)) {
     aggr.after.norm.func = aggr.after.norm.task$func
     aggr.after.norm.task$func = NULL
@@ -6122,7 +6158,21 @@ test.counts.project <- function(m_a,
     m_a = res.aan$m_a
     m_a.norm = res.aan$m_a.norm
     m_a.abs = res.aan$m_a.abs
+    
+    export.taxa.meta(m_a,
+                     label=label,
+                     descr=paste("Raw after default transformations",sep="."),
+                     row.proportions=T,
+                     row.names=F)
   }
+  
+  export.taxa.meta(m_a.norm,
+                   label=label,
+                   descr=paste("Normalized after default transformations",sep="."),
+                   row.proportions=F,
+                   row.names=F)
+  
+  report$pop.section()
   
   if(do.genesel) {
     genesel.norm.t = pull.norm.count.task(m_a=m_a,m_a.norm=m_a.norm,
@@ -6133,6 +6183,9 @@ test.counts.project <- function(m_a,
                               genesel.norm.t$task))
     })
   }
+  
+  #DEBUG:
+  make.global()
   
   if(do.stabsel) {
     tryCatchAndWarn({ 
@@ -6595,14 +6648,14 @@ ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,width=
       width = grid::unit(1.0,"lines")
     }
   }
-  h = Heatmap(data[,attr.names[1],drop=F],name=attr.names[1],
+  h = ComplexHeatmap::Heatmap(data[,attr.names[1],drop=F],name=attr.names[1],
               show_row_names = ifelse(n.h>1,F,show_row_names),
               width = width,
               ...)
   n.h = n.h - 1
   if (n.h > 0) {
     for(attr.name in attr.names[2:length(attr.names)]) {
-      h = h + Heatmap(data[,attr.name,drop=F],name=attr.name,
+      h = h + ComplexHeatmap::Heatmap(data[,attr.name,drop=F],name=attr.name,
                       show_row_names = ifelse(n.h>1,F,show_row_names),
                       width = width,
                       ...) 
@@ -6626,8 +6679,7 @@ heatmap.combined.report <- function(m_a,
                                     show_row_names = F,
                                     show_column_names = T,
                                     max.n.columns=NULL) {
-  require(fpc)
-  require(cluster)
+  library(cluster)
   if(!is.null(max.n.columns)) {
     max.n.columns = min(max.n.columns,ncol(m_a.norm$count))
     m_a.norm$count = m_a.norm$count[,1:max.n.columns,drop=F]
@@ -6637,13 +6689,16 @@ heatmap.combined.report <- function(m_a,
     main.meta.var = attr.annot.names[[1]]
   }
   n.obs = nrow(m_a.norm$count)
+  ## "pearson", "spearman" and "kendall" are only understood by this internal function from ComplexHeatmap
+  ## pam will silently use "euclidean"
+  diss = ComplexHeatmap:::get_dist(m_a.norm$count,clustering_distance_rows)
   if(n.obs >= 6) {
     if(km.abund<1) {
-      split = pamk(m_a.norm$count, krange = 1:min(n.obs-2,10), metric=clustering_distance_rows)$pamobject$clustering
+      split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
       split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
     }
     else {
-      split = pam(m_a.norm$count, k=km.abund, metric=clustering_distance_rows)$clustering
+      split = pam(diss, k=km.abund)$clustering
       split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
     }
   }
@@ -6651,20 +6706,29 @@ heatmap.combined.report <- function(m_a,
     split = NULL
     split.descr = "Not splitting clusters due to low number of observations"
   }
+  if(!is.null(split)){
+    if(num.levels(split)<2){
+      split = NULL
+      split.descr = "Splitting clusters resulted in a single partition"
+    }
+  }
+  #DEBUG:
+  make.global()
   caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
                          main.meta.var,split.descr)
-  h = Heatmap(m_a.norm$count,name="Abundance",
+  library(ComplexHeatmap) # need it for `+`
+  h = ComplexHeatmap::Heatmap(m_a.norm$count,name="Abundance",
               cluster_columns=cluster_columns,
               show_row_names = show_row_names,
               show_column_names = show_column_names,
               clustering_distance_rows = clustering_distance_rows, 
               split=split,
-              column_names_gp = gpar(fontsize = 8),
-              row_names_gp = gpar(fontsize = 8)) +  
+              column_names_gp = grid::gpar(fontsize = 8),
+              row_names_gp = grid::gpar(fontsize = 8)) +
     ComplexHeatmap.add.attr(attr.annot.names,
                             m_a.norm$attr,
                             show_row_names=F,
-                            row_names_gp = gpar(fontsize = 8))
+                            row_names_gp = grid::gpar(fontsize = 8))
   report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(split)) {
@@ -6684,26 +6748,33 @@ heatmap.combined.report <- function(m_a,
   if(!is.null(get.diversity(res.tests,type="diversity"))) {
     div = log(get.diversity(res.tests,type="diversity")$e)
     n.obs = nrow(div)
+    metric = "pearson"
+    diss = ComplexHeatmap:::get_dist(div,metric)
     if(n.obs >= 6) {
       
       if(km.diversity<1) {
-        split = pamk(div, krange = 1:min(n.obs-2,10), metric="pearson")$pamobject$clustering
+        split = pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
       }
       else {
-        split = pam(div, k=km.diversity, metric="pearson")$clustering
+        split = pam(diss, k=km.diversity)$clustering
       }    
     }
     else {
       split = NULL
       split.descr = "Not splitting clusters due to low number of observations"
     }
-    
-    h.d = Heatmap(div,name="Renyi diversity indices",
+    if(!is.null(split)){
+      if(num.levels(split)<2){
+        split = NULL
+        split.descr = "Splitting clusters resulted in a single partition"
+      }
+    }
+    h.d = ComplexHeatmap::Heatmap(div,name="Renyi diversity indices",
                   cluster_columns=F,
                   show_row_names = F, 
-                  clustering_distance_rows = "pearson", 
+                  clustering_distance_rows = metric, 
                   split=split,
-                  column_names_gp = gpar(fontsize = 8),
+                  column_names_gp = grid::gpar(fontsize = 8),
                   width=grid::unit(ncol(div),"lines"))
     h = h.d + h
     report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
@@ -6813,9 +6884,9 @@ plot_ordination.3d <- function(physeq,ordination,
 }
 
 
-ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T) {
+ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T,descr="") {
   require(phyloseq)
-  report.section = report$add.header("Ordinations",section.action="push",sub=sub.report)  
+  report.section = report$add.header(paste("Ordinations",descr,sep = ", "),section.action="push",sub=sub.report)  
   report$add.package.citation("phyloseq")  
   report$add.package.citation("vegan")  
   ph = m_a.to.phyloseq(m_a)
@@ -6949,9 +7020,10 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
                                vertex.text.options = mgsat.plot.igraph.vertex.text.options, 
                                edge.options = mgsat.plot.igraph.edge.options,
                                vertex.text.selection=NULL,
-                               layout = layout.fruchterman.reingold,
+                               layout = "layout.fruchterman.reingold",
                                extra.plot.operands=list()) 
 {
+  library(igraph)
   vertex.options = update.list(mgsat.plot.igraph.vertex.options,vertex.options)
   vertex.text.options = update.list(mgsat.plot.igraph.vertex.text.options,vertex.text.options)
   edge.options = update.list(mgsat.plot.igraph.edge.options,edge.options)
@@ -7031,11 +7103,14 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
   vertex.text.options = update.list(mgsat.plot.igraph.vertex.text.options,vertex.text.options)
   edge.options = update.list(mgsat.plot.igraph.edge.options,edge.options)
   if (vcount(g) < 2) {
-    stop("The graph you provided, `g`, has too few vertices.")
+    return (list(plot.obj=NULL,msg="Graph must have more than one vertix."))
   }
   
   x = igraph.to.d3net(g,vertex.data = vertex.data)
   edge = x$egde
+  if(nrow(edge) == 0) {
+    return (list(plot.obj=NULL,msg="Graph must have at least one edge."))
+  } 
   vertex.data = x$vertex.data
   if(is.null(vertex.data)) {
     vertex.data = x$vertex
@@ -7081,29 +7156,29 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
                    clickAction = 'd.fixed = !d.fixed',
                    radiusCalculation=radiusCalculation,
                    colourScale = colorScale)
-  return(p)
+  return (list(plot.obj=p,msg="OK"))
 }
 
 
 network.spiec.easi.options = list(
   method='mb', 
   lambda.min.ratio=1e-2, 
-  nlambda=15  
+  nlambda=15,
+  icov.select.params=list(rep.num=50)
 )
 
 network.spiec.easi <- function(count,
                                ...) {
-  library(SpiecEasi)
   report$add.package.citation("SpiecEasi")
   options = update.list(network.spiec.easi.options,list(...))
   #se.est = dbg.cache$se.est
   #if(is.null(se.est)) {
-  se.est <- do.call(spiec.easi,c(list(count),options))
+  se.est <- do.call(SpiecEasi::spiec.easi,c(list(count),options))
   #}
   ##make.global(name="dbg.cache")
   rownames(se.est$refit) = colnames(se.est$data)
   colnames(se.est$refit) = colnames(se.est$data)
-  gr = graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
+  gr = igraph::graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
   return (list(method.res=se.est,graph=gr))
 }  
 
@@ -7129,7 +7204,7 @@ network.report <- function(m_a,
   net.res = do.call(method,c(list(m_a$count),method.options))
   
   gr = net.res$gr
-  layout = layout.fruchterman.reingold(gr)
+  layout = igraph::layout.fruchterman.reingold(gr)
   for(plot.task in plot.tasks) {
     caption = plot.task$descr
     caption = sprintf("Network analysis with method %s. %s",method,caption)
@@ -7144,12 +7219,17 @@ network.report <- function(m_a,
     )
     report$add(gp,caption=caption)
     
-    gp = do.call(mgsat.plot.igraph.d3net,
+    gp.3d.res = do.call(mgsat.plot.igraph.d3net,
                  c(list(gr),
                    plot.task
                  )
     )
-    report$add.widget(gp,caption=caption)
+    if(!is.null(gp.3d.res$plot)) {
+      report$add.widget(gp,caption=caption)
+    }
+    else {
+      report$add.p(sprintf("Not creating 3D network plot. %s",gp.3d.res$msg))
+    }
     
   }
   report$pop.section()  
@@ -7195,6 +7275,8 @@ network.features.combined.report <- function(m_a,
     )
   }
   
+  if(length(plot.tasks)>0) {
+  
   network.report(m_a,
                  count.filter.options=count.filter.options,
                  vertex.data=NULL,
@@ -7203,6 +7285,7 @@ network.features.combined.report <- function(m_a,
                  method=method,
                  method.options=method.options,
                  descr=descr)
+  }
   
 }
 
@@ -7418,7 +7501,7 @@ select.samples <- function(m_a,
                                 sample.ids,
                                 n.cut=n.select,
                                 filter.by.label=filter.by.label)
-  ids.sel = c(laply(cut.res,function(x) x[["ids"]]))
+  ids.sel = c(plyr::laply(cut.res,function(x) x[["ids"]]))
   mask.sel = sample.ids %in% ids.sel
   ids.sel = sample.ids[mask.sel]
   pred.score.sel = mod.pred.score[mask.sel]
@@ -7608,7 +7691,7 @@ test.counts.glmer <- function(m_a,
   # of warnings or errors - getting all NAs no matter what
   # I try for error handling in tryCatch
   ##TODO: try foreach
-  p_vals = aaply(count,
+  p_vals = plyr::aaply(count,
                  2,
                  test.counts.glmer.col,
                  attr,
@@ -7681,11 +7764,15 @@ wilcox.eff.size.r <-function(pval, n){
 }
 
 ## x is the sample matrix, with samples in COLUMNS
+##Note: Do not pass here statistic from coin::wilcox_test, it computes some other statistic, even when using statistic(wt,"linear"), we
+##are getting values that are larger than the product of group sizes
+
 wilcox.eff.size <- function(x,stat,pval=NULL,group=NULL,type="unpaired") {
   
   if(type == "unpaired") {
     nsamp = ncol(x)
     group = factor(group)
+    stopifnot(nsamp==length(group))
     taby <- table(group)
     stopifnot(nlevels(group) == 2)
     npairs = prod(taby)
@@ -7966,13 +8053,13 @@ genesel.stability <- function(m_a,
       m_a.lfc.paired = contrasts.groups.log.fold.change(m_a.g)
       
       rnk.vals = cbind(rnk.vals,
-                       l2fc.paired.median = aaply(
+                       l2fc.paired.median = plyr::aaply(
                          m_a.lfc.paired$count,
                          2,
                          median
                        )
       )
-      group.median = t(count.summary(m_a.g$count,median,m_a.g$attr[,group.attr],
+      group.median = t(count.summary(m_a.g$count,function(x) median(x,na.rm = T),m_a.g$attr[,group.attr],
                                      format="matrix",group.prefix="median.paired"))
       rnk.vals = cbind(rnk.vals,group.median)
     }
@@ -8267,7 +8354,7 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
     colMeans(x[,!attr.mask,drop=F])
     #cbind(x[1,attr.mask,drop=F],colMeans(x[,!attr.mask,drop=F]))
   }
-  dat = ddply(dat,c(block.attr,group.attr),mean.counts)
+  dat = plyr::ddply(dat,c(block.attr,group.attr),mean.counts)
   
   ## convert contrasts to data.frame for joining
   contrasts = data.frame(names(contrasts),contrasts)
@@ -8275,7 +8362,7 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   names(contrasts) = c(group.attr,contr.attr)
   
   ## this will drop all group levels not in contrasts
-  dat = join(dat,contrasts,by=group.attr,type="inner")
+  dat = plyr::join(dat,contrasts,by=group.attr,type="inner")
   
   if(return.groups) {
     dat.groups = dat
@@ -8290,7 +8377,7 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   n.contr = nrow(contrasts)
   
   ## if() will drop all blocks where not all contrasts matched
-  dat = ddply(dat,c(block.attr),
+  dat = plyr::ddply(dat,c(block.attr),
               function(x) {
                 if(nrow(x) == n.contr) {
                   colSums(x[,!attr.mask,drop=F])
@@ -8305,7 +8392,7 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   
   attr.mask = names(dat) %in% c(attr.names,contr.attr)
   m_a.contr = list(count=as.matrix(dat[,!attr.mask]),
-                   attr=join(dat[,block.attr,drop=F],
+                   attr=plyr::join(dat[,block.attr,drop=F],
                              m_a$attr,
                              by=block.attr,
                              match="first")
@@ -8315,10 +8402,10 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   if(return.groups) {
     ##only groups with all requested contrast levels
     dat.groups = dat.groups[dat.groups[,block.attr] %in% rownames(m_a.contr$count),]
-    rownames(dat.groups) = maply(dat.groups[,attr.names],paste,sep=".",.expand=F)
+    rownames(dat.groups) = plyr::maply(dat.groups[,attr.names],paste,sep=".",.expand=F)
     attr.mask = names(dat.groups) %in% c(attr.names,contr.attr)
     m_a.groups = list(count=as.matrix(dat.groups[,!attr.mask]),
-                      attr=join(dat.groups[,attr.mask,drop=F],
+                      attr=plyr::join(dat.groups[,attr.mask,drop=F],
                                 m_a$attr,
                                 by=attr.names,
                                 match="first"))
@@ -8357,9 +8444,9 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
   
   if(show.sample.means) {
     report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of total counts per sample")
-    report$add.table(ddply(join_count_df(m_a.summ),
+    report$add.table(plyr::ddply(join_count_df(m_a.summ),
                            group.vars,
-                           summarise,
+                           plyr::summarise,
                            Min.Count.Sum=min(count.sum),
                            Max.Count.Sum=max(count.sum),
                            Mean.Count.Sum=mean(count.sum),
@@ -8511,16 +8598,14 @@ read.mr_oralc <- function(taxa.level=3) {
 
 
 count.summary <- function(count,fun,group,format="data.frame",group.prefix=NULL) {
+  library(data.table)
   .group = group
   .group = data.frame(.group)
-  if(are.identical(fun,"mean")) {
-    fun = colSums
-  }
-  else {
-    fun = colwise(fun)
-  }
   n.col.sel = 1:ncol(count)
-  group.summ = ddply(cbind(as.data.frame(count),.group),names(.group),function(x) fun(x[,n.col.sel,drop=F]))
+  col.sel = colnames(count)
+  dt = cbind(data.table(count),.group)
+  by.col = colnames(.group)
+  group.summ = as.data.frame(dt[,lapply(.SD,fun),by=by.col,.SDcols=col.sel])
   if(format == "data.frame") {
     return (group.summ)
   }
@@ -8549,7 +8634,6 @@ group.mean.ratio <- function(count,group,row.names.pref="") {
 fold.change <- function(mat,key,aggr.fun=mean,comb.fun=function(x,y) "/"(x,y),
                         out.format=c("long","wide")){
   library(purrr)
-  library(plyr)
   out.format = out.format[1]
   key = as.data.frame(key)
   key.names = colnames(key)
@@ -8566,8 +8650,8 @@ fold.change <- function(mat,key,aggr.fun=mean,comb.fun=function(x,y) "/"(x,y),
   key.2 = key.grouped[i[2,],,drop=F]
   colnames(x) = colnames(mat)
   rownames(x) <- paste(
-    maply(key.1,paste,sep=".",.expand=F),
-    maply(key.2,paste,sep=".",.expand=F),
+    plyr::maply(key.1,paste,sep=".",.expand=F),
+    plyr::maply(key.2,paste,sep=".",.expand=F),
     sep = "-")
   rownames(key.1) = rownames(x)
   rownames(key.2) = rownames(x)
@@ -8868,10 +8952,10 @@ power.pieper.t1d <- function(
   pvals.boot[pvals.boot>1] = 1  
   
   if(mult.adj=="fdrtool") {
-    pvals.boot.adj = aaply(pvals.boot,1,function(x) fdrtool(x,statistic="pvalue",plot=F,verbose=F)$qval)
+    pvals.boot.adj = plyr::aaply(pvals.boot,1,function(x) fdrtool(x,statistic="pvalue",plot=F,verbose=F)$qval)
   }
   else {
-    pvals.boot.adj = aaply(pvals.boot,1,p.adjust,method=mult.adj)
+    pvals.boot.adj = plyr::aaply(pvals.boot,1,p.adjust,method=mult.adj)
   }
   
   power.sig = colMeans(pvals.boot.adj[,ind.sig] <= alpha.sim)
