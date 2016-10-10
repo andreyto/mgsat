@@ -6,4 +6,4 @@ build/*
 *.pyc
 *.pyo
 *.swp
-
+.DS_Store
