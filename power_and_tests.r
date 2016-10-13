@@ -2778,7 +2778,8 @@ plot.abund.meta <- function(m_a,
     else if(geom == "line") {
       #gp = gp + geom_point() + geom_path(aes_string(x="feature",y=value.name,
       #                                               group=".record.id"))
-      gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="line")
+      ## We need aes(group=) here in stat_summary, but somehow not in other places
+      gp = gp + stat_summary(aes_string(group=color),fun.y=stat_summary.fun.y, geom="line")
       
       #show.samp.n = F
     }
@@ -2916,6 +2917,7 @@ plot.abund.meta <- function(m_a,
   if (!is.null(file_name)) {
     ggsave(file_name)
   }
+  
   return (new_mgsatres(plot=gp,dat.summary=dat.summary,dat.melt=dat.melt))
 }
 
@@ -4160,7 +4162,6 @@ plot.profiles <- function(m_a,
                   else {
                     make.summary.table = F
                   }
-                  
                   pl.abu = plot.abund.meta(m_a=m_a,
                                            ci=ci,
                                            id.vars=id.vars,
@@ -6698,7 +6699,7 @@ heatmap.combined.report <- function(m_a,
       split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
     }
     else {
-      split = pam(diss, k=km.abund)$clustering
+      split = cluster::pam(diss, k=km.abund)$clustering
       split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
     }
   }
@@ -6712,8 +6713,6 @@ heatmap.combined.report <- function(m_a,
       split.descr = "Splitting clusters resulted in a single partition"
     }
   }
-  #DEBUG:
-  make.global()
   caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
                          main.meta.var,split.descr)
   library(ComplexHeatmap) # need it for `+`
@@ -6753,10 +6752,10 @@ heatmap.combined.report <- function(m_a,
     if(n.obs >= 6) {
       
       if(km.diversity<1) {
-        split = pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
+        split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
       }
       else {
-        split = pam(diss, k=km.diversity)$clustering
+        split = cluster::pam(diss, k=km.diversity)$clustering
       }    
     }
     else {
