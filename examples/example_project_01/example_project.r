@@ -165,12 +165,14 @@ gen.tasks.diet <- function() {
       })
       
       norm.count.task = within(norm.count.task, {
-        #method="norm.ihs.prop"
-        #method.args = list(theta=2000)
+        #method="norm.prop"
+        #method.args=list()
+        method="norm.ihs.prop"
+        method.args = list(theta=1)
         #method="norm.rlog.dds"
         #method.args=list(dds=NA) #signals to pull Deseq2 object
-        method="norm.clr"
-        method.args=list()
+        #method="norm.clr"
+        #method.args=list()
       })
       
       adonis.task = within(adonis.task, {
@@ -286,7 +288,7 @@ gen.tasks.diet <- function() {
     })
     
     test.counts.task = within(test.counts.task, {
-      
+      do.divrich = T
       do.deseq2 = T
       do.adonis = T
       do.genesel = T
@@ -294,6 +296,7 @@ gen.tasks.diet <- function() {
       do.glmer = F
       do.plot.profiles.abund=T
       do.heatmap.abund=T
+      do.network.features.combined=T
       
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
@@ -456,7 +459,7 @@ gen.tasks.diet <- function() {
       do.genesel = T
       do.stabsel = T
       do.glmer = F
-      do.plot.profiles.abund=T
+      do.plot.profiles.abund=F
       do.heatmap.abund=T
       do.extra.method = taxa.levels
       
@@ -650,8 +653,8 @@ gen.tasks.diet <- function() {
     
   })
   
-  #return (list(task2,task2.1))
-  return (list(task1,task2,task2.1,task3,task3.1,task4))
+  return (list(task2))
+  #return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
 
@@ -687,7 +690,7 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=F)
+set_trace_options(try.debug=T)
 
 report <- PandocAT$new(author="noone@mail.com",
                        title="Analysis of Dieting study 16S data",
