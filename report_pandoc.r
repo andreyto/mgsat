@@ -14,8 +14,8 @@ evalsOptions("cache.mode","environment")
 evalsOptions("output",c("all"))
 evalsOptions("graph.output","svg") #"png"
 evalsOptions("graph.unify",F)
-evalsOptions("width",800)
-evalsOptions("height",640)
+evalsOptions("width",1000) #800
+evalsOptions("height",840) #640
 evalsOptions("res",75)
 evalsOptions("hi.res",T)
 evalsOptions("hi.res.width",1200)
