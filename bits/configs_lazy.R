@@ -156,27 +156,62 @@ EV <- function(.with=NULL,
   env
 }
 
+as_list_nested_env <- function(x) {
+  done_env_hash = new.env()
+
+as_list_nested_env_inner <- function(x) {
+  stopifnot(is.environment(x) || is.list(x))
+  y = as.list(x,all.names=T)
+  x_names = names(y)
+  for(i_el in seq_along(y)) {
+    val = y[[i_el]]
+    if(is.environment(val)) {
+      val_key = data.table::address(val)
+      if( is.null(done_env_hash[[val_key]]) ) {
+        done_env_hash[[val_key]] = T
+        val = as_list_nested_env_inner(val)
+      }
+    }
+    else if(is.list(val)) {
+      val = as_list_nested_env_inner(val)
+    }
+    y[[i_el]] = val
+  }
+  names(y) = names(x)
+  return (y)
+}
+return (as_list_nested_env_inner(x))
+}
+
+ls_str_nested_env <- function(x) {
+  ls.str(as_list_nested_env(x))
+}
+
+print_nested_env <- function(x,max.level=100,...) {
+  print(ls_str_nested_env(x),max.level=max.level,...)
+}
+
 copy_env <- function(x,deep=F,
                      parent=parent.env(x),
                      deep.update.parent=T,
-                     envir=NULL,
+                     into_envir=NULL,
                      ...) {
   y = list2env(as.list(x, all.names=TRUE),
-               parent = parent,envir=envir,...)
+               parent = parent,envir=into_envir,...)
   if(deep) {
-  for (name in names(y)) {
-    if(is.environment(y[[name]])) {
-      y_sub = y[[name]]
-      y_sub_par = parent.env(y_sub)
-      if(deep.update.parent && identical(y_sub_par,x)) {
-        y_sub_par = y
+    for (name in names(y)) {
+      if(is.environment(y[[name]])) {
+        y_sub = y[[name]]
+        y_sub_par = parent.env(y_sub)
+        if(deep.update.parent && identical(y_sub_par,x)) {
+          y_sub_par = y
+        }
+        y[[name]] = copy_env(y_sub,deep = deep,parent = y_sub_par,
+                             deep.update.parent = deep.update.parent,
+                             ...)
+        ##TODO: update frame of functions and active bindings with environment()<-
       }
-      y[[name]] = copy_env(y_sub,deep = deep,parent = y_sub_par,
-                           deep.update.parent = deep.update.parent,
-                           ...)
-      ##TODO: update frame of functions and active bindings with environment()<-
     }
-  }
   }
   return (y)
 }
@@ -209,22 +244,30 @@ test6 <- function() {
   )
 }
 
-test7 <- function() {
-EV(s=4,t=EV(x=s*2))$t$x
-x = EV(s=1:4,
-       f=function(x) sprintf("x is %s",x),
-       t=EV(x=s*2,
-            z=EV(k=t$x*4)
-       )
-)
-print(x$t$z$k)
-if(T) {
-  y = EV(.with = x,
-         s=1:16,
-         f=function(x) sprintf("y is %s",x),
-         t=EV(l=10))
-  print(y$f(y$t$z$k))
+test_EV_constructor <- function() {
+  EV(s=4,t=EV(x=s*2))$t$x
+  x = EV(s=1:4,
+         f=function(x) sprintf("x is %s",x),
+         t=EV(x=s*2,
+              z=EV(k=t$x*4)
+         )
+  )
+  print(x$t$z$k)
+  if(T) {
+    y = EV(.with = x,
+           s=1:16,
+           f=function(x) sprintf("y is %s",x),
+           t=EV(l=10))
+    print(y$f(y$t$z$k))
+  }
 }
+
+test_copy_env <- function() {
+  x = list2env(list(a=1,b="env_x"))
+  x$y = list2env(list(c=2,d="env_y"),parent = x)
+  x$y$z = list2env(list(e=2,f="env_z"),parent = x$y)
+  print_nested_env(x)
+  print_nested_env(copy_env(x,deep = T))
 }
 
 test8 <- function() {
