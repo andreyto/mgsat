@@ -581,6 +581,7 @@ PandocAT$methods(add.table = function(x,
                                       split.tables=Inf,
                                       style="rmarkdown",
                                       export.to.file=T,
+                                      file.name=NULL,
                                       show.first.rows=200,
                                       show.first.cols=200,
                                       skip.if.empty=F,
@@ -624,7 +625,8 @@ PandocAT$methods(add.table = function(x,
                                        name.base=paste(str.to.file.name(caption,20),".tsv",sep=""),
                                        descr=NULL,
                                        row.names=show.row.names,
-                                       row.names.header=T)    
+                                       row.names.header=T,
+                                       file.name=file.name)    
     caption = paste(caption,
                     "Full dataset is also saved in a delimited text file (click to download and open e.g. in Excel)",
                     pandoc.link.return(file.name,pandoc.verbatim.return(file.name))
@@ -789,13 +791,19 @@ PandocAT$methods(write.table.file = function(data,
                                              descr=NULL,
                                              row.names=F,
                                              row.names.header=T,
+                                             file.name=NULL,
                                              ...) {
   ## if we write row.names, Excel shifts header row to the left when loading
   if(row.names && row.names.header) {
     data = cbind(rownames=rownames(data),data)
     row.names=F
   }
-  fn = .self$make.file.name(name.base,make.unique=make.unique)
+  if(is.null(file.name)) {
+    fn = .self$make.file.name(name.base,make.unique=make.unique)
+  }
+  else {
+    fn = file.name
+  }
   write.table(data,
               fn,
               sep="\t",
