@@ -14,8 +14,8 @@ evalsOptions("cache.mode","environment")
 evalsOptions("output",c("all"))
 evalsOptions("graph.output","svg") #"png"
 evalsOptions("graph.unify",F)
-evalsOptions("width",1000) #800
-evalsOptions("height",840) #640
+evalsOptions("width",800) #800 #1000
+evalsOptions("height",600) #640 #840
 evalsOptions("res",75)
 evalsOptions("hi.res",T)
 evalsOptions("hi.res.width",1200)
@@ -30,7 +30,7 @@ evalsOptions("graph.RDS",F)
 #evalsOptions("graph.name","plot-%d-%n")
 ## This is ggplot2 function that changes
 ## text base size within a current theme for entire session
-#theme_set(theme_gray(base_size = 20))
+theme_set(theme_gray(base_size = 20))
 
 make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
