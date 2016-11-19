@@ -2448,9 +2448,9 @@ melt.abund.meta <- function(data,id.vars,attr.names,value.name="abundance") {
   return (reshape2::melt(data,id.vars=id.vars,measure.vars=feature.names,variable.name="feature",value.name=value.name))
 }
 
-sort.factor.by.total <- function(factor.val,sort.val,ordered=F) {
+sort.factor.by.total <- function(factor.val,sort.val,ordered=F,decreasing=TRUE) {
   o = aggregate(sort.val, list(factor.val), sum)
-  o = o[order(o$x, decreasing=TRUE),1]  
+  o = o[order(o$x, decreasing=decreasing),1]  
   
   return (factor(factor.val, levels = o, ordered = ordered))
 }
@@ -2693,23 +2693,30 @@ plot.abund.meta <- function(m_a,
   make.facet.formula <- function(df,vars) {
     if(length(vars) == 0) {
       wr = NULL
+      n.facet = 1
     }
     else if (length(vars) == 1) {
       wr = as.formula(paste("~",vars[1],sep=""))
+      n.facet = num.levels(df[[vars[1]]])
     }
     else {
       splits = split.by.total.levels.data.frame(df[,vars,drop=F])
       wr = as.formula(paste(paste(splits[[2]],collapse = "+"),paste(splits[[1]],collapse = "+"),sep="~"))
+      n.facet = c(num.levels.data.frame(df[,splits[[2]],drop=F]),
+                  num.levels.data.frame(df[,splits[[1]],drop=F]))
     }
-    wr
+    return(list(facet.form=wr,n.facet=n.facet))
   }
   
-  facet.form = make.facet.formula(dat,id.vars.facet)
-  
+  fc.form.res = make.facet.formula(dat,id.vars.facet)
+  facet.form = fc.form.res$facet.form
+  n.facet = fc.form.res$n.facet
+
   show.samp.n = T
   
   if(geom == "bar_stacked") {
     sqrt.scale = F
+    dat$feature = factor(dat$feature,levels=rev(levels(dat$feature)))
     aes_s = aes_string(x=".record.id",y=value.name,
                        fill = fill,color = color)
     gp = ggplot(dat, aes_s)
@@ -2855,7 +2862,7 @@ plot.abund.meta <- function(m_a,
       gp = gp +
         geom_text(aes(x=.x, y=.y, label=.n), 
                   data=facet.cnt, 
-                  size=rel(4), 
+                  size=rel(1), 
                   colour="black", 
                   inherit.aes=F, 
                   parse=FALSE)
@@ -2898,16 +2905,14 @@ plot.abund.meta <- function(m_a,
       scale_fill_hue(c = 50, l = 70, h=c(0, 360)) +
       scale_color_hue(c = 50, l = 70, h=c(0, 360))
   }
-  
+  fontsize = (ggplot2::theme_get()$text$size) * (2/(1+n.facet[[1]]))
   gp = gp + 
     theme(legend.position = legend.position,
           axis.title=element_blank(),
-          axis.text.y=element_text(color=c("black","black")),
-          plot.title = element_text(size = rel(2)),
-          axis.text.x = element_text(size = rel(0.85),angle=90),
-          axis.text.y = element_text(size = rel(0.85)))
-  gp_dbg11 = gp
-  
+          axis.text.y=element_text(color=c("black","black"),size = fontsize),
+          plot.title = element_text(size = fontsize*2),
+          axis.text.x = element_text(size = fontsize,angle=90, hjust = 1))
+
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
@@ -5639,6 +5644,11 @@ num.levels <- function(x) {
   length(levels(factor(x)))
 }
 
+num.levels.data.frame <- function(x) {
+  nrow(as.data.frame(table(x)))
+}
+
+
 genesel.stability.report <- function(m_a,group.attr,
                                      genesel.param=list(),
                                      do.nmds=F,
@@ -6649,9 +6659,14 @@ ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,width=
       width = grid::unit(1.0,"lines")
     }
   }
-  h = ComplexHeatmap::Heatmap(data[,attr.names[1],drop=F],name=attr.names[1],
+  get_pal = function(attr.name) {
+    generate.colors.mgsat(data[,attr.name,drop=T],value="palette")
+  }
+  attr.name = attr.names[1]
+  h = ComplexHeatmap::Heatmap(data[,attr.name,drop=F],name=attr.name,
               show_row_names = ifelse(n.h>1,F,show_row_names),
               width = width,
+              col = get_pal(attr.name),
               ...)
   n.h = n.h - 1
   if (n.h > 0) {
@@ -6659,6 +6674,7 @@ ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,width=
       h = h + ComplexHeatmap::Heatmap(data[,attr.name,drop=F],name=attr.name,
                       show_row_names = ifelse(n.h>1,F,show_row_names),
                       width = width,
+                      col = get_pal(attr.name),
                       ...) 
       n.h = n.h - 1
     }
@@ -6715,19 +6731,42 @@ heatmap.combined.report <- function(m_a,
   }
   caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
                          main.meta.var,split.descr)
+  fontsize = ggplot2::theme_get()$text$size
+  fontsize_leg = fontsize*0.8
+  #fontsize = grid::unit(fontsize,"points")
+  #fontsize_leg = grid::unit(fontsize_leg,"points")
   library(ComplexHeatmap) # need it for `+`
-  h = ComplexHeatmap::Heatmap(m_a.norm$count,name="Abundance",
+  count = m_a.norm$count
+  colnames_count = colnames(count)
+  #column_names_max_height = grid::unit(1, "strwidth",colnames_count[which.max(stringr::str_length(colnames_count))[1]])
+  column_names_max_height = ComplexHeatmap::max_text_width(colnames_count, gp = gpar(fontsize = fontsize))
+  
+  h = ComplexHeatmap::Heatmap(count,name="Abundance",
               cluster_columns=cluster_columns,
               show_row_names = show_row_names,
               show_column_names = show_column_names,
               clustering_distance_rows = clustering_distance_rows, 
               split=split,
-              column_names_gp = grid::gpar(fontsize = 8),
-              row_names_gp = grid::gpar(fontsize = 8)) +
+              column_names_max_height = column_names_max_height,
+              column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+              row_names_gp = grid::gpar(fontsize = fontsize),
+              heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                          labels_gp = grid::gpar(fontsize = fontsize_leg))) +
+#     ComplexHeatmap::HeatmapAnnotation(df=m_a.norm$attr[,attr.annot.names,drop=F],
+#                             which="row",
+#                             annotation_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+#                                                         labels_gp = grid::gpar(fontsize = fontsize)),
+#                             show_annotation_name = T,
+#                             annotation_name_gp = grid::gpar(fontsize = fontsize))
+  
     ComplexHeatmap.add.attr(attr.annot.names,
                             m_a.norm$attr,
                             show_row_names=F,
-                            row_names_gp = grid::gpar(fontsize = 8))
+                            column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                            row_names_gp = grid::gpar(fontsize = fontsize),
+                            heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                                        labels_gp = grid::gpar(fontsize = fontsize_leg)))
+  
   report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(split)) {
@@ -6773,8 +6812,10 @@ heatmap.combined.report <- function(m_a,
                   show_row_names = F, 
                   clustering_distance_rows = metric, 
                   split=split,
-                  column_names_gp = grid::gpar(fontsize = 8),
-                  width=grid::unit(ncol(div),"lines"))
+                  column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                  width=grid::unit(ncol(div),"lines"),
+                  heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                              labels_gp = grid::gpar(fontsize = fontsize_leg)))
     h = h.d + h
     report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
                width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
@@ -8231,10 +8272,12 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
     within=Within(type="none"),
     plots=Plots(type="free",strata=dd.block.col)
   )
-  
-  perm = shuffleSet(n=n.col,
+  ## default check=T gives some cryptic error message despite
+  ## reasonably looking permutations being generated with check=F
+  perm = permute::shuffleSet(n=n.col,
                     nset=n.perm-1,
-                    control=ctrl
+                    control=ctrl,
+                    check = F
   )
   perm = rbind(perm,1:n.col)
   
