@@ -1,61 +1,3 @@
-test1 <- function() {
-  library(pryr)
-  a = within(list(), {
-    b %<d-% 1
-    c = b
-    d %<d-% within(list(), {
-      e %<d-% (b*2)
-    })
-  })
-  
-  p = within(a,{
-    b %<d-% 2
-  })
-  print(p$d)
-}
-
-test2 <- function() {
-  library(proto)
-  a = proto(b=1)
-  a$d = a$b*2
-  p = a$proto(b=2)
-  print(p$d)
-}
-
-test3 <- function() {
-  library(proto)
-  a = new.env()
-  with(a, {
-    b = 1
-    c = b
-    d = new.env()
-    makeActiveBinding("e", function() (b*2),d)
-  })
-  p = a
-  #p = a
-  with(p,{
-    b = 2
-  })
-  print(p$d$e)
-}
-
-test4 <- function() {
-  library(proto)
-  a = proto()
-  with(a, {
-    b = 1
-    c = b
-    d = proto()
-    makeActiveBinding("e", function() (b*2),d)
-  })
-  p = a$proto()
-  with(p,{
-    b = 2
-  })
-  print(p$d$e)
-}
-
-#test5 <- function() {
 #library(pryr)
 to_env <- function (x, quiet = FALSE) 
 {
@@ -100,87 +42,127 @@ make_function <- function(args, body, env = parent.frame()) {
   eval(call("function", args, body), env)
 }
 
-AB <- function(env = parent.frame(),...) {
-  this_call = match.call()
-  #env = parent.frame()
-  for(i in 2:length(this_call)) {
-    var_name = names(this_call)[[i]]
-    #cat("var_name=",var_name)
-    if (exists(var_name, envir = env, inherits = FALSE)) {
-      rm(list = var_name, envir = env)
-    }
-    makeActiveBinding(var_name, make_function(alist(x = ), this_call[[i]], env),env)
-  }
-}
 
-EV <- function(.with=NULL,
-               .update=T,
-               .under=parent.frame(),...) {
-  #cat(str(names(sys.call())))
+rm_if_exists <- function(name,env) {
+  for(nm in name) {
+    if (exists(nm, envir = env, inherits = FALSE)) {
+      rm(list = nm, envir = env)
+    }
+  }
+} 
+
+acon <- function(.with=NULL,
+                 .update=T,
+                 .under=parent.frame(),...) {
+  ## How this is designed:
+  ## The general idea is to overload the `=` assignment operator.
+  ## Since it is impossible in R, we instead emulate it by 
+  ## designing a special processing of the `=` when it is used
+  ## to specify values for named arguments in a function call.
+  ## this acon() constructor performs NSE of its argument list and
+  ## returns a new environment object (S3 subclassed as `acon`).
+  ## Any value expression that is itself a call to acon() is generated with a recursive call
+  ## to acon(), but with the .under argument updated to point to the currently built
+  ## environment (current acon object).
+  ## Any other value expression is first evaluated anc checked if it is of type acon. If yes,
+  ## the evaluated value is copied and placed under the current acon. If no, the name of
+  ## the argument is made an active binding bound to a function that is constructed from the
+  ## value expression.
+  ## Thus, the returned result is a nested set of environments (acon objects), wit leaf values
+  ## all being active bindings. When any of the active binding attributes is accessed, the
+  ## corresponding expression will be evaluated, with names in the expression automatically being
+  ## looked up the chain of nested environments until found.
   this_call = match.call()
   if(is.null(.with)) {
     env = new.env(parent=.under)
   }
   else {
-    env = .with
+    ## always make a deep copy of the .with environment, thus providing a "copy
+    ## constructor" semantics
+    env = copy_env(.with,deep = T,parent = .under)
   }
+  class(env) <- append(class(env),"acon",0)
+  #   print("DEBUG START")
+  #   print(paste0(".parent= ",as.list(.under)," address_parent=",data.table::address(.under),
+  #                " this_call=",paste(this_call,collapse = ",")," address_env=",data.table::address(env),
+  #                " sys.calls=",paste(sys.calls(),collapse = "->")))
+  #   print("DEBUG END")
+  
   for(i in 2:length(this_call)) {
     var_name = names(this_call)[[i]]
     if(substring(var_name,1,1)!=".") {
       var_name_exists = exists(var_name, envir = env, inherits = FALSE)
       var_rhs = this_call[[i]]
-      is_rhs_ev = (var_rhs[[1]]=="EV")
-      if(is_rhs_ev) {
+      if(is.language(var_rhs) && (!is.symbol(var_rhs)) && var_rhs[[1]]=="acon") {
         ## Missing .update arg means T (the default, but default is not set in
         ## the unevaluated expression yet)
         update_ev = (is.null(var_rhs$.update) || eval(var_rhs$.update,env))
+        ## if rhs is acon ctor expression, and the lhs already exists in the
+        ## current object (inherited from .with), then the lhs is assumed to be
+        ## the environment and is used as the .with argument to call the rhs ev ctor.
         if(!var_name_exists) {
           update_ev = F
         }
         if(update_ev) {
           var_rhs[[".with"]] = eval(parse(text=var_name),env)
         }
-      }
-      func_rhs = make_function(alist(x = ), var_rhs, env)
-      #if (exists(var_name, envir = env, inherits = FALSE)) {
-      #  rm(list = var_name, envir = env)
-      #}
-      if(is_rhs_ev) {
-        env[[var_name]] = func_rhs()
+        var_rhs[[".under"]] = env
+        ## simply evaluate the acon ctor call and assign
+        val = eval(var_rhs,envir = env)
+        rm_if_exists(var_name,env)
+        env[[var_name]] = val
       }
       else {
-        makeActiveBinding(var_name, func_rhs, env)
+        ## we have to eval in order to check the class of the resulting value
+        val = eval(var_rhs,env)
+        ## if rhs is acon object, it is copied and attached to the current object
+        if(inherits(val,"acon")) {
+          val = copy_env(val,deep = T,parent = env)
+          rm_if_exists(var_name,env)
+          env[[var_name]] = val
+        }
+        ## if not acon object or acon ctor expression, assign as active binding
+        else {
+          func_rhs = make_function(alist(), var_rhs, env) #.x = 
+          rm_if_exists(var_name,env)
+          makeActiveBinding(var_name, func_rhs, env)
+        }
       }
     }
   }
   env
 }
 
+as.list.acon <- function(x) {
+  as_list_nested_env(x)
+}
+
 as_list_nested_env <- function(x) {
   done_env_hash = new.env()
-
-as_list_nested_env_inner <- function(x) {
-  stopifnot(is.environment(x) || is.list(x))
-  y = as.list(x,all.names=T)
-  x_names = names(y)
-  for(i_el in seq_along(y)) {
-    val = y[[i_el]]
-    if(is.environment(val)) {
-      val_key = data.table::address(val)
-      if( is.null(done_env_hash[[val_key]]) ) {
-        done_env_hash[[val_key]] = T
+  
+  as_list_nested_env_inner <- function(x) {
+    stopifnot(is.environment(x) || is.list(x))
+    y = list()
+    x_names = names(x) #for list elements w/o names, returns ""
+    for(i_el in seq_along(x_names)) {
+      if(is.environment(x)) val = x[[x_names[[i_el]]]]
+      else val = x[[i_el]]
+      if(is.environment(val)) {
+        val_key = data.table::address(val)
+        if( is.null(done_env_hash[[val_key]]) ) {
+          done_env_hash[[val_key]] = T
+          val = as_list_nested_env_inner(val)
+        }
+      }
+      else if(is.list(val)) {
         val = as_list_nested_env_inner(val)
       }
+      y[[i_el]] = val
     }
-    else if(is.list(val)) {
-      val = as_list_nested_env_inner(val)
-    }
-    y[[i_el]] = val
+    names(y) = names(x)
+    return (y)
   }
-  names(y) = names(x)
-  return (y)
-}
-return (as_list_nested_env_inner(x))
+  return (as_list_nested_env_inner(x))
 }
 
 ls_str_nested_env <- function(x) {
@@ -193,13 +175,17 @@ print_nested_env <- function(x,max.level=100,...) {
 
 copy_env <- function(x,deep=F,
                      parent=parent.env(x),
+                     func.update.parent=T,
                      deep.update.parent=T,
                      into_envir=NULL,
                      ...) {
-  y = list2env(as.list(x, all.names=TRUE),
+  ## as.list copies active binding as functions; this allows us 
+  ## recreating them as active bindings in the new environment
+  y = list2env(as.list.environment(x, all.names=TRUE),
                parent = parent,envir=into_envir,...)
-  if(deep) {
-    for (name in names(y)) {
+  for (name in names(y)) {
+    if(deep) {
+      
       if(is.environment(y[[name]])) {
         y_sub = y[[name]]
         y_sub_par = parent.env(y_sub)
@@ -207,77 +193,63 @@ copy_env <- function(x,deep=F,
           y_sub_par = y
         }
         y[[name]] = copy_env(y_sub,deep = deep,parent = y_sub_par,
+                             func.update.parent = func.update.parent,
                              deep.update.parent = deep.update.parent,
                              ...)
-        ##TODO: update frame of functions and active bindings with environment()<-
+      }
+    }
+    ## both plain functions and active bindings become functions in y
+    if(is.function(y[[name]])) {
+      y_sub = y[[name]]
+      y_sub_par = environment(y_sub)
+      ## update function environment if the original one points to the enclosing object
+      if(func.update.parent && identical(y_sub_par,x)) {
+        y_sub_par = y
+        environment(y_sub) <- y_sub_par
+      }
+      ## additionally, if the original value was active binding, create active binding for the
+      ## copied value
+      if(bindingIsActive(name,x)) {
+        rm(list = name, envir = y)
+        makeActiveBinding(name,y_sub,y)
+      }
+      else {
+        y[[name]] = y_sub
       }
     }
   }
   return (y)
 }
 
-test6 <- function() {
-  evlist <- function(expr,ev.par=parent.frame()) {
-    expr = substitute(expr)
-    e = new.env(parent=ev.par)
-    with(e,{
-      `<-` <- function(x,y) makeActiveBinding(substitute(x), make_function(alist(x = ), substitute(y), parent.frame()),parent.frame())
-    })
-    eval(expr,e)
-    e
-  }
-  a = evlist({
-    b <- 1
-  })
-  s = evlist({
-    v <- 1 + b
-    y <- if(b==1) (v + 1) else (v + 3)
-    c = b
-    AB(w = b*2)
-    hidden = evlist({
-      AB(z = w*3)
-      w = 1
-    })
-  },a)
-  with(a, 
-       {b <- 2}
-  )
-}
-
-test_EV_constructor <- function() {
-  EV(s=4,t=EV(x=s*2))$t$x
-  x = EV(s=1:4,
-         f=function(x) sprintf("x is %s",x),
-         t=EV(x=s*2,
-              z=EV(k=t$x*4)
-         )
+test_acon_constructor <- function() {
+  z = acon(v=4,w=acon(x=v*2))
+  x = acon(s=1:4,
+           f=function(x) sprintf("x is %s",x),
+           t=acon(x=s*2,
+                  z=acon(k=x*4)
+           ),
+           p = z
   )
   print(x$t$z$k)
-  if(T) {
-    y = EV(.with = x,
+  y = acon(x,
            s=1:16,
            f=function(x) sprintf("y is %s",x),
-           t=EV(l=10))
-    print(y$f(y$t$z$k))
-  }
+           t=acon(l=10))
+  print(y$f(y$t$z$k))
+  return (list(y=y,x=x))
 }
 
 test_copy_env <- function() {
-  x = list2env(list(a=1,b="env_x"))
+  x = list2env(list(a=2,b="env_x"))
   x$y = list2env(list(c=2,d="env_y"),parent = x)
   x$y$z = list2env(list(e=2,f="env_z"),parent = x$y)
+  print("x=")
   print_nested_env(x)
-  print_nested_env(copy_env(x,deep = T))
-}
-
-test8 <- function() {
-  f2 <- function() {
-    v1 <- 1
-    v2 <- 2
-    #environment(f1) <<- environment()
-    return (function() {})
-  }
-  print(as.list(environment(f2())))
-  return (f2())
+  a = copy_env(x,deep = T)
+  a$a = 3
+  a$y$c = 3
+  a$y$z$e = 3
+  print("a=")
+  print_nested_env(a)
 }
 
