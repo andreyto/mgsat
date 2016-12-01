@@ -2608,7 +2608,8 @@ plot.abund.meta <- function(m_a,
                             flip.coords=T,
                             sqrt.scale=F,
                             stat_summary.fun.y="mean",
-                            make.summary.table=T) {
+                            make.summary.table=T,
+                            facet_wrap_ncol=3) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -2812,25 +2813,22 @@ plot.abund.meta <- function(m_a,
     #labels facet with number of cases
     if(flip.coords) {
       gp = gp + coord_flip()
-      gp_dbg5 = gp
     }
     if(sqrt.scale) {
       gp = gp + coord_trans(y = "signed_sqrt")
-      gp_dbg6 = gp
     }
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
     else if (length(id.vars.facet) == 1) {
-      wr = facet_wrap(facet.form)
+      wr = facet_wrap(facet.form,ncol = facet_wrap_ncol)
     }
     else {
       wr = facet_grid(facet.form,
                       drop=T,margins=facet_grid.margins)
     }
     gp = gp + wr
-    gp_dbg7 = gp
-    
+
     if(!is.null(id.var.dodge)) {
       legend.position = "right"
     }
@@ -2838,6 +2836,12 @@ plot.abund.meta <- function(m_a,
       legend.position = "none"
     }
   }  
+  
+  theme_font_size_abs = ggplot2::theme_get()$text$size
+  theme_font_size = 1
+  n_feat_mult = (20/length(features))/(n.facet[[1]]/(if(length(id.vars.facet) == 1) facet_wrap_ncol else 1.))
+  fontsize = theme_font_size*sqrt(n_feat_mult)
+  
   if(length(id.vars.facet) > 0) {
     feature.names = as.character(features)
     #this will be used to label each facet with number of cases in it
@@ -2857,16 +2861,18 @@ plot.abund.meta <- function(m_a,
     if(stat_summary.fun.y=="identity") {
       show.samp.n = F
     }
-    
     if(show.samp.n) {
+      # there is some bug in how ggplot2 treats size=theme_font_size_abs here if it is
+      # not in the aes - it either gets tiny with rel() or huge with the absoulte
+      # value. In the aes, size comes out as expected, but then it gets into
+      # the legend.
       gp = gp +
         geom_text(aes(x=.x, y=.y, label=.n), 
                   data=facet.cnt, 
-                  size=rel(1), 
                   colour="black", 
                   inherit.aes=F, 
+                  size=4,
                   parse=FALSE)
-      gp_dbg8 = gp
     }
   }
   else {
@@ -2905,13 +2911,13 @@ plot.abund.meta <- function(m_a,
       scale_fill_hue(c = 50, l = 70, h=c(0, 360)) +
       scale_color_hue(c = 50, l = 70, h=c(0, 360))
   }
-  fontsize = (ggplot2::theme_get()$text$size) * (2/(1+n.facet[[1]]))
-  gp = gp + 
-    theme(legend.position = legend.position,
+  #+ theme_grey(base_size = fontsize*theme_font_size_abs) + 
+  gp = gp + theme(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
+    legend.position = legend.position,
           axis.title=element_blank(),
-          axis.text.y=element_text(color=c("black","black"),size = fontsize),
-          plot.title = element_text(size = fontsize*2),
-          axis.text.x = element_text(size = fontsize,angle=90, hjust = 1))
+          axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 0.5 else 1)),
+          plot.title = element_text(size = rel(1)),
+          axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),angle=if(flip.coords) 0 else 90, hjust = 1))
 
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
@@ -4673,7 +4679,8 @@ mgsat.16s.task.template = within(list(), {
         faceted=T,
         stat_summary.fun.y="mean",
         sqrt.scale=T,
-        line.show.points=F
+        line.show.points=F,
+        facet_wrap_ncol=3
       )
       show.feature.meta.task=list()
     })

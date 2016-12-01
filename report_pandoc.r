@@ -259,7 +259,7 @@ pandoc.link.verbatim.return <- function(url,text=NULL) {
   if(is.null(text)) {
     text = url
   }
-  pandoc.link.return(url,pandoc.verbatim.return(text))
+  sapply(seq_along(url),function(i) { pandoc.link.return(url[i],pandoc.verbatim.return(text[i]))})
 }
 
 pandoc.anchor.return <- function(anchor,text) {
@@ -622,7 +622,7 @@ PandocAT$methods(add.table = function(x,
   
   if(export.to.file) {
     file.name = .self$write.table.file(x,
-                                       name.base=paste(str.to.file.name(caption,20),".tsv",sep=""),
+                                       name.base=paste(str.to.file.name(caption,20),".csv",sep=""),
                                        descr=NULL,
                                        row.names=show.row.names,
                                        row.names.header=T,
@@ -804,9 +804,8 @@ PandocAT$methods(write.table.file = function(data,
   else {
     fn = file.name
   }
-  write.table(data,
+  write.csv(data,
               fn,
-              sep="\t",
               row.names = row.names,
               ...)
   if (!is.null(descr)) {
