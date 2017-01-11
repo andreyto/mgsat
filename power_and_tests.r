@@ -458,9 +458,16 @@ ungapped.export.ali <- function(ali,file.name,drop.rows = T,drop.columns = T,nam
   writeXStringSet(seq,file.name,format = "fasta")
 }
 
-remove.end.stop.seq <- function(x) {
-  ind = (subseq(x,-1) == '*')
-  subseq(x[ind],-1) = NULL
+remove.end.stop.seq <- function(x,stop.seq=c("*","X"),chop.all=F) {
+  ind = (as.character(subseq(x,-1)) %in% stop.seq)
+  if(!chop.all) {
+    subseq(x[ind],-1) = NULL
+  }
+  else {
+    if(any(ind)) {
+      subseq(x,-1) = NULL
+    }
+  }
   x
 }
 
@@ -6982,7 +6989,7 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                     arg.list.as.str(pt))
     report$add(pl,caption = caption)
     
-    if(nrow(m_a$count) > 3) {
+    if(inherits(distance,"dist") || nrow(m_a$count) > 3) {
       
       ##We have to redo NMDS for 3D plot if the original number of requested ordination dimensions
       ##was less than 3

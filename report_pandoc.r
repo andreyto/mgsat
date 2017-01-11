@@ -259,6 +259,15 @@ pandoc.link.verbatim.return <- function(url,text=NULL) {
   if(is.null(text)) {
     text = url
   }
+  t_len = length(text)
+  u_len = length(url)
+  if(t_len==1) {
+    text = rep(text,u_len)
+  }
+  else if(u_len==1) {
+    url = rep(url,t_len)
+  }
+  else if(t_len!=u_len) stop("Lengths of url and text arguments are not compatible")
   sapply(seq_along(url),function(i) { pandoc.link.return(url[i],pandoc.verbatim.return(text[i]))})
 }
 
@@ -290,7 +299,8 @@ PandocAT <- setRefClass('PandocAT', contains = "Pandoc",
                           'object.index' = 'list',
                           'data.dir' = 'character',
                           'widget.dir' = 'character',
-                          'widget.deps.dir' = 'character'
+                          'widget.deps.dir' = 'character',
+                          'graph.dir' = 'character'
                         )
 )
 
@@ -314,10 +324,10 @@ PandocAT$methods(initialize = function(
   unlink(.self$data.dir,recursive=T,force=T)
   dir.create(.self$data.dir, showWarnings = FALSE, recursive = TRUE)
   
-  graph.dir = evalsOptions("graph.dir")
-  unlink(graph.dir,recursive=T,force=T)
-  dir.create(graph.dir, showWarnings = FALSE, recursive = TRUE)
-  
+  .self$graph.dir = evalsOptions("graph.dir")
+  unlink(.self$graph.dir,recursive=T,force=T)
+  dir.create(.self$graph.dir, showWarnings = FALSE, recursive = TRUE)
+
   .self$widget.dir = "." #normalizePath(graph.dir,winslash = "/")
   .self$widget.deps.dir = "widget_deps" #html.path(.self$widget.dir,"widget_deps")
   dir.create(.self$widget.deps.dir, showWarnings = FALSE, recursive = TRUE)
@@ -758,6 +768,15 @@ PandocAT$methods(add.header = function(x,level=NULL,report.section=NULL,section.
   
   return (report.section)
   
+})
+
+PandocAT$methods(make.plot.file.name = function(name.base="",
+                                           make.unique=T,
+                                           section.path=NULL) {
+  .self$make.file.name(name.base = name.base,
+                       make.unique = make.unique,
+                       section.path = section.path,
+                       dir = .self$graph.dir)  
 })
 
 PandocAT$methods(make.file.name = function(name.base="",
