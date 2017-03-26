@@ -68,8 +68,9 @@ make.global <- function(var=NULL,name=NULL,except=c("report.section")) {
     p.e = parent.frame()
     if(name=="global") {
       t.e = globalenv()
+      except = c("...",except)
       for(n in ls(p.e, all.names=TRUE)) {
-        if(! (n %in% except) ) assign(n, get(n, p.e), t.e)
+        if(! (n %in% except )) assign(n, get(n, p.e), t.e)
       }
       return()
     }
@@ -7217,7 +7218,7 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
 network.spiec.easi.options = list(
   method='mb', 
   lambda.min.ratio=1e-2, 
-  nlambda=15,
+  nlambda=80, #15
   icov.select.params=list(rep.num=50)
 )
 
