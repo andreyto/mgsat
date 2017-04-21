@@ -2786,7 +2786,8 @@ plot.abund.meta <- function(m_a,
       gp = gp + geom_boxplot(fill=NA,na.rm=T,notch=F)
     }
     else if(geom == "dotplot") {
-      gp = gp + geom_dotplot(binaxis = "y", stackdir = "center", binpositions="all")
+      gp = gp + geom_dotplot(binaxis = "y", stackdir = "center", binpositions = "all",	
+                             method="histodot")
     }
     else if(geom == "jitter") {
       gp = gp + geom_jitter()
@@ -2846,7 +2847,7 @@ plot.abund.meta <- function(m_a,
   }  
   
   theme_font_size_abs = ggplot2::theme_get()$text$size
-  theme_font_size = 1
+  theme_font_size = 0.5
   n_feat_mult = (20/length(features))/(n.facet[[1]]/(if(length(id.vars.facet) == 1) facet_wrap_ncol else 1.))
   fontsize = theme_font_size*sqrt(n_feat_mult)
   
@@ -4162,7 +4163,7 @@ plot.profiles <- function(m_a,
             
             for(geom in show.profile.task$geoms) {
               ## "bar_stacked" is only compatible with some combinations of other
-              ## parameters, skip otherwise
+              ## parameters, skip otherwise; same for "dotplot"
               skip.bar_stacked = F
               if(other.params$flip.coords || 
                  !is.null(id.var.dodge$dodge) || 
@@ -4170,7 +4171,13 @@ plot.profiles <- function(m_a,
                  ncol(m_a$count) < 2) {
                 skip.bar_stacked = T
               }
-              if(!(geom == "bar_stacked" && skip.bar_stacked)) {
+              skip.dotplot = F
+              if(!is.null(id.var.dodge$dodge)) {
+                skip.dotplot = T
+              }
+              
+              if(!((geom == "bar_stacked" && skip.bar_stacked) ||
+                 (geom == "dotplot" && skip.dotplot))) {
                 
                 tryCatchAndWarn({
                   id.vars.key = paste(id.vars,collapse="#")
@@ -4722,6 +4729,7 @@ mgsat.16s.task.template = within(list(), {
       km.abund=0
       km.diversity=0
       show_row_names=F
+      max.n.columns=NULL
     })
     
     ordination.task = within(list(), {
@@ -6724,6 +6732,7 @@ heatmap.combined.report <- function(m_a,
   ## "pearson", "spearman" and "kendall" are only understood by this internal function from ComplexHeatmap
   ## pam will silently use "euclidean"
   diss = ComplexHeatmap:::get_dist(m_a.norm$count,clustering_distance_rows)
+
   if(n.obs >= 6) {
     if(km.abund<1) {
       split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
