@@ -2853,9 +2853,10 @@ plot.abund.meta <- function(m_a,
   }  
   
   theme_font_size_abs = ggplot2::theme_get()$text$size
-  theme_font_size = 0.5
+  theme_font_size = 0.8
+  #theme_font_size = 0.5 #if output is png
   n_feat_mult = (20/length(features))/(n.facet[[1]]/(if(length(id.vars.facet) == 1) facet_wrap_ncol else 1.))
-  fontsize = theme_font_size*sqrt(n_feat_mult)
+  fontsize = theme_font_size*(n_feat_mult**0.33)
   
   if(length(id.vars.facet) > 0) {
     feature.names = as.character(features)
@@ -2930,7 +2931,7 @@ plot.abund.meta <- function(m_a,
   gp = gp + theme(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
     legend.position = legend.position,
           axis.title=element_blank(),
-          axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 0.5 else 1)),
+          axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
           plot.title = element_text(size = rel(1)),
           axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),angle=if(flip.coords) 0 else 90, hjust = 1))
 
@@ -8502,7 +8503,7 @@ contrasts.groups.log.fold.change <- function(m_a.g,base=2,
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
-                                        show.sample.totals=F, show.sample.means=T,
+                                        show.sample.totals=T, show.sample.means=T,
                                         sub.report=T) {
   report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=sub.report)
   
