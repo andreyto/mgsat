@@ -5911,7 +5911,7 @@ test.counts.adonis.report <- function(m_a,
                            data.descr,
                            col.trans.descr,
                            dist.metr.descr))
-  
+
   res = lapply(tasks,function(task) {
     strata = task$strata #implicitely defined here even if undefined in task
     if(is.null(strata)) {
@@ -5922,7 +5922,7 @@ test.counts.adonis.report <- function(m_a,
     }
     with(task,{
       formula_str = paste("count",formula.rhs,sep="~")
-      ad.res = adonis(
+      ad.res = adonis2(
         as.formula(formula_str),
         data=m_a$attr,
         strata=if(!is.null(strata)) m_a$attr[,strata] else NULL,
@@ -5936,9 +5936,8 @@ test.counts.adonis.report <- function(m_a,
                                               strata.descr
       )
       )
-      report$add.table(ad.res$aov.tab,
-                       show.row.names=T,
-                       caption=paste(descr,"AOV Table"))
+      report$add(ad.res,
+                       caption=paste(descr,"Adonis summary"))
       ad.res
     })
   })
