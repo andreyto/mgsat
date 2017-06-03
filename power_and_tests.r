@@ -3349,7 +3349,7 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   if(!(do.stratify || do.rarefy)) {
     n.rar.rep = 1
   }
-  make.global(name="dbg1")
+  #make.global(name="dbg1")
   ##somehow just supplying .combine="+" generates an error,
   ##but both the function below or skipping .combine and
   ##applying Reduce("+",...) on the returned list work fine
@@ -6225,7 +6225,7 @@ test.counts.project <- function(m_a,
   }
   
   #DEBUG:
-  make.global()
+  #make.global()
   
   if(do.stabsel) {
     tryCatchAndWarn({ 
@@ -6868,14 +6868,14 @@ heatmap.combined.report <- function(m_a,
 ## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
 ## which result in wrong labels typically shown on busy plots
 plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,renderer="canvas",...) {
-  require(threejs)
+  library(threejs)
   args = list(color=color,labels=labels,size=size)
   args = interpret.args.in.df(args,data)
   
   if(!is.null(args$color) && length(args$color) > 1) {
     args$color = generate.colors.mgsat(args$color)
   }
-  pl = do.call(scatterplot3js,
+  pl = do.call(threejs::scatterplot3js,
                c(list(xyz),
                  args,
                  list(renderer=renderer),
