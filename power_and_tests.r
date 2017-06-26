@@ -2792,7 +2792,8 @@ plot.abund.meta <- function(m_a,
       gp = gp + geom_boxplot(fill=NA,na.rm=T,notch=F)
     }
     else if(geom == "dotplot") {
-      gp = gp + geom_dotplot(binaxis = "y", stackdir = "center", binpositions="all")
+      gp = gp + geom_dotplot(binaxis = "y", stackdir = "center", binpositions = "all",	
+                             method="histodot")
     }
     else if(geom == "jitter") {
       gp = gp + geom_jitter()
@@ -2852,9 +2853,10 @@ plot.abund.meta <- function(m_a,
   }  
   
   theme_font_size_abs = ggplot2::theme_get()$text$size
-  theme_font_size = 1
+  theme_font_size = 0.8
+  #theme_font_size = 0.5 #if output is png
   n_feat_mult = (20/length(features))/(n.facet[[1]]/(if(length(id.vars.facet) == 1) facet_wrap_ncol else 1.))
-  fontsize = theme_font_size*sqrt(n_feat_mult)
+  fontsize = theme_font_size*(n_feat_mult**0.33)
   
   if(length(id.vars.facet) > 0) {
     feature.names = as.character(features)
@@ -2929,7 +2931,7 @@ plot.abund.meta <- function(m_a,
   gp = gp + theme(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
     legend.position = legend.position,
           axis.title=element_blank(),
-          axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 0.5 else 1)),
+          axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
           plot.title = element_text(size = rel(1)),
           axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),angle=if(flip.coords) 0 else 90, hjust = 1))
 
@@ -3347,7 +3349,7 @@ mgsat.richness.samples <- function(m_a,group.attr=NULL,n.rar.rep=400,do.rarefy=T
   if(!(do.stratify || do.rarefy)) {
     n.rar.rep = 1
   }
-  make.global(name="dbg1")
+  #make.global(name="dbg1")
   ##somehow just supplying .combine="+" generates an error,
   ##but both the function below or skipping .combine and
   ##applying Reduce("+",...) on the returned list work fine
@@ -4168,7 +4170,7 @@ plot.profiles <- function(m_a,
             
             for(geom in show.profile.task$geoms) {
               ## "bar_stacked" is only compatible with some combinations of other
-              ## parameters, skip otherwise
+              ## parameters, skip otherwise; same for "dotplot"
               skip.bar_stacked = F
               if(other.params$flip.coords || 
                  !is.null(id.var.dodge$dodge) || 
@@ -4176,7 +4178,13 @@ plot.profiles <- function(m_a,
                  ncol(m_a$count) < 2) {
                 skip.bar_stacked = T
               }
-              if(!(geom == "bar_stacked" && skip.bar_stacked)) {
+              skip.dotplot = F
+              if(!is.null(id.var.dodge$dodge)) {
+                skip.dotplot = T
+              }
+              
+              if(!((geom == "bar_stacked" && skip.bar_stacked) ||
+                 (geom == "dotplot" && skip.dotplot))) {
                 
                 tryCatchAndWarn({
                   id.vars.key = paste(id.vars,collapse="#")
@@ -4728,6 +4736,7 @@ mgsat.16s.task.template = within(list(), {
       km.abund=0
       km.diversity=0
       show_row_names=F
+      max.n.columns=NULL
     })
     
     ordination.task = within(list(), {
@@ -5902,7 +5911,7 @@ test.counts.adonis.report <- function(m_a,
                            data.descr,
                            col.trans.descr,
                            dist.metr.descr))
-  
+
   res = lapply(tasks,function(task) {
     strata = task$strata #implicitely defined here even if undefined in task
     if(is.null(strata)) {
@@ -5913,7 +5922,7 @@ test.counts.adonis.report <- function(m_a,
     }
     with(task,{
       formula_str = paste("count",formula.rhs,sep="~")
-      ad.res = adonis(
+      ad.res = adonis2(
         as.formula(formula_str),
         data=m_a$attr,
         strata=if(!is.null(strata)) m_a$attr[,strata] else NULL,
@@ -5927,9 +5936,8 @@ test.counts.adonis.report <- function(m_a,
                                               strata.descr
       )
       )
-      report$add.table(ad.res$aov.tab,
-                       show.row.names=T,
-                       caption=paste(descr,"AOV Table"))
+      report$add(ad.res,
+                       caption=paste(descr,"Adonis summary"))
       ad.res
     })
   })
@@ -6217,7 +6225,7 @@ test.counts.project <- function(m_a,
   }
   
   #DEBUG:
-  make.global()
+  #make.global()
   
   if(do.stabsel) {
     tryCatchAndWarn({ 
@@ -6730,6 +6738,7 @@ heatmap.combined.report <- function(m_a,
   ## "pearson", "spearman" and "kendall" are only understood by this internal function from ComplexHeatmap
   ## pam will silently use "euclidean"
   diss = ComplexHeatmap:::get_dist(m_a.norm$count,clustering_distance_rows)
+
   if(n.obs >= 6) {
     if(km.abund<1) {
       split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
@@ -6859,14 +6868,14 @@ heatmap.combined.report <- function(m_a,
 ## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
 ## which result in wrong labels typically shown on busy plots
 plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,renderer="canvas",...) {
-  require(threejs)
+  library(threejs)
   args = list(color=color,labels=labels,size=size)
   args = interpret.args.in.df(args,data)
   
   if(!is.null(args$color) && length(args$color) > 1) {
     args$color = generate.colors.mgsat(args$color)
   }
-  pl = do.call(scatterplot3js,
+  pl = do.call(threejs::scatterplot3js,
                c(list(xyz),
                  args,
                  list(renderer=renderer),
@@ -8493,7 +8502,7 @@ contrasts.groups.log.fold.change <- function(m_a.g,base=2,
 }
 
 report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
-                                        show.sample.totals=F, show.sample.means=T,
+                                        show.sample.totals=T, show.sample.means=T,
                                         sub.report=T) {
   report.section = report$add.header("Summary of total counts per sample",section.action="push",sub=sub.report)
   
