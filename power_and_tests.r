@@ -6928,6 +6928,19 @@ plot_ordination.2d <- function(physeq,ordination,
   
   pl = pl + make.geom(geom_point,data=df.plot,
                       options=pt)
+
+  
+  if(!is.null(pt$color)) {
+    args = list(color=pt$color)
+    args = interpret.args.in.df(args,df.plot)
+  
+    if(!is.null(args$color) && length(args$color) > 1) {
+      palette = generate.colors.mgsat(args$color,value="palette")    
+      pl = pl + 
+        scale_fill_manual(values = palette) +
+        scale_color_manual(values = palette)
+    }
+  }
   
   if(!is.null(ggplot.extra)) {
     for(g in ggplot.extra) {
