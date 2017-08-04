@@ -1105,14 +1105,139 @@ boxcox <- function(x,lambda1,lambda2=0) {
   }
 }
 
+## Copied from geoR:: to avoid having to install tcltk
+"boxcoxfit" <-
+  function(object, xmat, lambda, lambda2 = NULL, add.to.data = 0,...)
+  {
+    call.fc <- match.call()
+    data <- object + add.to.data
+    if(is.null(lambda2) && any(data <= 0))
+      stop("Transformation requires positive data")
+    ##
+    data <- as.vector(data)
+    n <- length(data)
+    if(missing(xmat)) xmat <- rep(1, n)
+    xmat <- as.matrix(xmat)
+    if(any(xmat[,1] != 1)) xmat <- cbind(1, xmat)
+    ## do not reverse order of the next two lines:
+    xmat <- xmat[!is.na(data),,drop=FALSE]
+    data <- data[!is.na(data)]
+    n <- length(data)
+    ##
+    beta.size <- ncol(xmat)
+    if(nrow(xmat) != length(data))
+      stop("xmat and data have incompatible lengths")
+    ##  lik.method <- match.arg(lik.method, choices = c("ML", "RML"))
+    lik.method <- "ML"
+    ##
+    if(all(data > 0)) absmin <- 0
+    else absmin <- abs(min(data)) + 0.00001 * diff(range(data))
+    if(!is.null(lambda2)){
+      if(missing(lambda)) lambda.ini <- seq(-2, 2, by=0.2)
+      else lambda.ini <- lambda
+      lambda2.ini <- 0
+      if(isTRUE(lambda2)) lambda2.ini <- absmin
+      else if(mode(lambda2) == "numeric") lambda2.ini <- lambda2
+      lambdas.ini <- as.matrix(expand.grid(lambda.ini, lambda2.ini))
+      ##
+      if(length(as.matrix(lambdas.ini)) > 2){
+        lamlik <- apply(lambdas.ini, 1, .negloglik.boxcox, data=data + absmin,
+                        xmat=xmat, lik.method=lik.method)
+        lambdas.ini <- lambdas.ini[which(lamlik == min(lamlik)),]
+      }
+      lambdas.ini <- unname(drop(lambdas.ini))
+      lik.lambda <- optim(par=lambdas.ini, fn = .negloglik.boxcox,
+                          method="L-BFGS-B",
+                          #hessian = TRUE, 
+                          lower = c(-Inf, absmin), 
+                          data = data, xmat = xmat, lik.method = lik.method)
+    }
+    else{
+      lik.lambda <- optimize(.negloglik.boxcox, interval = c(-5, 5), data = data,
+                             xmat = xmat, lik.method = lik.method)
+      lik.lambda <- list(par = lik.lambda$minimum, value = lik.lambda$objective,
+                         convergence = 0, message = "function optimize used")
+    }
+    ##
+    ##  hess <- sqrt(diag(solve(as.matrix(lik.lambda$hessian))))
+    lambda.fit <- lik.lambda$par
+    if(length(lambda.fit) == 1) lambda.fit <- c(lambda.fit, 0)
+    data <- data + lambda.fit[2]
+    ##
+    #  if(abs(lambda.fit[1]) < 0.0001) yt <- log(data)
+    if(isTRUE(all.equal(unname(lambda.fit[1]),0))) yt <- log(data)
+    else yt <- ((data^lambda.fit[1]) - 1)/lambda.fit[1]
+    beta <- solve(crossprod(xmat), crossprod(xmat, yt))
+    mu <- drop(xmat %*% beta)
+    sigmasq <- sum((yt - mu)^2)/n
+    if(lik.method == "ML")
+      loglik <- drop((-(n/2) * (log(2*pi) + log(sigmasq) + 1)) + (lambda.fit[1]-1) * sum(log(data)))
+    ##  if(lik.method == "RML")
+    ##    loglik <- drop(-lik.lambda$value - (n/2)*log(2*pi) - (n-beta.size)*(log(n) - 1))
+    ##
+    temp <- 1 + lambda.fit[1] * mu
+    fitted.y <- ((temp^((1/lambda.fit[1]) - 2)) *
+                   (temp^2 + ((1-lambda.fit[1])/2) * sigmasq))
+    variance.y <-  (temp^((2/lambda.fit[1]) - 2)) * sigmasq
+    if(beta.size == 1){
+      fitted.y <- unique(fitted.y)
+      variance.y <- unique(fitted.y)
+    }
+    ##
+    beta <- drop(beta)
+    if(length(beta) > 1)
+      names(beta) <- paste("beta", 0:(beta.size-1), sep="")
+    if(length(lik.lambda$par) == 1) lambda.fit <- lambda.fit[1]
+    if(length(lik.lambda$par) == 2) names(lambda.fit) <- c("lambda", "lambda2")
+    res <- list(lambda = lambda.fit, beta.normal = drop(beta),
+                sigmasq.normal = sigmasq, 
+                loglik = loglik, optim.results = lik.lambda)
+    ## res$hessian <- c(lambda = hess) 
+    res$call <- call.fc
+    oldClass(res) <- "boxcoxfit"
+    return(res)
+  }
+
+## Copied from geoR:: to avoid having to install tcltk
+".negloglik.boxcox" <-
+  function(lambda.val, data, xmat, lik.method = "ML")
+  {
+    if(length(lambda.val) == 2){
+      data <- data + lambda.val[2]
+      lambda <- lambda.val[1]
+    }
+    else lambda <- lambda.val
+    lambda <- unname(lambda)
+    n <- length(data)
+    beta.size <- ncol(xmat)
+    if(isTRUE(all.equal(unname(lambda), 0))) yt <- log(data)
+    else yt <- ((data^lambda) - 1)/lambda
+    beta <- solve(crossprod(xmat), crossprod(xmat, yt))
+    ss <- sum((drop(yt) - drop(xmat %*% beta))^2)
+    if(lik.method == "ML")
+      neglik <- (n/2) * log(ss) - ((lambda - 1) * sum(log(data)))
+    if(lik.method == "RML"){
+      xx <- crossprod(xmat)
+      if(length(as.vector(xx)) == 1)
+        choldet <- 0.5 * log(xx)
+      else
+        choldet <- sum(log(diag(chol(xx))))
+      neglik <- ((n-beta.size)/2) * log(ss) + choldet -
+        ((lambda - 1) * sum(log(data)))
+    }
+    if(mode(neglik) != "numeric") neglik <- Inf
+    return(drop(neglik))
+  }
+
+
 ## Fit boxcox transform to the data and transform the data
 boxcox.transform.vec <- function(x) {
   l.2 = T
   if(!all(x>0)) {
-    b = geoR::boxcoxfit(x,lambda2=T)
+    b = boxcoxfit(x,lambda2=T)
   }
   else {
-    b = geoR::boxcoxfit(x)
+    b = boxcoxfit(x)
     l.2 = F
   }
   #b = try(boxcoxfit(x,lambda2=T),TRUE)
@@ -2623,7 +2748,10 @@ plot.abund.meta <- function(m_a,
                             sqrt.scale=F,
                             stat_summary.fun.y="mean",
                             make.summary.table=T,
-                            facet_wrap_ncol=3) {
+                            facet_wrap_ncol=3,
+                            legend.title=NULL,
+                            record.label=NULL,
+                            theme_font_size = 0.8) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -2638,8 +2766,7 @@ plot.abund.meta <- function(m_a,
   #TODO: change code in this method to use m_a directly
   data = join_count_df(m_a)
   attr.names = names(m_a$attr)
-  
-  dat = melt.abund.meta(data,id.vars=id.vars,attr.names=attr.names,value.name=value.name)
+  dat = melt.abund.meta(data,id.vars=c(id.vars,record.label),attr.names=attr.names,value.name=value.name)
   if(!is.null(ci)) {
     ci.m = dcast(melt(ci,varnames=c(".record.id","feature","var")),.record.id+feature~var)
     n.rec.dat = nrow(dat)
@@ -2657,7 +2784,6 @@ plot.abund.meta <- function(m_a,
   rownames.sorted = rownames(m_a$count)[
     do.call(order, -as.data.frame(m_a$count)[,levels(dat$feature),drop=F])
     ]
-  
   dat$.record.id = factor(dat$.record.id,levels=rownames.sorted)
   
   if(make.summary.table) {
@@ -2732,8 +2858,15 @@ plot.abund.meta <- function(m_a,
   if(geom == "bar_stacked") {
     sqrt.scale = F
     dat$feature = factor(dat$feature,levels=rev(levels(dat$feature)))
-    aes_s = aes_string(x=".record.id",y=value.name,
+    if(!is.null(record.label)) {
+      x = record.label
+    }
+    else {
+      x = ".record.id"
+    }
+    aes_s = aes_string(x=x,y=value.name,
                        fill = fill,color = color)
+    
     gp = ggplot(dat, aes_s)
 
     gp = gp + geom_bar(position="stack",stat="identity") 
@@ -2853,7 +2986,6 @@ plot.abund.meta <- function(m_a,
   }  
   
   theme_font_size_abs = ggplot2::theme_get()$text$size
-  theme_font_size = 0.8
   #theme_font_size = 0.5 #if output is png
   n_feat_mult = (20/length(features))/(n.facet[[1]]/(if(length(id.vars.facet) == 1) facet_wrap_ncol else 1.))
   fontsize = theme_font_size*(n_feat_mult**0.33)
@@ -2902,11 +3034,13 @@ plot.abund.meta <- function(m_a,
       gp = gp + 
         scale_x_discrete(breaks=NULL) +
         scale_y_continuous(expand = c(0,0))
-      gp_dbg9 = gp
     }
   }
   
   #gp = gp + guides(colour = NULL, fill = guide_legend("XXX"))
+  if(!is.null(legend.title)) {
+    gp = gp + labs(fill=legend.title,colour=legend.title)
+  }
   
   color.palette="brew"
   
@@ -2920,7 +3054,6 @@ plot.abund.meta <- function(m_a,
     gp = gp + 
       scale_fill_manual(values = palette) +
       scale_color_manual(values = palette)
-    gp_dbg10 = gp
   }
   else if(color.palette=="hue") {
     gp = gp +     
@@ -2938,7 +3071,6 @@ plot.abund.meta <- function(m_a,
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
-      gp_dbg12 = gp
     }
   }
   if (!is.null(file_name)) {
@@ -4052,7 +4184,10 @@ plot.profiles <- function(m_a,
                             faceted=T,
                             stat_summary.fun.y="mean",
                             sqrt.scale=F,
-                            line.show.points=T
+                            line.show.points=T,
+                            legend.title=NULL,
+                            record.label=NULL,
+                            theme_font_size=0.8
                           ),
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
@@ -4208,7 +4343,10 @@ plot.profiles <- function(m_a,
                                            sqrt.scale=other.params$sqrt.scale,
                                            value.name=value.name,
                                            stat_summary.fun.y=show.profile.task$stat_summary.fun.y,
-                                           make.summary.table = make.summary.table
+                                           make.summary.table = make.summary.table,
+                                           legend.title = show.profile.task$legend.title,
+                                           record.label = show.profile.task$record.label,
+                                           theme_font_size = show.profile.task$theme_font_size
                   )
                   
                   pl.hist = pl.abu$plot
@@ -4702,7 +4840,10 @@ mgsat.16s.task.template = within(list(), {
         stat_summary.fun.y="mean",
         sqrt.scale=T,
         line.show.points=F,
-        facet_wrap_ncol=3
+        facet_wrap_ncol=3,
+        legend.title=NULL,
+        record.label=NULL,
+        theme_font_size = 0.8        
       )
       show.feature.meta.task=list()
     })
@@ -4787,7 +4928,7 @@ start.cluster.project <- function() {
   library(doParallel)
   library(parallel)
   node.cores = getOption("mc.cores", 2L)
-  cl<-parallel::makeCluster(node.cores)
+  cl<-parallel::makeCluster(node.cores,type="FORK")
   registerDoParallel(cl)
   return(cl)
 }

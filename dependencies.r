@@ -19,7 +19,7 @@ vanilla_packages = c(
   "geoR", 
   "foreach", 
   "iterators", 
-  "doSNOW", 
+  "doParallel", 
   "fdrtool", 
   #"elasticnet", 
   #"BioMark", 
@@ -114,7 +114,7 @@ install_required_packages <- function() {
   }
 }
 
-packages.to.autoload = c("ggplot2","pander","doSNOW","data.table")
+packages.to.autoload = c("ggplot2","pander","parallel","data.table")
 
 load_required_packages <- function() {
   for (package in packages.to.autoload) {
