@@ -4748,7 +4748,10 @@ mgsat.16s.task.template = within(list(), {
             ##other arguments to phyloseq:::ordinate
           ),
           plot.task=list(
-            type="samples"
+            type="samples",
+            legend.point.size = ggplot2::rel(4),
+            legend.position="right",
+            ggplot.extra=list()            
             ##other arguments to phyloseq:::plot_ordination
           )
         )
@@ -6321,7 +6324,6 @@ test.counts.project <- function(m_a,
   }
   
   if (do.ordination) {
-    
     tryCatchAndWarn({
       do.call(ordination.report,
               c(list(m_a=m_a.norm,res=res),
@@ -6865,23 +6867,93 @@ heatmap.combined.report <- function(m_a,
   }
 }
 
+
+quantcut.ordered.color <- function(x,as.rgb=F) {
+  x_q = quantcut.ordered(x)
+  names(x_q) = names(x)
+  col = scales::seq_gradient_pal("blue", "red", "Lab")(vegan::decostand(as.numeric(x_q),method = "range"))
+  y = data.table(x=x,x_q=x_q,col=col)
+  if(!is.null(names(x_q))) {
+    y[,rn:=names(x_q)]
+  }
+  if(as.rgb) {
+    y = cbind(y,t(col2rgb(col)))
+  }
+  y
+}
+
+#' tbl_col as returned by quantcut.ordered.color
+ordered.color.legend <- function(tbl_col,title) {
+  library(data.table)
+  library(ggplot2)
+  tbl_col = copy(tbl_col)
+  tbl_col = tbl_col[,.(count=.N),by=.(x_q,col)][order(x_q)]
+  tbl_col[,right := as.numeric(stringr::str_match(x_q,",([.0-9eE]+)")[,2])]
+  tbl_col[,left := as.numeric(stringr::str_match(x_q,"([.0-9eE]+),")[,2])]
+  ticks = c(tbl_col[1,left],tbl_col[,right])
+  ticks = sprintf("%s%%",ticks*100)
+  ticks = c("",ticks[2:(length(ticks)-1)],"")
+  col_pal = tbl_col$col
+  names(col_pal) = tbl_col$x_q
+  #ticks = rev(ticks)
+  tbl_col[,x_q:=ordered(x_q,levels=rev(levels(x_q)))]
+  theme_font_size_abs = ggplot2::theme_get()$text$size
+  fontsize = 3
+  fontsize_final = fontsize*theme_font_size_abs
+  pl = ggplot(tbl_col,aes(x=factor(1),fill=x_q)) + 
+    geom_bar(position="stack",color="black") + 
+    scale_fill_manual(values=col_pal) +
+    scale_y_continuous(name = title, 
+                       breaks=(seq_along(ticks)-1),
+                       labels = ticks) +
+    ggtitle(title) +
+    #coord_flip() +
+    theme(text=element_text(color=c("black","black"),size = fontsize_final),
+          plot.title = element_text(size=fontsize_final),
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          legend.position="none",
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank())
+  return(list(tbl_palette=tbl_col,plot_palette=pl))
+}
+
+make.color.legend.scatter.js3d <- function(xyz,color_val,color) {
+  xyz_max = apply(xyz,2,min)
+}
+
 ## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
 ## which result in wrong labels typically shown on busy plots
-plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,renderer="canvas",...) {
+plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,renderer="auto",show.color.legend=T,...) {
   library(threejs)
   args = list(color=color,labels=labels,size=size)
   args = interpret.args.in.df(args,data)
   
+  color_val = args$color
   if(!is.null(args$color) && length(args$color) > 1) {
     args$color = generate.colors.mgsat(args$color)
   }
+  else {
+    show.color.legend = F
+  }
   pl = do.call(threejs::scatterplot3js,
-               c(list(xyz),
+               c(list(as.matrix(xyz)),
                  args,
                  list(renderer=renderer),
                  list(...)
                )
   )
+  if(F && show.color.legend) {
+    points3d_args = make.color.legend.scatter.js3d(xyz,color_val,color)
+    pl = do.call(points3d,c(list(pl),
+                            points3d_args))
+  }
+  
+  #scatterplot3js(x, y, z, pch="@") %>%
+  #points3d(pl,x + 0.1, y + 0.1, z, color="red", pch=paste("point", 1:5))
   pl
 }
 
@@ -6911,6 +6983,8 @@ phyloseq.ordinate <- function(physeq, method = "DCA", distance = "bray", formula
 
 plot_ordination.2d <- function(physeq,ordination,
                                type = "samples", axes = 1:2,
+                               legend.point.size = rel(4),
+                               legend.position="right",
                                ggplot.extra=list(),
                                ...) {
   library(phyloseq)
@@ -6935,13 +7009,20 @@ plot_ordination.2d <- function(physeq,ordination,
     args = interpret.args.in.df(args,df.plot)
   
     if(!is.null(args$color) && length(args$color) > 1) {
-      palette = generate.colors.mgsat(args$color,value="palette")    
+      palette = generate.colors.mgsat(args$color,value="palette")
+      guide_ovr = guide_legend(override.aes = list(size=legend.point.size))
       pl = pl + 
         scale_fill_manual(values = palette) +
-        scale_color_manual(values = palette)
+        scale_color_manual(values = palette) +
+        guides(colour = guide_ovr,fill = guide_ovr)
+      ##TODO: the above size override will probably break color bar because
+      ##it always forces guide_legend, which is an alternative to color bar.
+      ##Need to figure out when color is continuous scale and use alternative
+      ##override. As of 2017/07, there seems to be no way to increase legend
+      ##point size in a generic way.
     }
   }
-  
+  pl = pl + theme(legend.position=legend.position)
   if(!is.null(ggplot.extra)) {
     for(g in ggplot.extra) {
       pl = pl + g
@@ -7000,15 +7081,22 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     pt = pt.orig
     pt$axes = NULL
     pt$type = NULL
-    pt.ggplot.extra = pt$ggplot.extra
-    pt$ggplot.extra = NULL
+    #pt.ggplot.extra = pt$ggplot.extra
+    #pt.legend.point.size = pt$legend.point.size
+    #if(is.null(pt.legend.point.size)) {
+    #  pt.legend.point.size = rel(4)
+    #}
+    #pt$ggplot.extra = NULL
+    #pt$legend.point.size= NULL
     
     pt = plyr::compact(pt)
-    
     pl =  do.call(plot_ordination.2d,
                   c(list(ph,ord,type=pt.orig$type,
                          axes=pt.orig$axes,
-                         ggplot.extra=pt.ggplot.extra),
+                         #legend.point.size=pt.legend.point.size,
+                         legend.position="bottom"
+                         #ggplot.extra=pt.ggplot.extra
+                         ),
                     pt
                   ))
     
