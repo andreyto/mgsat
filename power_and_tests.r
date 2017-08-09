@@ -431,11 +431,11 @@ mask.gaps.ali <- function(ali,...) {
   ok = T
   msg = NULL
   x = tryCatch(maskGaps(ali,...),
-           error = function(e) { 
-             ok <<- F
-             msg <<- e$message
-             }
-           )
+               error = function(e) { 
+                 ok <<- F
+                 msg <<- e$message
+               }
+  )
   if(!ok) {
     stopifnot(grepl(".*subscript out of bounds.*",msg))
     x = ali
@@ -536,8 +536,8 @@ reorder.rows.ali <- function(ali,order.names,random.rest=T) {
     tailrmask.bool
   )
   call.ctor(ali,seq,
-                        rowmask=as(rmask.bool,"NormalIRanges"),
-                        colmask=cmask)
+            rowmask=as(rmask.bool,"NormalIRanges"),
+            colmask=cmask)
 }
 
 ## see vignette phangorn-specials
@@ -557,16 +557,16 @@ alignment.as.phyDat <- function(ali,method=c("file","memory"),with.gaps=F) {
   library(Biostrings)
   method = method[[1]]
   if(method == "memory") {
-  ##directly; as.matrix() removes masked positions
-  mat = Biostrings::as.matrix(ali)
-  ##phangorn::as.phyDat is broken for AA unless type argument is
-  ##provided, we just use this internal function
-  if(inherits(ali,"AAMultipleAlignment")) {
-    phdat = phangorn:::phyDat.AA(mat)
-  }
-  else {
-    phdat = phangorn::as.phyDat(mat)
-  }
+    ##directly; as.matrix() removes masked positions
+    mat = Biostrings::as.matrix(ali)
+    ##phangorn::as.phyDat is broken for AA unless type argument is
+    ##provided, we just use this internal function
+    if(inherits(ali,"AAMultipleAlignment")) {
+      phdat = phangorn:::phyDat.AA(mat)
+    }
+    else {
+      phdat = phangorn::as.phyDat(mat)
+    }
   }
   else if(method == "file") {
     ali.file = tempfile("tmp.phydat_convert.",tmpdir=getwd(),fileext=".fasta")
@@ -1932,10 +1932,10 @@ power.koren<-function() {
   data_col = melt(data,id.vars=data_factors,variable.name="feature",value.name="freq")
   data_time = merge(data_col[data_col$time==1,],data_col[data_col$time==2,],by=c("id_repl","feature"))
   data_time_summary = plyr::ddply(data_time,c("feature"),summarize,
-                            mean.x=mean(freq.x), sd.x=sd(freq.x), n.x = length(freq.x),
-                            mean.y=mean(freq.y), sd.y=sd(freq.y), n.y = length(freq.y),
-                            mean_paired=mean(freq.x-freq.y),
-                            sd_paired=sd(freq.x-freq.y),n_paired=length(freq.x))
+                                  mean.x=mean(freq.x), sd.x=sd(freq.x), n.x = length(freq.x),
+                                  mean.y=mean(freq.y), sd.y=sd(freq.y), n.y = length(freq.y),
+                                  mean_paired=mean(freq.x-freq.y),
+                                  sd_paired=sd(freq.x-freq.y),n_paired=length(freq.x))
   data_time_summary$effect_t_paired = data_time_summary$mean_paired/data_time_summary$sd_paired
   #get pooled sd (original group ratios)
   data_time_summary$sd = with(data_time_summary,sqrt(((n.x-1)*sd.x**2+(n.y-1)*sd.y**2)/(n.x+n.y)))
@@ -2251,20 +2251,20 @@ power.dirmult.range<-function(
   alpha=alpha)
   )
   res = plyr::ddply(res.all,c("eta"),
-              function(x,alpha) { 
-                first = 
-                  summarize(x[,-which(names(x) %in% all_features)],
-                            mod.cramer.phi = mean(mod.cramer.phi),
-                            test.Xmcupo.res = mean(test.Xmcupo.res),
-                            r2.ad = mean(r2.ad),
-                            test.ad.res.power = mean(test.ad.res<=alpha))
-                #use dfrm[col_ind] notation because dfrm[,col_ind] will
-                #return a vector if length(col_ind) == 1
-                second = 
-                  as.data.frame(colMeans(x[which(names(x) %in% test_features)]<=alpha))
-                cbind(first,t(second))
-              },
-              alpha = alpha
+                    function(x,alpha) { 
+                      first = 
+                        summarize(x[,-which(names(x) %in% all_features)],
+                                  mod.cramer.phi = mean(mod.cramer.phi),
+                                  test.Xmcupo.res = mean(test.Xmcupo.res),
+                                  r2.ad = mean(r2.ad),
+                                  test.ad.res.power = mean(test.ad.res<=alpha))
+                      #use dfrm[col_ind] notation because dfrm[,col_ind] will
+                      #return a vector if length(col_ind) == 1
+                      second = 
+                        as.data.frame(colMeans(x[which(names(x) %in% test_features)]<=alpha))
+                      cbind(first,t(second))
+                    },
+                    alpha = alpha
   )
   res = res[order(res$eta),]
   col.names.features = plyr::laply(names(res)[names(res) %in% test_features],function(x){paste(x,"Mann-Whitney U power")})
@@ -2386,21 +2386,21 @@ read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu",taxa
   data = read.delim(file_name, header=T,stringsAsFactors=T)
   row.names(data) = data$OTU
   data$Taxa = plyr::laply(strsplit(as.character(data$Taxonomy),"\\([0-9]*\\);"),
-                    function(x,taxa.level) {
-                      if(!is.taxa.level.otu(taxa.level)) {
-                        ##only look that deep in lineage
-                        x = x[1:as.integer(taxa.level)]
-                      }
-                      ##pmatch returns the index of the first match, so the expression below
-                      ##returns the prefix of lineage till (excluding) the first "unclassified" element
-                      no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
-                      last = no.tail[length(no.tail)]
-                      if(length(no.tail) < (length(x) - taxa.levels.mix)) {
-                        last = paste("Unclassified",last,sep="_")
-                      }
-                      last
-                    },
-                    taxa.level=taxa.level
+                          function(x,taxa.level) {
+                            if(!is.taxa.level.otu(taxa.level)) {
+                              ##only look that deep in lineage
+                              x = x[1:as.integer(taxa.level)]
+                            }
+                            ##pmatch returns the index of the first match, so the expression below
+                            ##returns the prefix of lineage till (excluding) the first "unclassified" element
+                            no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
+                            last = no.tail[length(no.tail)]
+                            if(length(no.tail) < (length(x) - taxa.levels.mix)) {
+                              last = paste("Unclassified",last,sep="_")
+                            }
+                            last
+                          },
+                          taxa.level=taxa.level
   )
   if(sanitize) {
     data$Taxa = sanitize.taxa.names(data$Taxa)
@@ -2512,9 +2512,9 @@ mgrast.to.abund.df <- function(data,level) {
 merge.counts.with.meta <- function(x,y,suffixes=c("","meta")) {
   ## if metadata is not provided, just make a very simple one right here
   if(is.null(y)) {
-      y = data.frame(SampleID=rownames(x))
-      rownames(y) = y$SampleID
-      y$Group = y$SampleID
+    y = data.frame(SampleID=rownames(x))
+    rownames(y) = y$SampleID
+    y$Group = y$SampleID
   }
   mrg = merge(x,y,by="row.names",suffixes=suffixes)
   #Row.names column is generated by merge() when by="row.names"
@@ -2852,7 +2852,7 @@ plot.abund.meta <- function(m_a,
   fc.form.res = make.facet.formula(dat,id.vars.facet)
   facet.form = fc.form.res$facet.form
   n.facet = fc.form.res$n.facet
-
+  
   show.samp.n = T
   
   if(geom == "bar_stacked") {
@@ -2868,9 +2868,9 @@ plot.abund.meta <- function(m_a,
                        fill = fill,color = color)
     
     gp = ggplot(dat, aes_s)
-
+    
     gp = gp + geom_bar(position="stack",stat="identity") 
-
+    
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
@@ -2905,7 +2905,7 @@ plot.abund.meta <- function(m_a,
     aes_s = aes_string(x="feature",y=value.name,
                        fill = fill,color = color)
     gp = ggplot(dat, aes_s)
-
+    
     if(geom == "bar") {
       pos_dod = position_dodge(width=0.7) #0.9
       gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
@@ -2950,7 +2950,7 @@ plot.abund.meta <- function(m_a,
     else {
       stop(paste("Unexpected parameter value: geom = ",geom))
     }
-
+    
     #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
     #coord_flip()+
     #geom_boxplot(color="black")+
@@ -2976,7 +2976,7 @@ plot.abund.meta <- function(m_a,
                       drop=T,margins=facet_grid.margins)
     }
     gp = gp + wr
-
+    
     if(!is.null(id.var.dodge)) {
       legend.position = "right"
     }
@@ -3062,12 +3062,12 @@ plot.abund.meta <- function(m_a,
   }
   #+ theme_grey(base_size = fontsize*theme_font_size_abs) + 
   gp = gp + theme(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
-    legend.position = legend.position,
-          axis.title=element_blank(),
-          axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
-          plot.title = element_text(size = rel(1)),
-          axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),angle=if(flip.coords) 0 else 90, hjust = 1))
-
+                  legend.position = legend.position,
+                  axis.title=element_blank(),
+                  axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
+                  plot.title = element_text(size = rel(1)),
+                  axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),angle=if(flip.coords) 0 else 90, hjust = 1))
+  
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
@@ -3173,8 +3173,8 @@ balanced.sample <- function(x, target=NULL, drop.smaller=T) {
     n.target = target
   }
   x = x[,.(ind=ind[sample(.N,min(.N,n.target))],
-       n.target=n.target,
-       n.lev=.N),by = lev]
+           n.target=n.target,
+           n.lev=.N),by = lev]
   if(drop.smaller) {
     x = x[n.lev>=n.target]
   }
@@ -4319,7 +4319,7 @@ plot.profiles <- function(m_a,
               }
               
               if(!((geom == "bar_stacked" && skip.bar_stacked) ||
-                 (geom == "dotplot" && skip.dotplot))) {
+                   (geom == "dotplot" && skip.dotplot))) {
                 
                 tryCatchAndWarn({
                   id.vars.key = paste(id.vars,collapse="#")
@@ -4383,7 +4383,7 @@ plot.profiles <- function(m_a,
                                 geom.descr,"plot.")
                   
                   report$add(pl.hist,caption = caption)
-
+                  
                 })
               }              
             }
@@ -5216,8 +5216,8 @@ show.distr <- function(x,binwidth=NULL,dens=T) {
   pl = ggplot(data.frame(x=x),aes(x=x))
   if (dens) {
     pl = pl + geom_histogram(aes(y=..density..),
-                   binwidth=binwidth,color="black",fill=NA) +
-    geom_density()
+                             binwidth=binwidth,color="black",fill=NA) +
+      geom_density()
   }
   else {
     pl = pl + geom_histogram(binwidth=binwidth,color="black",fill=NA)
@@ -5347,7 +5347,7 @@ show.feature.meta <- function(m_a,
       ylab(paste(value.name,"of",feature.name))
     
     gr.range = plyr::ddply(dat.feature,group.var,plyr::summarise,
-                     range = max(.x.var) - min(.x.var))
+                           range = max(.x.var) - min(.x.var))
     for (group in gr.range[gr.range$range<.Machine$double.eps,group.var]) {
       pl = pl + stat_summary(aes_string(x=x.var, y=value.name,color=group.var),
                              fun.data = "mean_cl_boot", geom = "crossbar", width=x.var.range/20,
@@ -6055,7 +6055,7 @@ test.counts.adonis.report <- function(m_a,
                            data.descr,
                            col.trans.descr,
                            dist.metr.descr))
-
+  
   res = lapply(tasks,function(task) {
     strata = task$strata #implicitely defined here even if undefined in task
     if(is.null(strata)) {
@@ -6081,7 +6081,7 @@ test.counts.adonis.report <- function(m_a,
       )
       )
       report$add(ad.res,
-                       caption=paste(descr,"Adonis summary"))
+                 caption=paste(descr,"Adonis summary"))
       ad.res
     })
   })
@@ -6798,31 +6798,6 @@ heatmap.counts <- function(m_a,
   report$add(plot(pl.heat),caption=caption)
 }
 
-heatmap.t1d <- function(meta.data,attr.names,caption="Heatmap") {
-  report.section = report$add.header("Heatmap of abundance profile",section.action="push")  
-  caption.ini = caption
-  meta.data.ini = meta.data
-  for(i in 1:6) {
-    meta.data = meta.data.ini
-    if(i>1) {
-      meta.data$TimestampMonth = sample(meta.data$TimestampMonth)
-      caption = paste(caption.ini,"randomization ",i,"of TimestampMonth")
-    }
-    heatmap.counts(meta.data,
-                   attr.names,
-                   attr.annot.names=c("T1D","TimestampMonth"),
-                   attr.row.labels=NULL,
-                   caption=caption,
-                   stand.show="max",
-                   trans.show=sqrt,
-                   attr.order="TimestampMonth",
-                   agglo.fun.order=mean)
-    if(i==1) {
-      report.section = report$add.header("Heatmaps with randomly permuted meta-data variable")
-      report$add.descr("Compare these with the heatmap of non-randomized data")
-    }
-  }
-}
 
 ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,width=NA,...) {
   n.h = length(attr.names)
@@ -6836,22 +6811,233 @@ ComplexHeatmap.add.attr <- function(attr.names,data,show_row_names = TRUE,width=
   }
   attr.name = attr.names[1]
   h = ComplexHeatmap::Heatmap(data[,attr.name,drop=F],name=attr.name,
-              show_row_names = ifelse(n.h>1,F,show_row_names),
-              width = width,
-              col = get_pal(attr.name),
-              ...)
+                              show_row_names = ifelse(n.h>1,F,show_row_names),
+                              width = width,
+                              col = get_pal(attr.name),
+                              ...)
   n.h = n.h - 1
   if (n.h > 0) {
     for(attr.name in attr.names[2:length(attr.names)]) {
       h = h + ComplexHeatmap::Heatmap(data[,attr.name,drop=F],name=attr.name,
-                      show_row_names = ifelse(n.h>1,F,show_row_names),
-                      width = width,
-                      col = get_pal(attr.name),
-                      ...) 
+                                      show_row_names = ifelse(n.h>1,F,show_row_names),
+                                      width = width,
+                                      col = get_pal(attr.name),
+                                      ...) 
       n.h = n.h - 1
     }
   }
   return (h)
+}
+
+make.plot.ylim <- function(y,margin.rel=0.1,margin.abs=1e-16) {
+  if(length(margin.abs)==1) {
+    margin.abs = c(margin.abs,margin.abs)
+  }
+  ymin = min(y)
+  ymax = max(y)
+  ymin = ymin - margin.rel*(ymax-ymin)
+  ymax = ymax + margin.rel*(ymax-ymin)
+  if(ymax==ymin) {
+    ymin = ymin - margin.abs[1]
+    ymax = ymax + margin.abs[2]
+  }
+  c(ymin,ymax)
+}
+
+heatmap.feature.test.annot <- function(test.res,
+                                       base=NULL,
+                                       effect=NULL,
+                                       p.val=NULL,
+                                       p.val.adj=NULL,
+                                       effect_baseline=0,
+                                       p.val.adj.alpha=0.05,
+                                       annot.which = "column",
+                                       fontsize=NULL,
+                                       fontsize_leg=NULL,
+                                       cex_axis=0.6,
+                                       cex_label=0.8) {
+  library(ComplexHeatmap)
+  annot_label = function(name,label=name) decorate_annotation(name, {grid.text(label, unit(1,"npc") + unit(0.5, "char"), 
+                                                                               just = "left",
+                                                                               gp = gpar(fontsize=fontsize,cex=cex_label))})
+  test.res = as.data.frame(test.res)
+  n.feat = nrow(test.res)
+  annots = list()
+  decorations = list()
+  if(!is.null(base)) {
+    annots[[base]] = ComplexHeatmap::anno_points(test.res[[base]],
+                                                 axis = T,
+                                                 which=annot.which,
+                                                 ylim = make.plot.ylim(test.res[[base]]),
+                                                 axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
+    decorations[[base]] = function() annot_label(base)
+  }
+  if(!is.null(effect)) {
+    y = test.res[[effect]]
+    annots[[effect]] = ComplexHeatmap::anno_barplot(y,
+                                                    baseline = effect_baseline,
+                                                    axis = T,
+                                                    which=annot.which,
+                                                    ylim = make.plot.ylim(y),
+                                                    gp = gpar(fill = ifelse(y > 0, "red", "blue")),
+                                                    axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
+    decorations[[effect]] = function() annot_label(effect)
+  }
+  if(!is.null(p.val)) {
+    y_orig = test.res[[p.val]]
+    y = -log10(y_orig+1e-16)
+    annots[[p.val]] = ComplexHeatmap::anno_points(y,
+                                                  axis = T,
+                                                  which=annot.which,
+                                                  ylim = make.plot.ylim(y,margin.abs = c(0,1)),
+                                                  gp = gpar(col = ifelse(y_orig <= p.val.adj.alpha, "green", "black")),
+                                                  axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
+    decorations[[p.val]] = function() annot_label(p.val,label=sprintf("%s, -log10",p.val))
+  }
+  if(!is.null(p.val.adj)) {
+    y = -log10(test.res[[p.val.adj]]+1e-16)
+    annots[[p.val.adj]] = ComplexHeatmap::anno_points(y,
+                                                      axis = T,
+                                                      which=annot.which,
+                                                      ylim = make.plot.ylim(y,margin.abs = c(0,1)),
+                                                      axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
+    decorations[[p.val.adj]] = function() annot_label(p.val.adj,label=sprintf("%s, -log10",p.val.adj))
+  }
+  list(
+    plot=do.call(ComplexHeatmap::HeatmapAnnotation,
+          c(annots,
+            list(gap=unit(0.2,"char")))),
+    finalize=function() { for(decor in decorations) decor() }
+  )
+}
+
+heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) {
+  n.obs = nrow(m_a$count)
+  ## "pearson", "spearman" and "kendall" are only understood by this internal function from ComplexHeatmap
+  ## pam will silently use "euclidean"
+  diss = ComplexHeatmap:::get_dist(m_a$count,clustering_distance_rows)
+  
+  if(n.obs >= 6) {
+    if(km<1) {
+      split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
+      split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
+    }
+    else {
+      split = cluster::pam(diss, k=km)$clustering
+      split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
+    }
+  }
+  else {
+    split = NULL
+    split.descr = "Not splitting clusters due to low number of observations"
+  }
+  if(!is.null(split)){
+    if(num.levels(split)<2){
+      split = NULL
+      split.descr = "Splitting clusters resulted in a single partition"
+    }
+  }
+  caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
+                         main.meta.var,split.descr)
+  g.t = NULL
+  if(!is.null(split)) {
+    if(num.levels(split)>1 && !is.null(main.meta.var) && num.levels(m_a$attr[,main.meta.var])>1) {
+      g.t = g.test(m_a$attr[,main.meta.var],split)
+    }
+    m_a$attr$.Heatmap.Cluster.Split = split
+  }
+  list(split=split,m_a=m_a,g.t=g.t,main.meta.var=main.meta.var,caption.g.test=caption.g.test,split.descr=split.descr)  
+}
+
+heatmap.diff.abund <- function(m_a,
+                               res.test.df=NULL,
+                               base=NULL,
+                               effect=NULL,
+                               p.val=NULL,
+                               p.val.adj=NULL,
+                               effect_baseline=0,
+                               p.val.adj.alpha=0.05,
+                               hmap.label="Abundance",
+                               hmap.width=1000,
+                               hmap.height=hmap.width*0.8,
+                               attr.annot.names=c(),
+                               clustering_distance_rows="pearson",
+                               cluster_columns=T,
+                               km=0,
+                               show_row_names = F,
+                               show_column_names = T,
+                               max.n.columns=NULL,
+                               top_annotation_height = unit(10,"lines"),
+                               column_names=NULL) {
+  if(!is.null(max.n.columns)) {
+    max.n.columns = min(max.n.columns,ncol(m_a$count))
+    m_a$count = m_a$count[,1:max.n.columns,drop=F]
+  }
+  main.meta.var = NULL
+  if(length(attr.annot.names)>0) {
+    main.meta.var = attr.annot.names[[1]]
+  }
+  fontsize = ggplot2::theme_get()$text$size
+  fontsize_leg = fontsize*0.8
+  #fontsize = grid::unit(fontsize,"points")
+  #fontsize_leg = grid::unit(fontsize_leg,"points")
+  library(ComplexHeatmap) # need it for `+`
+  count = m_a$count
+  colnames_count = colnames(count)
+  #column_names_max_height = grid::unit(1, "strwidth",colnames_count[which.max(stringr::str_length(colnames_count))[1]])
+  column_names_max_height = ComplexHeatmap::max_text_width(colnames_count, gp = gpar(fontsize = fontsize))
+  rows.cluster = heatmap.cluster.rows(m_a=m_a,
+                                      main.meta.var=main.meta.var,
+                                      clustering_distance_rows=clustering_distance_rows,
+                                      km=km)  
+  top_annot = NULL
+  if(!is.null(res.test.df)) {
+    top_annot = heatmap.feature.test.annot(test.res=res.test.df,
+                                       base=base,
+                                       effect=effect,
+                                       p.val=p.val,
+                                       p.val.adj=p.val.adj,
+                                       effect_baseline=effect_baseline,
+                                       p.val.adj.alpha=p.val.adj.alpha,
+                                       annot.which = "column",
+                                       fontsize = fontsize)    
+  }
+  if(!is.null(column_names)) {
+    colnames(count) = column_names
+  }  
+  h = ComplexHeatmap::Heatmap(count,name=hmap.label,
+                              cluster_columns=cluster_columns,
+                              show_row_names = show_row_names,
+                              show_column_names = show_column_names,
+                              clustering_distance_rows = clustering_distance_rows, 
+                              split=rows.cluster$split,
+                              column_names_max_height = column_names_max_height,
+                              column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                              row_names_gp = grid::gpar(fontsize = fontsize),
+                              heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                                          labels_gp = grid::gpar(fontsize = fontsize_leg)),
+                              top_annotation = top_annot$plot,
+                              top_annotation_height = top_annotation_height)
+  if(length(attr.annot.names)>0) {
+    h = h + ComplexHeatmap.add.attr(attr.annot.names,
+                                    m_a$attr,
+                                    show_row_names=F,
+                                    column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                                    row_names_gp = grid::gpar(fontsize = fontsize),
+                                    heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                                                labels_gp = grid::gpar(fontsize = fontsize_leg)))
+  }
+  report$add({draw(h); top_annot$finalize()},
+    caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
+             width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
+  if(!is.null(rows.cluster$split)) {
+    report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+  }
+  export.taxa.meta(rows.cluster$m_a,
+                   label="htmap",
+                   descr="Data used for heatmap with added row cluster splits",
+                   row.proportions=F,
+                   row.names=F)
 }
 
 heatmap.combined.report <- function(m_a,
@@ -6868,7 +7054,6 @@ heatmap.combined.report <- function(m_a,
                                     show_row_names = F,
                                     show_column_names = T,
                                     max.n.columns=NULL) {
-  library(cluster)
   if(!is.null(max.n.columns)) {
     max.n.columns = min(max.n.columns,ncol(m_a.norm$count))
     m_a.norm$count = m_a.norm$count[,1:max.n.columns,drop=F]
@@ -6877,33 +7062,6 @@ heatmap.combined.report <- function(m_a,
   if(length(attr.annot.names)>0) {
     main.meta.var = attr.annot.names[[1]]
   }
-  n.obs = nrow(m_a.norm$count)
-  ## "pearson", "spearman" and "kendall" are only understood by this internal function from ComplexHeatmap
-  ## pam will silently use "euclidean"
-  diss = ComplexHeatmap:::get_dist(m_a.norm$count,clustering_distance_rows)
-
-  if(n.obs >= 6) {
-    if(km.abund<1) {
-      split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
-      split.descr = "Number of cluster splits is determined automatically with method `fpc::pamk`"
-    }
-    else {
-      split = cluster::pam(diss, k=km.abund)$clustering
-      split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
-    }
-  }
-  else {
-    split = NULL
-    split.descr = "Not splitting clusters due to low number of observations"
-  }
-  if(!is.null(split)){
-    if(num.levels(split)<2){
-      split = NULL
-      split.descr = "Splitting clusters resulted in a single partition"
-    }
-  }
-  caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
-                         main.meta.var,split.descr)
   fontsize = ggplot2::theme_get()$text$size
   fontsize_leg = fontsize*0.8
   #fontsize = grid::unit(fontsize,"points")
@@ -6913,25 +7071,28 @@ heatmap.combined.report <- function(m_a,
   colnames_count = colnames(count)
   #column_names_max_height = grid::unit(1, "strwidth",colnames_count[which.max(stringr::str_length(colnames_count))[1]])
   column_names_max_height = ComplexHeatmap::max_text_width(colnames_count, gp = gpar(fontsize = fontsize))
-  
+  rows.cluster = heatmap.cluster.rows(m_a=m_a.norm,
+                                      main.meta.var=main.meta.var,
+                                      clustering_distance_rows=clustering_distance_rows,
+                                      km=km.abund)  
   h = ComplexHeatmap::Heatmap(count,name="Abundance",
-              cluster_columns=cluster_columns,
-              show_row_names = show_row_names,
-              show_column_names = show_column_names,
-              clustering_distance_rows = clustering_distance_rows, 
-              split=split,
-              column_names_max_height = column_names_max_height,
-              column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
-              row_names_gp = grid::gpar(fontsize = fontsize),
-              heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
-                                          labels_gp = grid::gpar(fontsize = fontsize_leg))) +
-#     ComplexHeatmap::HeatmapAnnotation(df=m_a.norm$attr[,attr.annot.names,drop=F],
-#                             which="row",
-#                             annotation_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
-#                                                         labels_gp = grid::gpar(fontsize = fontsize)),
-#                             show_annotation_name = T,
-#                             annotation_name_gp = grid::gpar(fontsize = fontsize))
-  
+                              cluster_columns=cluster_columns,
+                              show_row_names = show_row_names,
+                              show_column_names = show_column_names,
+                              clustering_distance_rows = clustering_distance_rows, 
+                              split=rows.cluster$split,
+                              column_names_max_height = column_names_max_height,
+                              column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                              row_names_gp = grid::gpar(fontsize = fontsize),
+                              heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                                          labels_gp = grid::gpar(fontsize = fontsize_leg))) +
+    #     ComplexHeatmap::HeatmapAnnotation(df=m_a.norm$attr[,attr.annot.names,drop=F],
+    #                             which="row",
+    #                             annotation_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+    #                                                         labels_gp = grid::gpar(fontsize = fontsize)),
+    #                             show_annotation_name = T,
+    #                             annotation_name_gp = grid::gpar(fontsize = fontsize))
+    
     ComplexHeatmap.add.attr(attr.annot.names,
                             m_a.norm$attr,
                             show_row_names=F,
@@ -6940,17 +7101,12 @@ heatmap.combined.report <- function(m_a,
                             heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
                                                         labels_gp = grid::gpar(fontsize = fontsize_leg)))
   
-  report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",split.descr),
+  report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-  if(!is.null(split)) {
-    if(num.levels(split)>1 && !is.null(main.meta.var) && num.levels(m_a.norm$attr[,main.meta.var])>1) {
-      g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-      report$add(g.t,caption = caption.g.test)
-    }
-    m_a.norm$attr$.Heatmap.Cluster.Split = split
+  if(!is.null(rows.cluster$split)) {
+    report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
-  
-  export.taxa.meta(m_a.norm,
+  export.taxa.meta(rows.cluster$m_a,
                    label="htmap",
                    descr="Data used for heatmap with added row cluster splits (clustering by abundance profile)",
                    row.proportions=F,
@@ -6958,56 +7114,34 @@ heatmap.combined.report <- function(m_a,
   
   if(!is.null(get.diversity(res.tests,type="diversity"))) {
     div = log(get.diversity(res.tests,type="diversity")$e)
-    n.obs = nrow(div)
-    metric = "pearson"
-    diss = ComplexHeatmap:::get_dist(div,metric)
-    if(n.obs >= 6) {
-      
-      if(km.diversity<1) {
-        split = fpc::pamk(diss, krange = 1:min(n.obs-2,10))$pamobject$clustering
-      }
-      else {
-        split = cluster::pam(diss, k=km.diversity)$clustering
-      }    
-    }
-    else {
-      split = NULL
-      split.descr = "Not splitting clusters due to low number of observations"
-    }
-    if(!is.null(split)){
-      if(num.levels(split)<2){
-        split = NULL
-        split.descr = "Splitting clusters resulted in a single partition"
-      }
-    }
-    h.d = ComplexHeatmap::Heatmap(div,name="Renyi diversity indices",
-                  cluster_columns=F,
-                  show_row_names = F, 
-                  clustering_distance_rows = metric, 
-                  split=split,
-                  column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
-                  width=grid::unit(ncol(div),"lines"),
-                  heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
-                                              labels_gp = grid::gpar(fontsize = fontsize_leg)))
-    h = h.d + h
-    report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",split.descr),
-               width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
-    if(!is.null(split)) {
-      if(num.levels(split)>1 && !is.null(main.meta.var) && num.levels(m_a.norm$attr[,main.meta.var])>1) {
-        g.t = g.test(m_a.norm$attr[,main.meta.var],split)
-        report$add(g.t,caption = caption.g.test)
-      }
-      m_a.norm$attr$.Heatmap.Cluster.Split = split
-    }
     m_a.norm$count = div
-    export.taxa.meta(m_a.norm,
+    clustering_distance_rows = "pearson"
+    rows.cluster = heatmap.cluster.rows(m_a=m_a.norm,
+                                        main.meta.var=main.meta.var,
+                                        clustering_distance_rows=clustering_distance_rows,
+                                        km=km.diversity)  
+    h.d = ComplexHeatmap::Heatmap(div,name="Renyi diversity indices",
+                                  cluster_columns=F,
+                                  show_row_names = F, 
+                                  clustering_distance_rows = clustering_distance_rows, 
+                                  split=rows.cluster$split,
+                                  column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                                  width=grid::unit(ncol(m_a.norm$count),"lines"),
+                                  heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
+                                                              labels_gp = grid::gpar(fontsize = fontsize_leg)))
+    h = h.d + h
+    report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",rows.cluster$split.descr),
+               width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
+    if(!is.null(rows.cluster$split)) {
+      report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+    }
+    export.taxa.meta(rows.cluster$m_a,
                      label="htmap",
                      descr="Data used for heatmap with added row cluster splits (clustering by Renyi diversity indices)",
                      row.proportions=F,
                      row.names=F)
   }
 }
-
 
 quantcut.ordered.color <- function(x,as.rgb=F) {
   x_q = quantcut.ordered(x)
@@ -7143,12 +7277,12 @@ plot_ordination.2d <- function(physeq,ordination,
   
   pl = pl + make.geom(geom_point,data=df.plot,
                       options=pt)
-
+  
   
   if(!is.null(pt$color)) {
     args = list(color=pt$color)
     args = interpret.args.in.df(args,df.plot)
-  
+    
     if(!is.null(args$color) && length(args$color) > 1) {
       palette = generate.colors.mgsat(args$color,value="palette")
       guide_ovr = guide_legend(override.aes = list(size=legend.point.size))
@@ -7237,8 +7371,8 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                          #legend.point.size=pt.legend.point.size,
                          legend.position="bottom"
                          #ggplot.extra=pt.ggplot.extra
-                         ),
-                    pt
+                  ),
+                  pt
                   ))
     
     caption=sprintf("Ordination plot. Ordination performed with parameters %s. 
@@ -7532,9 +7666,9 @@ network.report <- function(m_a,
     report$add(gp,caption=caption)
     
     gp.3d.res = do.call(mgsat.plot.igraph.d3net,
-                 c(list(gr),
-                   plot.task
-                 )
+                        c(list(gr),
+                          plot.task
+                        )
     )
     if(!is.null(gp.3d.res$plot)) {
       report$add.widget(gp,caption=caption)
@@ -7588,15 +7722,15 @@ network.features.combined.report <- function(m_a,
   }
   
   if(length(plot.tasks)>0) {
-  
-  network.report(m_a,
-                 count.filter.options=count.filter.options,
-                 vertex.data=NULL,
-                 plot.tasks=plot.tasks,
-                 sub.report=sub.report,
-                 method=method,
-                 method.options=method.options,
-                 descr=descr)
+    
+    network.report(m_a,
+                   count.filter.options=count.filter.options,
+                   vertex.data=NULL,
+                   plot.tasks=plot.tasks,
+                   sub.report=sub.report,
+                   method=method,
+                   method.options=method.options,
+                   descr=descr)
   }
   
 }
@@ -8004,15 +8138,15 @@ test.counts.glmer <- function(m_a,
   # I try for error handling in tryCatch
   ##TODO: try foreach
   p_vals = plyr::aaply(count,
-                 2,
-                 test.counts.glmer.col,
-                 attr,
-                 count_rowsum,
-                 formula_rhs=formula_rhs,
-                 linfct=linfct,
-                 .inform=F,
-                 .parallel=F,
-                 .paropts=list(.packages=c("lme4","multcomp")))
+                       2,
+                       test.counts.glmer.col,
+                       attr,
+                       count_rowsum,
+                       formula_rhs=formula_rhs,
+                       linfct=linfct,
+                       .inform=F,
+                       .parallel=F,
+                       .paropts=list(.packages=c("lme4","multcomp")))
   names(p_vals) = colnames(count)
   p_vals = p_vals[order(p_vals,na.last=T)]
   p_vals_signif = p_vals[!is.na(p_vals) & p_vals<=alpha]
@@ -8547,9 +8681,9 @@ by attribute %s across groups defined by attribute %s',block.attr,group.attr))
   ## default check=T gives some cryptic error message despite
   ## reasonably looking permutations being generated with check=F
   perm = permute::shuffleSet(n=n.col,
-                    nset=n.perm-1,
-                    control=ctrl,
-                    check = F
+                             nset=n.perm-1,
+                             control=ctrl,
+                             check = F
   )
   perm = rbind(perm,1:n.col)
   
@@ -8692,14 +8826,14 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   
   ## if() will drop all blocks where not all contrasts matched
   dat = plyr::ddply(dat,c(block.attr),
-              function(x) {
-                if(nrow(x) == n.contr) {
-                  colSums(x[,!attr.mask,drop=F])
-                }
-                else {
-                  NULL
-                }
-              }
+                    function(x) {
+                      if(nrow(x) == n.contr) {
+                        colSums(x[,!attr.mask,drop=F])
+                      }
+                      else {
+                        NULL
+                      }
+                    }
   )
   
   rownames(dat) = dat[,block.attr]
@@ -8707,9 +8841,9 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
   attr.mask = names(dat) %in% c(attr.names,contr.attr)
   m_a.contr = list(count=as.matrix(dat[,!attr.mask]),
                    attr=plyr::join(dat[,block.attr,drop=F],
-                             m_a$attr,
-                             by=block.attr,
-                             match="first")
+                                   m_a$attr,
+                                   by=block.attr,
+                                   match="first")
   )
   with(m_a.contr, stopifnot(all(rownames(count)==rownames(attr))))
   
@@ -8720,9 +8854,9 @@ sample.contrasts <- function(m_a,group.attr,block.attr,contrasts=NULL,return.gro
     attr.mask = names(dat.groups) %in% c(attr.names,contr.attr)
     m_a.groups = list(count=as.matrix(dat.groups[,!attr.mask]),
                       attr=plyr::join(dat.groups[,attr.mask,drop=F],
-                                m_a$attr,
-                                by=attr.names,
-                                match="first"))
+                                      m_a$attr,
+                                      by=attr.names,
+                                      match="first"))
     with(m_a.groups, stopifnot(all(rownames(count)==rownames(attr))))
   }
   else {
@@ -8759,14 +8893,14 @@ report.sample.count.summary <- function(m_a,meta.x.vars=c(),group.vars=NULL,
   if(show.sample.means) {
     report$add.vector(c(summary(m_a.summ$count[,"count.sum"])),caption="Summary of total counts per sample")
     report$add.table(plyr::ddply(join_count_df(m_a.summ),
-                           group.vars,
-                           plyr::summarise,
-                           Min.Count.Sum=min(count.sum),
-                           Max.Count.Sum=max(count.sum),
-                           Mean.Count.Sum=mean(count.sum),
-                           Median.Count.Sum=median(count.sum),
-                           Q25.Count.Sum=quantile(count.sum,0.25),
-                           Q75.Count.Sum=quantile(count.sum,0.75)
+                                 group.vars,
+                                 plyr::summarise,
+                                 Min.Count.Sum=min(count.sum),
+                                 Max.Count.Sum=max(count.sum),
+                                 Mean.Count.Sum=mean(count.sum),
+                                 Median.Count.Sum=median(count.sum),
+                                 Q25.Count.Sum=quantile(count.sum,0.25),
+                                 Q75.Count.Sum=quantile(count.sum,0.75)
     ),
     caption="Group summaries of total counts per sample")
   }
