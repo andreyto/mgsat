@@ -2751,7 +2751,8 @@ plot.abund.meta <- function(m_a,
                             facet_wrap_ncol=3,
                             legend.title=NULL,
                             record.label=NULL,
-                            theme_font_size = 0.8) {
+                            theme_font_size = 0.8,
+                            hide.ticks.x=F) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -2869,7 +2870,7 @@ plot.abund.meta <- function(m_a,
     
     gp = ggplot(dat, aes_s)
     
-    gp = gp + geom_bar(position="stack",stat="identity") 
+    gp = gp + geom_col(position="stack",stat="identity") 
     
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
@@ -3061,13 +3062,18 @@ plot.abund.meta <- function(m_a,
       scale_color_hue(c = 50, l = 70, h=c(0, 360))
   }
   #+ theme_grey(base_size = fontsize*theme_font_size_abs) + 
-  gp = gp + theme(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
+  theme_args = list(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
                   legend.position = legend.position,
                   axis.title=element_blank(),
                   axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
                   plot.title = element_text(size = rel(1)),
-                  axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),angle=if(flip.coords) 0 else 90, hjust = 1))
-  
+                  axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),
+                                             angle=if(flip.coords) 0 else 90, hjust = 1))
+  if(hide.ticks.x) {
+    theme_args[["axis.text.x"]]=element_blank()
+    theme_args[["axis.ticks.x"]]=element_blank()
+  }
+  gp = gp + do.call(theme,theme_args)
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
       gp = gp + g.c
@@ -4346,7 +4352,8 @@ plot.profiles <- function(m_a,
                                            make.summary.table = make.summary.table,
                                            legend.title = show.profile.task$legend.title,
                                            record.label = show.profile.task$record.label,
-                                           theme_font_size = show.profile.task$theme_font_size
+                                           theme_font_size = show.profile.task$theme_font_size,
+                                           hide.ticks.x = show.profile.task$hide.ticks.x
                   )
                   
                   pl.hist = pl.abu$plot
