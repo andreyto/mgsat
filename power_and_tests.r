@@ -2752,7 +2752,8 @@ plot.abund.meta <- function(m_a,
                             legend.title=NULL,
                             record.label=NULL,
                             theme_font_size = 0.8,
-                            hide.ticks.x=F) {
+                            hide.ticks.x=F,
+                            show.samp.n=T) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -2854,8 +2855,6 @@ plot.abund.meta <- function(m_a,
   facet.form = fc.form.res$facet.form
   n.facet = fc.form.res$n.facet
   
-  show.samp.n = T
-  
   if(geom == "bar_stacked") {
     sqrt.scale = F
     dat$feature = factor(dat$feature,levels=rev(levels(dat$feature)))
@@ -2870,8 +2869,9 @@ plot.abund.meta <- function(m_a,
     
     gp = ggplot(dat, aes_s)
     
-    gp = gp + geom_col(position="stack",stat="identity") 
-    
+    gp = gp + #geom_col(position="stack",stat="summary",fun.y=stat_summary.fun.y) 
+    stat_summary(fun.y=stat_summary.fun.y, geom="bar", 
+                 position="stack")
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
@@ -3007,7 +3007,7 @@ plot.abund.meta <- function(m_a,
     facet.cnt$.n = paste("n =", facet.cnt$.n)
     #facet.cnt$y = facet.cnt$V2
     
-    if(stat_summary.fun.y=="identity") {
+    if(identical(stat_summary.fun.y,"identity")) {
       show.samp.n = F
     }
     if(show.samp.n) {
@@ -3032,9 +3032,7 @@ plot.abund.meta <- function(m_a,
   
   if(geom=="bar_stacked") {
     if(max.x.val > 40) {
-      gp = gp + 
-        scale_x_discrete(breaks=NULL) +
-        scale_y_continuous(expand = c(0,0))
+      hide.ticks.x = T
     }
   }
   
@@ -3070,6 +3068,9 @@ plot.abund.meta <- function(m_a,
                   axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),
                                              angle=if(flip.coords) 0 else 90, hjust = 1))
   if(hide.ticks.x) {
+    gp = gp + 
+      scale_x_discrete(breaks=NULL) +
+      scale_y_continuous(expand = c(0,0))
     theme_args[["axis.text.x"]]=element_blank()
     theme_args[["axis.ticks.x"]]=element_blank()
   }
@@ -4353,7 +4354,8 @@ plot.profiles <- function(m_a,
                                            legend.title = show.profile.task$legend.title,
                                            record.label = show.profile.task$record.label,
                                            theme_font_size = show.profile.task$theme_font_size,
-                                           hide.ticks.x = show.profile.task$hide.ticks.x
+                                           hide.ticks.x = show.profile.task$hide.ticks.x,
+                                           show.samp.n = show.profile.task$show.samp.n
                   )
                   
                   pl.hist = pl.abu$plot
@@ -4850,7 +4852,8 @@ mgsat.16s.task.template = within(list(), {
         facet_wrap_ncol=3,
         legend.title=NULL,
         record.label=NULL,
-        theme_font_size = 0.8        
+        theme_font_size = 0.8,
+        show.samp.n = T
       )
       show.feature.meta.task=list()
     })
@@ -7209,9 +7212,9 @@ make.color.legend.scatter.js3d <- function(xyz,color_val,color) {
 
 ## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
 ## which result in wrong labels typically shown on busy plots
-plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,renderer="auto",show.color.legend=T,...) {
+plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,pch=NULL,renderer="auto",show.color.legend=T,...) {
   library(threejs)
-  args = list(color=color,labels=labels,size=size)
+  args = list(color=color,labels=labels,size=size,pch=pch)
   args = interpret.args.in.df(args,data)
   
   color_val = args$color
@@ -7363,6 +7366,7 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     pt = pt.orig
     pt$axes = NULL
     pt$type = NULL
+    pt$pch = NULL
     #pt.ggplot.extra = pt$ggplot.extra
     #pt.legend.point.size = pt$legend.point.size
     #if(is.null(pt.legend.point.size)) {
@@ -7410,7 +7414,8 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                       arg.list.as.str(ord.task$ordinate.task),
                       arg.list.as.str(pt))
       report$add.widget(plot_ordination.3d(
-        ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size),
+        ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size,
+        pch=pt$pch),
         caption = caption)
     }
   }
