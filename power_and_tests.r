@@ -4852,6 +4852,7 @@ mgsat.16s.task.template = within(list(), {
         facet_wrap_ncol=3,
         legend.title=NULL,
         record.label=NULL,
+        hide.ticks.x=F,
         theme_font_size = 0.8,
         show.samp.n = T
       )
