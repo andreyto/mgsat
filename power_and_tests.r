@@ -6868,9 +6868,15 @@ heatmap.feature.test.annot <- function(test.res,
                                        cex_axis=0.6,
                                        cex_label=0.8) {
   library(ComplexHeatmap)
+  gp_label = grid::gpar(fontsize=fontsize,cex=cex_label)
   annot_label = function(name,label=name) decorate_annotation(name, {grid.text(label, unit(1,"npc") + unit(0.5, "char"), 
                                                                                just = "left",
-                                                                               gp = gpar(fontsize=fontsize,cex=cex_label))})
+                                                                               gp = gp_label)})
+  annot_labels = c()
+  make_annot_label = function(name,label=name) {
+    annot_labels <<- c(annot_labels,label)
+    function() annot_label(name,label=label)
+  }
   test.res = as.data.frame(test.res)
   n.feat = nrow(test.res)
   annots = list()
@@ -6881,7 +6887,7 @@ heatmap.feature.test.annot <- function(test.res,
                                                  which=annot.which,
                                                  ylim = make.plot.ylim(test.res[[base]]),
                                                  axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
-    decorations[[base]] = function() annot_label(base)
+    decorations[[base]] = make_annot_label(base)
   }
   if(!is.null(effect)) {
     y = test.res[[effect]]
@@ -6892,7 +6898,7 @@ heatmap.feature.test.annot <- function(test.res,
                                                     ylim = make.plot.ylim(y),
                                                     gp = gpar(fill = ifelse(y > 0, "red", "blue")),
                                                     axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
-    decorations[[effect]] = function() annot_label(effect)
+    decorations[[effect]] = make_annot_label(effect)
   }
   if(!is.null(p.val)) {
     y_orig = test.res[[p.val]]
@@ -6903,7 +6909,7 @@ heatmap.feature.test.annot <- function(test.res,
                                                   ylim = make.plot.ylim(y,margin.abs = c(0,1)),
                                                   gp = gpar(col = ifelse(y_orig <= p.val.adj.alpha, "green", "black")),
                                                   axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
-    decorations[[p.val]] = function() annot_label(p.val,label=sprintf("%s, -log10",p.val))
+    decorations[[p.val]] = make_annot_label(p.val,label=sprintf("%s, -log10",p.val))
   }
   if(!is.null(p.val.adj)) {
     y = -log10(test.res[[p.val.adj]]+1e-16)
@@ -6912,13 +6918,22 @@ heatmap.feature.test.annot <- function(test.res,
                                                       which=annot.which,
                                                       ylim = make.plot.ylim(y,margin.abs = c(0,1)),
                                                       axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
-    decorations[[p.val.adj]] = function() annot_label(p.val.adj,label=sprintf("%s, -log10",p.val.adj))
+    decorations[[p.val.adj]] = make_annot_label(p.val.adj,label=sprintf("%s, -log10",p.val.adj))
   }
+  pad_annot_label = unit(0,"mm")
+  for(a_l in annot_labels) {
+    pad_annot_label = max(grid::grobWidth(grid::textGrob(a_l,gp = gp_label)),pad_annot_label)
+  }
+  ## because the default width for row cluster is 1cm, see
+  ## https://bioconductor.org/packages/release/bioc/vignettes/ComplexHeatmap/inst/doc/s9.examples.html#toc_6
+  padding = unit.c(unit(c(2, 2), "mm"),
+                   unit(2, "mm"), max(pad_annot_label - unit(1, "cm"),unit(2, "mm")))
   list(
     plot=do.call(ComplexHeatmap::HeatmapAnnotation,
           c(annots,
-            list(gap=unit(0.2,"char")))),
-    finalize=function() { for(decor in decorations) decor() }
+            list(gap=grid::unit(0.5,"char")))),
+    finalize=function() { for(decor in decorations) decor() },
+    padding = padding
   )
 }
 
@@ -6979,7 +6994,10 @@ heatmap.diff.abund <- function(m_a,
                                show_column_names = T,
                                max.n.columns=NULL,
                                top_annotation_height = unit(10,"lines"),
-                               column_names=NULL) {
+                               column_names=NULL,
+                               column_names_max_height = NULL,
+                               column_names_gp = NULL,
+                               max_column_names_symbols=30) {
   if(!is.null(max.n.columns)) {
     max.n.columns = min(max.n.columns,ncol(m_a$count))
     m_a$count = m_a$count[,1:max.n.columns,drop=F]
@@ -6995,8 +7013,26 @@ heatmap.diff.abund <- function(m_a,
   library(ComplexHeatmap) # need it for `+`
   count = m_a$count
   colnames_count = colnames(count)
+  if(!is.null(column_names)) {
+    colnames_count = column_names
+  }
+  colnames_count = paste0(substr(column_names,1,max_column_names_symbols),
+                          ifelse(stringr::str_length(column_names)>max_column_names_symbols,
+                                 "...",
+                                 ""))
+  ## add a running index if any column names become identical after trimming
+  if(anyDuplicated(colnames_count)) {
+    colnames_count = paste0(seq_along(colnames_count),". ",colnames_count)
+  }
+  colnames(count) = colnames_count
   #column_names_max_height = grid::unit(1, "strwidth",colnames_count[which.max(stringr::str_length(colnames_count))[1]])
-  column_names_max_height = ComplexHeatmap::max_text_width(colnames_count, gp = gpar(fontsize = fontsize))
+  if(is.null(column_names_gp)) {
+    column_names_gp = grid::gpar(fontsize=fontsize,cex=0.8)
+  }
+  if(is.null(column_names_max_height)) {
+    column_names_max_height = ComplexHeatmap::max_text_width(colnames_count, gp = column_names_gp)
+  }
+  #column_names_max_height = unit(10, "cm")
   rows.cluster = heatmap.cluster.rows(m_a=m_a,
                                       main.meta.var=main.meta.var,
                                       clustering_distance_rows=clustering_distance_rows,
@@ -7013,9 +7049,7 @@ heatmap.diff.abund <- function(m_a,
                                        annot.which = "column",
                                        fontsize = fontsize)    
   }
-  if(!is.null(column_names)) {
-    colnames(count) = column_names
-  }  
+  labels_gp = grid::gpar(fontsize = fontsize_leg)
   h = ComplexHeatmap::Heatmap(count,name=hmap.label,
                               cluster_columns=cluster_columns,
                               show_row_names = show_row_names,
@@ -7023,22 +7057,28 @@ heatmap.diff.abund <- function(m_a,
                               clustering_distance_rows = clustering_distance_rows, 
                               split=rows.cluster$split,
                               column_names_max_height = column_names_max_height,
-                              column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                              column_names_gp = column_names_gp,
                               row_names_gp = grid::gpar(fontsize = fontsize),
                               heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
-                                                          labels_gp = grid::gpar(fontsize = fontsize_leg)),
+                                                          labels_gp = labels_gp,
+                                                          grid_height = max(ComplexHeatmap::max_text_height("0",
+                                                                                                            gp = labels_gp)+unit(0.1,"char"),
+                                                                            unit(4, "mm"))),
                               top_annotation = top_annot$plot,
                               top_annotation_height = top_annotation_height)
   if(length(attr.annot.names)>0) {
     h = h + ComplexHeatmap.add.attr(attr.annot.names,
                                     m_a$attr,
                                     show_row_names=F,
-                                    column_names_gp = grid::gpar(fontsize = fontsize,cex=0.8),
+                                    column_names_gp = column_names_gp,
                                     row_names_gp = grid::gpar(fontsize = fontsize),
                                     heatmap_legend_param = list(title_gp = grid::gpar(fontsize = fontsize), 
-                                                                labels_gp = grid::gpar(fontsize = fontsize_leg)))
+                                                                labels_gp = labels_gp,
+                                                                grid_height = max(ComplexHeatmap::max_text_height(attr.annot.names,
+                                                                                                                  gp = labels_gp)+unit(0.1,"char"),
+                                                                unit(4, "mm"))))
   }
-  report$add({draw(h); top_annot$finalize()},
+  report$add({draw(h,padding=top_annot$padding); top_annot$finalize()},
     caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(rows.cluster$split)) {
