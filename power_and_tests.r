@@ -7253,7 +7253,11 @@ make.color.legend.scatter.js3d <- function(xyz,color_val,color) {
 
 ## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
 ## which result in wrong labels typically shown on busy plots
-plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,pch=NULL,renderer="auto",show.color.legend=T,...) {
+plot.scatter.js3d <- function(xyz,data,color=NULL,
+                              labels=NULL,size=NULL,pch=NULL,
+                              renderer="auto",show.color.legend=T,
+                              lines.args=NULL,
+                              ...) {
   library(threejs)
   args = list(color=color,labels=labels,size=size,pch=pch)
   args = interpret.args.in.df(args,data)
@@ -7277,7 +7281,10 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,labels=NULL,size=NULL,pch=NULL
     pl = do.call(points3d,c(list(pl),
                             points3d_args))
   }
-  
+  if(!is.null(lines.args)) {
+    pl = do.call(lines3d,c(list(pl),
+                          lines.args))
+  }
   #scatterplot3js(x, y, z, pch="@") %>%
   #points3d(pl,x + 0.1, y + 0.1, z, color="red", pch=paste("point", 1:5))
   pl
@@ -7357,16 +7364,70 @@ plot_ordination.2d <- function(physeq,ordination,
   return (pl)
 }
 
+interpret.args.point_lines <- function(dt,
+                                       axes = 1:2,
+                                       line.group=NULL,
+                                       line.order=NULL,
+                                       line.order.cyclic=F,
+                                       line.color.order=T,
+                                       find.hull=F,
+                                       line.width=5,
+                                       line.color=NULL,
+                                       line.alpha=NULL) {
+  ret = NULL
+  dt = copy(data.table::as.data.table(dt))
+  dt[,.ind_point:=.I]
+  dt[,.line_color:=line.color]
+  dt[[".line_order"]] = NULL
+  if(!is.null(line.order)) {
+    setorderv(dt,c(line.group,line.order))
+    dt[[".line_order"]] = dt[[line.order]]
+  }
+  if(line.color.order) {
+    dt[,.line_color := quantcut.ordered.color(as.numeric(.line_order))$col]
+  }
+  
+  if(!is.null(line.group)) {
+    dt[, `:=`(.ind_point_to = 
+         c(if(.N>1) .ind_point[2:.N] else c(),
+           if(line.order.cyclic) .ind_point[1] else NA),
+         .ind_point_group = seq(.N)), by = line.group]
+  }
+  dt = dt[!is.na(.ind_point_to)]
+  ind_point_from = dt[,.ind_point]
+  ind_point_to = dt[,.ind_point_to]
+  line.color = dt[,.line_color]
+  if(length(axes)==3) {
+    ret = list(from=ind_point_from,
+               to=ind_point_to,
+               lwd=line.width,
+               alpha=line.alpha,
+               color=line.color)
+    ret = plyr::compact(ret)
+  }
+  else {
+    stop("Not implemented yet for dimensions other than 3")
+  }
+  ret
+}
+
 plot_ordination.3d <- function(physeq,ordination,
                                type = "samples", axes = 1:3,
+                               lines.args = NULL,
                                ...) {
   library(phyloseq)
   pt = list(...)
   
   df.plot =  plot_ordination(physeq,ordination,type=type,axes=axes,justDF = T)
+  if(!is.null(lines.args)) {
+    lines.args = do.call(interpret.args.point_lines,
+                         c(list(df.plot,axes=axes),
+                           lines.args))
+  }
   
   pl = do.call(plot.scatter.js3d,
-               c(list(df.plot[,seq_along(axes),drop=F],df.plot),
+               c(list(df.plot[,seq_along(axes),drop=F],df.plot,
+                      lines.args=lines.args),
                  pt))
   
   
@@ -7408,6 +7469,7 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
     pt$axes = NULL
     pt$type = NULL
     pt$pch = NULL
+    pt$lines.args = NULL
     #pt.ggplot.extra = pt$ggplot.extra
     #pt.legend.point.size = pt$legend.point.size
     #if(is.null(pt.legend.point.size)) {
@@ -7456,7 +7518,8 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                       arg.list.as.str(pt))
       report$add.widget(plot_ordination.3d(
         ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size,
-        pch=pt$pch),
+        pch=pt$pch,
+        lines.args = pt$lines.args),
         caption = caption)
     }
   }
