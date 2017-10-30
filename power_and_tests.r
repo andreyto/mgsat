@@ -7377,7 +7377,9 @@ interpret.args.point_lines <- function(dt,
   ret = NULL
   dt = copy(data.table::as.data.table(dt))
   dt[,.ind_point:=.I]
-  dt[,.line_color:=line.color]
+  if (!is.null(line.color)) {
+    dt[,.line_color:=line.color]
+  }
   dt[[".line_order"]] = NULL
   if(!is.null(line.order)) {
     setorderv(dt,c(line.group,line.order))
