@@ -675,6 +675,9 @@ source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
 ## in all subsequent runs once the packages have been installed!!!).
 ## Note: you should also pre-install Pandoc program from http://johnmacfarlane.net/pandoc/
 ## or using your OS package manager (if running on Linux)
+## You can use Conda to pre-install as many dependencies as possible.
+## On MacOS, the Conda installation command can look something like:
+## conda create -n r_def -c conda-forge -c bioconda --override-channels bioconductor-deseq2 clang gcc cmake pandoc 
 
 #install_required_packages()
 
