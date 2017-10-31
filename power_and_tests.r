@@ -2611,7 +2611,7 @@ ggplot.hue.colors <- function(n) {
   grDevices::hcl(h=hues, l=65, c=100)[1:n]
 }
 
-generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer","ggplot"),brewer.pal.name="Accent") {
+generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer","ggplot"),brewer.pal.name="Dark2") {
   family = family[[1]]
   if(family=="brewer") library(RColorBrewer)
   else if(family=="ggplot") library(ggplot2)
@@ -7260,7 +7260,6 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,
                               axis.scale=NA,
                               lines.args=NULL,
                               cex.lab=0.8,
-                              cex.axis=1.2,
                               ...) {
   library(threejs)
   args = list(color=color,labels=labels,size=size,pch=pch)
@@ -7279,8 +7278,7 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,
                  list(renderer=renderer,
                       num.ticks=num.ticks,
                       axis.scale=axis.scale,
-                      cex.lab=cex.lab,
-                      cex.axis=cex.axis),
+                      cex.lab=cex.lab),
                  list(...)
                )
   )
