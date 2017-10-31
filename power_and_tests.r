@@ -7256,7 +7256,11 @@ make.color.legend.scatter.js3d <- function(xyz,color_val,color) {
 plot.scatter.js3d <- function(xyz,data,color=NULL,
                               labels=NULL,size=NULL,pch=NULL,
                               renderer="auto",show.color.legend=T,
+                              num.ticks=6,
+                              axis.scale=NA,
                               lines.args=NULL,
+                              cex.lab=0.8,
+                              cex.axis=1.2,
                               ...) {
   library(threejs)
   args = list(color=color,labels=labels,size=size,pch=pch)
@@ -7272,7 +7276,11 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,
   pl = do.call(threejs::scatterplot3js,
                c(list(as.matrix(xyz)),
                  args,
-                 list(renderer=renderer),
+                 list(renderer=renderer,
+                      num.ticks=num.ticks,
+                      axis.scale=axis.scale,
+                      cex.lab=cex.lab,
+                      cex.axis=cex.axis),
                  list(...)
                )
   )
