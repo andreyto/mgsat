@@ -7318,6 +7318,7 @@ plot_ordination.2d <- function(physeq,ordination,
                                type = "samples", axes = 1:2,
                                legend.point.size = rel(4),
                                legend.position="right",
+                               border=T,
                                ggplot.extra=list(),
                                ...) {
   library(phyloseq)
@@ -7325,17 +7326,13 @@ plot_ordination.2d <- function(physeq,ordination,
   
   df.plot =  plot_ordination(physeq,ordination,type=type,axes=axes,justDF = T)
   
-  if(is.null(pt$alpha)) {
+  if(is.null(pt$alpha) && nrow(df.plot)>100) {
     ##helps with overplotting
     pt$alpha = 0.5
   }
   
   df.names = colnames(df.plot)
   pl = ggplot(df.plot,aes_string(x=df.names[1],y=df.names[2]))
-  
-  pl = pl + make.geom(geom_point,data=df.plot,
-                      options=pt)
-  
   
   if(!is.null(pt$color)) {
     args = list(color=pt$color)
@@ -7345,9 +7342,11 @@ plot_ordination.2d <- function(physeq,ordination,
       palette = generate.colors.mgsat(args$color,value="palette")
       guide_ovr = guide_legend(override.aes = list(size=legend.point.size))
       pl = pl + 
+        scale_size(range = c(4,10)) +
         scale_fill_manual(values = palette) +
-        scale_color_manual(values = palette) +
-        guides(colour = guide_ovr,fill = guide_ovr)
+        #scale_color_manual(values = palette) +
+        #guides(colour = guide_ovr,fill = guide_ovr)
+        guides(fill = guide_ovr)
       ##TODO: the above size override will probably break color bar because
       ##it always forces guide_legend, which is an alternative to color bar.
       ##Need to figure out when color is continuous scale and use alternative
@@ -7355,7 +7354,21 @@ plot_ordination.2d <- function(physeq,ordination,
       ##point size in a generic way.
     }
   }
-  pl = pl + theme(legend.position=legend.position)
+
+  options.fixed = list()
+  if(border) {
+    pt$fill = pt$color
+    pt$color = NULL
+    options.fixed$shape=21
+  }
+  if(is.null(pt$size)) {
+    options.fixed$size=rel(4)
+  }
+  
+  pl = pl + make.geom(geom_point,data=df.plot,
+                      options=pt,options.fixed = options.fixed)
+  
+  pl = pl + theme_bw(base_size = 18) + theme(legend.position=legend.position)
   if(!is.null(ggplot.extra)) {
     for(g in ggplot.extra) {
       pl = pl + g
