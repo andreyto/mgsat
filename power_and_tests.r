@@ -222,6 +222,16 @@ sub.col.names <- function(x,pattern,replacement,...) {
   x
 }
 
+all_non_null <- function(...) {
+  Filter(Negate(is.null), list(...))
+}
+
+first_non_null <- function(...) {
+  x = all_non_null(...)
+  if(length(x)>0) x[[1]]
+  else NULL
+}
+
 ## Update fields in named list x with fields in named list y
 ## The semantics as in Python dict.update()
 update.list <- function(x,y) {
@@ -2876,14 +2886,15 @@ plot.abund.meta <- function(m_a,
       wr = facet_null()
     }
     else if (length(id.vars.facet) == 1) {
-      wr = facet_grid(facet.form,
+      wr = facet_wrap(facet.form,
+                      ncol = facet_wrap_ncol,
                       drop=T,
-                      scale="free_x", space = "free_x")
+                      scales="free_x")
     }
     else {
       wr = facet_grid(facet.form,
                       drop=T,margins=facet_grid.margins,
-                      scale="free_x", space = "free_x")
+                      scales="free_x", space = "free_x")
     }
     gp = gp + wr
     legend.position = "right"
@@ -4194,7 +4205,10 @@ plot.profiles <- function(m_a,
                             line.show.points=T,
                             legend.title=NULL,
                             record.label=NULL,
-                            theme_font_size=0.8
+                            theme_font_size=0.8,
+                            width=NULL,
+                            height=NULL,
+                            hi.res.width=NULL
                           ),
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
@@ -4390,8 +4404,11 @@ plot.profiles <- function(m_a,
                                 {sprintf("Sorting order of features is %s.",pl.par$ord_descr)} 
                                 else {""},
                                 geom.descr,"plot.")
-                  
-                  report$add(pl.hist,caption = caption)
+                  report$add(pl.hist,caption = caption,
+                             width = first_non_null(show.profile.task$width,evalsOptions("width")),
+                             height = first_non_null(show.profile.task$height,evalsOptions("height")),
+                             hi.res.width = first_non_null(show.profile.task$height,evalsOptions("hi.res.width"))
+                  )
                   
                 })
               }              
@@ -4854,7 +4871,10 @@ mgsat.16s.task.template = within(list(), {
         record.label=NULL,
         hide.ticks.x=F,
         theme_font_size = 0.8,
-        show.samp.n = T
+        show.samp.n = T,
+        width = NULL,
+        height = NULL,
+        hi.res.width = NULL
       )
       show.feature.meta.task=list()
     })
