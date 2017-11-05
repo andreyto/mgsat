@@ -292,6 +292,20 @@ quantcut.ordered <- function(x,na.rm=T,...) {
   ordered(y)
 }
 
+# copied from https://stackoverflow.com/a/25555105
+gm_mean = function(x, na.rm=TRUE, zero.propagate = FALSE){
+  if(any(x < 0, na.rm = TRUE)){
+    return(NaN)
+  }
+  if(zero.propagate){
+    if(any(x == 0, na.rm = TRUE)){
+      return(0)
+    }
+    exp(mean(log(x), na.rm = na.rm))
+  } else {
+    exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+  }
+}
 
 missing.join.keys.report <- function(x,y,by,do.report=T,name.x="x",name.y="y",report.only.keys=F) {
   x_y = dplyr::anti_join(x,y,by=by)
@@ -362,16 +376,85 @@ call.ctor <- function(other,x,...) {
           c(list(x),list(...)))
 }
 
+## copied from rMSA, GPL
+mgsat.mafft <- function(x, param="--auto") {
+  
+  ## get temp files and change working directory
+  wd <- tempdir()
+  dir <- getwd()
+  temp_file <- basename(tempfile(tmpdir = wd))
+  on.exit({
+    file.remove(Sys.glob(paste(temp_file, ".*", sep="")))
+    setwd(dir)
+  })
+  setwd(wd)
+  
+  infile <- paste(temp_file, ".in", sep="")
+  outfile <- paste(temp_file, ".aln", sep="")
+  reader <- if(is(x, "RNAStringSet")) Biostrings::readRNAMultipleAlignment
+  else if(is(x, "DNAStringSet")) Biostrings::readDNAMultipleAlignment
+  else if(is(x, "AAStringSet")) Biostrings::readAAMultipleAlignment
+  else stop("Unknown sequence type!")
+  
+  
+  Biostrings::writeXStringSet(x, infile, append=FALSE, format="fasta")
+  
+  system(paste("mafft", param, "--clustalout",
+               infile,">", outfile))
+  
+  reader(outfile, format="clustal")
+}
+
+## copied from rMSA, GPL
+mgsat.muscle <- function(x, param="") {
+  
+  ## get temp files and change working directory
+  wd <- tempdir()
+  dir <- getwd()
+  temp_file <- basename(tempfile(tmpdir = wd))
+  on.exit({
+    file.remove(Sys.glob(paste(temp_file, ".*", sep=""))) 
+    setwd(dir)
+  })
+  setwd(wd)
+  
+  infile <- paste(temp_file, ".in", sep="")
+  outfile <- paste(temp_file, ".aln", sep="")
+  reader <- if(is(x, "RNAStringSet")) Biostrings::readRNAMultipleAlignment
+  else if(is(x, "DNAStringSet")) Biostrings::readDNAMultipleAlignment
+  else if(is(x, "AAStringSet")) Biostrings::readAAMultipleAlignment
+  else stop("Unknown sequence type!")
+  
+  
+  Biostrings::writeXStringSet(x, infile, append=FALSE, format="fasta")
+  
+  system(paste("muscle", param, "-clwstrict",
+               "-in", infile, "-out", outfile))
+  
+  ### muscle is missing a blank line in the output!
+  rows <- scan(outfile, what = "", sep = "\n", strip.white = FALSE, 
+               quiet = TRUE, blank.lines.skip = FALSE)
+  if(rows[[3L]] != "") {
+    rows <- c(rows[1:2], "", rows[3:length(rows)])
+  }
+  cat(rows, file=outfile, sep="\n")
+  
+  
+  ### FIXME: Sequences need to be reordered!
+  reader(outfile, format="clustal")
+}
+
+
 mgsat.msa <- function(x,msa.method="Muscle",...) {
-  library(rMSA)
+  library(Biostrings) #otherwise cannot use rownames(y)
   if(msa.method=="Muscle") {
-    y = rMSA::muscle(x,...)
+    y = mgsat.muscle(x,...)
   }
   else if(msa.method=="MAFFT") {
     library(data.table)
     nmap = data.table(orig=names(x))[,tmp:=as.character(.I)]
     names(x) = nmap$tmp
-    y = rMSA::mafft(x,...)
+    y = mgsat.mafft(x,...)
     stopifnot(names(y)==nmap$tmp)
     rownames(y) = nmap$orig
   }
