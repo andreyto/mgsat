@@ -4955,11 +4955,11 @@ mgsat.16s.task.template = within(list(), {
 })
 
 
-start.cluster.project <- function() {
+start.cluster.project <- function(...) {
   library(doParallel)
   library(parallel)
   node.cores = getOption("mc.cores", 2L)
-  cl<-parallel::makeCluster(node.cores,type="FORK")
+  cl<-parallel::makeCluster(node.cores,type="PSOCK",...)
   registerDoParallel(cl)
   return(cl)
 }
