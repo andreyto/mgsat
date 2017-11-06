@@ -2625,7 +2625,8 @@ aggregate.by.meta.data.m_a <- function(m_a,
                                        group_col,
                                        count_aggr=sum,
                                        attr_aggr=NULL,
-                                       group_col_result_name="SampleID") {
+                                       group_col_result_name="SampleID",
+                                       colwise=T) {
   x = m_a
   
   groups = list()
@@ -2647,10 +2648,21 @@ aggregate.by.meta.data.m_a <- function(m_a,
   row.names(x$attr) = x$attr[,group_col_result_name]
   x$attr = droplevels(x$attr)
   if(!is.null(x$count)) {
-    count_names = names(x$count)
-    x$count = aggregate(x$count,groups,count_aggr)  
-    row.names(x$count) = x$count[,group_col_result_name]
-    x$count = drop.columns(x$count,c(group_col_result_name))
+    count_names = colnames(x$count)
+    if(colwise) {
+      x$count = aggregate(x$count,groups,count_aggr)  
+      row.names(x$count) = x$count[,group_col_result_name]
+      x$count = drop.columns(x$count,c(group_col_result_name))
+    }
+    else {
+      dt = data.table(count=x$count,group=groups[[group_col_result_name]])
+      dt = dt[,data.table(do.call(count_aggr,list(.SD))),by=group]
+      rn = dt[,group]
+      dt[,group:=NULL]
+      setnames(dt,count_names)
+      x$count = setDF(dt)
+      row.names(x$count) = rn
+    }
     return (merge.counts.with.meta(x$count,x$attr))
   }
   else {
@@ -2963,8 +2975,8 @@ plot.abund.meta <- function(m_a,
     gp = ggplot(dat, aes_s)
     
     gp = gp + #geom_col(position="stack",stat="summary",fun.y=stat_summary.fun.y) 
-    stat_summary(fun.y=stat_summary.fun.y, geom="bar", 
-                 position="stack")
+      stat_summary(fun.y=stat_summary.fun.y, geom="bar", 
+                   position="stack")
     if(length(id.vars.facet) == 0) {
       wr = facet_null()
     }
@@ -3155,12 +3167,12 @@ plot.abund.meta <- function(m_a,
   }
   #+ theme_grey(base_size = fontsize*theme_font_size_abs) + 
   theme_args = list(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
-                  legend.position = legend.position,
-                  axis.title=element_blank(),
-                  axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
-                  plot.title = element_text(size = rel(1)),
-                  axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),
-                                             angle=if(flip.coords) 0 else 90, hjust = 1))
+                    legend.position = legend.position,
+                    axis.title=element_blank(),
+                    axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
+                    plot.title = element_text(size = rel(1)),
+                    axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),
+                                               angle=if(flip.coords) 0 else 90, hjust = 1))
   if(hide.ticks.x) {
     gp = gp + 
       scale_x_discrete(breaks=NULL) +
@@ -7033,8 +7045,8 @@ heatmap.feature.test.annot <- function(test.res,
                    unit(2, "mm"), max(pad_annot_label - unit(1, "cm"),unit(2, "mm")))
   list(
     plot=do.call(ComplexHeatmap::HeatmapAnnotation,
-          c(annots,
-            list(gap=grid::unit(0.5,"char")))),
+                 c(annots,
+                   list(gap=grid::unit(0.5,"char")))),
     finalize=function() { for(decor in decorations) decor() },
     padding = padding
   )
@@ -7143,14 +7155,14 @@ heatmap.diff.abund <- function(m_a,
   top_annot = NULL
   if(!is.null(res.test.df)) {
     top_annot = heatmap.feature.test.annot(test.res=res.test.df,
-                                       base=base,
-                                       effect=effect,
-                                       p.val=p.val,
-                                       p.val.adj=p.val.adj,
-                                       effect_baseline=effect_baseline,
-                                       p.val.adj.alpha=p.val.adj.alpha,
-                                       annot.which = "column",
-                                       fontsize = fontsize)    
+                                           base=base,
+                                           effect=effect,
+                                           p.val=p.val,
+                                           p.val.adj=p.val.adj,
+                                           effect_baseline=effect_baseline,
+                                           p.val.adj.alpha=p.val.adj.alpha,
+                                           annot.which = "column",
+                                           fontsize = fontsize)    
   }
   labels_gp = grid::gpar(fontsize = fontsize_leg)
   h = ComplexHeatmap::Heatmap(count,name=hmap.label,
@@ -7179,10 +7191,10 @@ heatmap.diff.abund <- function(m_a,
                                                                 labels_gp = labels_gp,
                                                                 grid_height = max(ComplexHeatmap::max_text_height(attr.annot.names,
                                                                                                                   gp = labels_gp)+unit(0.1,"char"),
-                                                                unit(4, "mm"))))
+                                                                                  unit(4, "mm"))))
   }
   report$add({draw(h,padding=top_annot$padding); top_annot$finalize()},
-    caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
+             caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(rows.cluster$split)) {
     report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
@@ -7392,7 +7404,7 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,
   }
   if(!is.null(lines.args)) {
     pl = do.call(lines3d,c(list(pl),
-                          lines.args))
+                           lines.args))
   }
   #scatterplot3js(x, y, z, pch="@") %>%
   #points3d(pl,x + 0.1, y + 0.1, z, color="red", pch=paste("point", 1:5))
@@ -7463,7 +7475,7 @@ plot_ordination.2d <- function(physeq,ordination,
       ##point size in a generic way.
     }
   }
-
+  
   options.fixed = list()
   if(border) {
     pt$fill = pt$color
@@ -7513,9 +7525,9 @@ interpret.args.point_lines <- function(dt,
   
   if(!is.null(line.group)) {
     dt[, `:=`(.ind_point_to = 
-         c(if(.N>1) .ind_point[2:.N] else c(),
-           if(line.order.cyclic) .ind_point[1] else NA),
-         .ind_point_group = seq(.N)), by = line.group]
+                c(if(.N>1) .ind_point[2:.N] else c(),
+                  if(line.order.cyclic) .ind_point[1] else NA),
+              .ind_point_group = seq(.N)), by = line.group]
   }
   dt = dt[!is.na(.ind_point_to)]
   ind_point_from = dt[,.ind_point]
