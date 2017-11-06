@@ -915,7 +915,6 @@ as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
   if(round.to.int) {
     m_a$count = round(m_a$count)
   }
-  
   dds <- DESeqDataSetFromMatrix(countData = t(m_a$count),
                                 colData = m_a$attr,
                                 design = as.formula(paste("~",formula.rhs)))  
@@ -6180,11 +6179,14 @@ test.counts.adonis.report <- function(m_a,
     }
     with(task,{
       formula_str = paste("count",formula.rhs,sep="~")
+      perm = permute::how(nperm=n.perm)
+      if(!is.null(strata)) {
+        setBlocks(perm) = m_a$attr[,strata]
+      }
       ad.res = adonis2(
         as.formula(formula_str),
         data=m_a$attr,
-        strata=if(!is.null(strata)) m_a$attr[,strata] else NULL,
-        permutations=n.perm,
+        permutations=perm,
         method=dist.metr)
       
       #report$add.p(pandoc.formula.return(as.formula(formula_str),caption=descr)
