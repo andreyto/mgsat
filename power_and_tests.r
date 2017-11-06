@@ -2485,10 +2485,16 @@ read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu",taxa
                             }
                             ##pmatch returns the index of the first match, so the expression below
                             ##returns the prefix of lineage till (excluding) the first "unclassified" element
-                            no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
-                            last = no.tail[length(no.tail)]
-                            if(length(no.tail) < (length(x) - taxa.levels.mix)) {
-                              last = paste("Unclassified",last,sep="_")
+                            before_tail = pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1
+                            if(before_tail>0) {
+                              no.tail = x[1:before_tail]
+                              last = no.tail[length(no.tail)]
+                              if(length(no.tail) < (length(x) - taxa.levels.mix)) {
+                                last = paste("Unclassified",last,sep="_")
+                              }
+                            }
+                            else {
+                              last = "Unclassified"
                             }
                             last
                           },
@@ -4842,7 +4848,7 @@ mgsat.16s.task.template = within(list(), {
     divrich.task = within(list(),{
       n.rar.rep=400
       is.raw.count.data=T
-      filtered.singletons=T
+      filtered.singletons=F
       do.abundance.richness=F
       group.attr = main.meta.var
       counts.glm.task = within(list(),{
