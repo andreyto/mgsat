@@ -7395,6 +7395,9 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,
   else {
     show.color.legend = F
   }
+  if(!is.null(args$size)) {
+    args$size = vegan::decostand(args$size,method="range")*2+1
+  }
   pl = do.call(threejs::scatterplot3js,
                c(list(as.matrix(xyz)),
                  args,
