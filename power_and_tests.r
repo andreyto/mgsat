@@ -2986,10 +2986,9 @@ plot.abund.meta <- function(m_a,
       wr = facet_null()
     }
     else if (length(id.vars.facet) == 1) {
-      wr = facet_wrap(facet.form,
-                      ncol = facet_wrap_ncol,
+      wr = facet_grid(facet.form,
                       drop=T,
-                      scales="free_x")
+                      scales="free_x", space = "free_x")
     }
     else {
       wr = facet_grid(facet.form,
