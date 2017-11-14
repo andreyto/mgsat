@@ -915,9 +915,19 @@ as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
   if(round.to.int) {
     m_a$count = round(m_a$count)
   }
+  ## DESeq2 does not work on ordered factors; here we convert all orderd
+  ## factors used in the formula into unordered but with the same order of levels, 
+  ## in a copy of the colData
+  design = as.formula(paste("~",formula.rhs))
+  colData = data.table::copy(m_a$attr) #in case this is not a DF but DT, works for DF too
+  for(v in all.vars(design)) {
+    if(is.ordered(colData[[v]])) {
+      colData[[v]] = factor(colData[[v]],ordered = F,levels=levels(colData[[v]]))
+    }
+  }
   dds <- DESeqDataSetFromMatrix(countData = t(m_a$count),
-                                colData = m_a$attr,
-                                design = as.formula(paste("~",formula.rhs)))  
+                                colData = colData,
+                                design = design)  
   if(force.lib.size) {
     ## from phyloseq vignette at 
     ## http://www.bioconductor.org/packages/release/bioc/vignettes/phyloseq/inst/doc/phyloseq-mixture-models.html
