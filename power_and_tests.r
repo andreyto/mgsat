@@ -915,9 +915,19 @@ as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
   if(round.to.int) {
     m_a$count = round(m_a$count)
   }
+  ## DESeq2 does not work on ordered factors; here we convert all orderd
+  ## factors used in the formula into unordered but with the same order of levels, 
+  ## in a copy of the colData
+  design = as.formula(paste("~",formula.rhs))
+  colData = data.table::copy(m_a$attr) #in case this is not a DF but DT, works for DF too
+  for(v in all.vars(design)) {
+    if(is.ordered(colData[[v]])) {
+      colData[[v]] = factor(colData[[v]],ordered = F,levels=levels(colData[[v]]))
+    }
+  }
   dds <- DESeqDataSetFromMatrix(countData = t(m_a$count),
-                                colData = m_a$attr,
-                                design = as.formula(paste("~",formula.rhs)))  
+                                colData = colData,
+                                design = design)  
   if(force.lib.size) {
     ## from phyloseq vignette at 
     ## http://www.bioconductor.org/packages/release/bioc/vignettes/phyloseq/inst/doc/phyloseq-mixture-models.html
@@ -2485,10 +2495,16 @@ read.mothur.cons.taxonomy <- function(file_name,sanitize=T,taxa.level="otu",taxa
                             }
                             ##pmatch returns the index of the first match, so the expression below
                             ##returns the prefix of lineage till (excluding) the first "unclassified" element
-                            no.tail = x[1:pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1]
-                            last = no.tail[length(no.tail)]
-                            if(length(no.tail) < (length(x) - taxa.levels.mix)) {
-                              last = paste("Unclassified",last,sep="_")
+                            before_tail = pmatch("unclassified",x,nomatch=length(x)+1,dup=T)-1
+                            if(before_tail>0) {
+                              no.tail = x[1:before_tail]
+                              last = no.tail[length(no.tail)]
+                              if(length(no.tail) < (length(x) - taxa.levels.mix)) {
+                                last = paste("Unclassified",last,sep="_")
+                              }
+                            }
+                            else {
+                              last = "Unclassified"
                             }
                             last
                           },
@@ -2987,10 +3003,9 @@ plot.abund.meta <- function(m_a,
       wr = facet_null()
     }
     else if (length(id.vars.facet) == 1) {
-      wr = facet_wrap(facet.form,
-                      ncol = facet_wrap_ncol,
+      wr = facet_grid(facet.form,
                       drop=T,
-                      scales="free_x")
+                      scales="free_x", space = "free_x")
     }
     else {
       wr = facet_grid(facet.form,
@@ -4849,7 +4864,7 @@ mgsat.16s.task.template = within(list(), {
     divrich.task = within(list(),{
       n.rar.rep=400
       is.raw.count.data=T
-      filtered.singletons=T
+      filtered.singletons=F
       do.abundance.richness=F
       group.attr = main.meta.var
       counts.glm.task = within(list(),{
@@ -7395,6 +7410,9 @@ plot.scatter.js3d <- function(xyz,data,color=NULL,
   }
   else {
     show.color.legend = F
+  }
+  if(!is.null(args$size)) {
+    args$size = vegan::decostand(args$size,method="range")*2+1
   }
   pl = do.call(threejs::scatterplot3js,
                c(list(as.matrix(xyz)),
