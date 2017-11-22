@@ -2715,7 +2715,13 @@ ggplot.hue.colors <- function(n) {
   grDevices::hcl(h=hues, l=65, c=100)[1:n]
 }
 
-generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer","ggplot"),brewer.pal.name="Dark2") {
+#' exclude.qual.colors - these colors will be dropped from qualitative palettes. Current
+#' default drops yellow because it yellow points get washed out on screens
+#' Other suggested exclusions for Brewer palettes:
+#' Dark2 -> "#66A61E" (second green color)
+generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer","ggplot"),
+                                  brewer.pal.name="Set1",
+                                  exclude.qual.colors=c("#FFFF33")) {
   family = family[[1]]
   if(family=="brewer") library(RColorBrewer)
   else if(family=="ggplot") library(ggplot2)
@@ -2746,6 +2752,7 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer
       else if(family=="ggplot") {
         palette = ggplot.hue.colors(length(lev)) 
       }
+      palette = palette[!(palette %in% exclude.qual.colors)]
       #get.palette = colorRampPalette(palette)
       #palette = get.palette(max(length(features),n.color.orig))
       palette = rep_len(palette,length(lev))
