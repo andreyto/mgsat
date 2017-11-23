@@ -5039,7 +5039,8 @@ mgsat.16s.task.template = within(list(), {
             type="samples",
             legend.point.size = ggplot2::rel(4),
             legend.position="right",
-            ggplot.extra=list()            
+            ggplot.extra=list()
+            ##line.args, axis.scale=c(1,1,1)
             ##other arguments to phyloseq:::plot_ordination
           )
         )
@@ -7390,8 +7391,6 @@ make.color.legend.scatter.js3d <- function(xyz,color_val,color) {
   xyz_max = apply(xyz,2,min)
 }
 
-## we set default renderer to canvas because of strong label occlusion effects in WebGL rederer,
-## which result in wrong labels typically shown on busy plots
 plot.scatter.js3d <- function(xyz,data,color=NULL,
                               labels=NULL,size=NULL,pch=NULL,
                               renderer="auto",show.color.legend=T,
@@ -7682,7 +7681,8 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
       report$add.widget(plot_ordination.3d(
         ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size,
         pch=pt$pch,
-        lines.args = pt$lines.args),
+        lines.args = pt$lines.args,
+        axis.scale = pt$axis.scale),
         caption = caption)
     }
   }
