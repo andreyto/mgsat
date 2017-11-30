@@ -900,13 +900,34 @@ join_count_df<-function(m_a) {
   
 }
 
-new.m_a <- function(count=NULL,attr=NULL) {
+new.m_a <- function(count=NULL,attr=NULL,attr_feat=NULL,validate=F) {
   if(is.null(attr)) {
     if(!is.null(count)) {
       attr = data.frame(SampleID=rownames(count))
     }
   }
-  list(count=count,attr=attr)
+  if(validate) {
+    if(!(is.null(count) || is.null(attr))) {
+      stopifnot(all(rownames(count)==rownames(attr)))
+    }
+    if(!(is.null(count) || is.null(attr_feat))) {
+      stopifnot(all(colnames(count)==rownames(attr_feat)))
+    }
+  }
+  list(count=count,attr=attr,attr_feat=attr_feat)
+}
+
+as.m_a.dds <- function(dds,do.rlog.norm,...) {
+  library(DESeq2)
+  if(!do.rlog.norm) {
+    count = t(as.matrix(assay(dds)))
+  }
+  else {
+    count = rlog.dds(dds,...)
+  }
+  attr = as.data.frame(colData(dds))
+  attr_feat = as.data.frame(rowData(dds))
+  m_a = new.m_a(count=count,attr=attr,attr_feat = attr_feat)
 }
 
 as.dds.m_a <- function(m_a,formula.rhs,force.lib.size=T,round.to.int=T) {
@@ -1157,8 +1178,11 @@ norm.rlog.dds <- function(x.f,dds,...) {
 }
 
 #' @method extract Rlog transformed values from DESeq2 object as sample-row matrix
-rlog.dds <- function(dds,blind=T,fitType="local") {
-  t(assay(rlog(dds,blind=blind,fitType=fitType)))
+#' Note the discussion of the proper value for blind in the DESeq2::rlog help page:
+#' "blind=FALSE should be used for transforming data for downstream analysis, 
+#' where the full use of the design information should be made".
+rlog.dds <- function(dds,blind=T,fitType="local",...) {
+  t(assay(rlog(dds,blind=blind,fitType=fitType,...)))
 }
 
 
@@ -1544,6 +1568,15 @@ subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL,na.ind
   for(colnam in colnames(m_a$attr)) {
     if(is.factor(m_a$attr[,colnam])) {
       m_a$attr[,colnam] = factor(m_a$attr[,colnam])
+    }
+  }
+  
+  if(!is.null(m_a$attr_feat)) {
+    m_a$attr_feat = m_a$attr_feat[select.count,,drop=F]
+    for(colnam in colnames(m_a$attr_feat)) {
+      if(is.factor(m_a$attr_feat[,colnam])) {
+        m_a$attr_feat[,colnam] = factor(m_a$attr_feat[,colnam])
+      }
     }
   }
   
@@ -5072,12 +5105,21 @@ mgsat.16s.task.template = within(list(), {
 })
 
 
-start.cluster.project <- function(...) {
+start.cluster.project <- function(parallel.type="PSOCK",...) {
+  library(foreach)
   library(doParallel)
   library(parallel)
-  node.cores = getOption("mc.cores", 2L)
-  cl<-parallel::makeCluster(node.cores,type="PSOCK",...)
+  ## number of cores to use on multicore machines
+  node.cores = getOption("mc.cores", 4)
+  options(boot.ncpus = node.cores)
+  ## parallel backend
+  options(boot.parallel = "parallel")
+  cl<-parallel::makeCluster(node.cores,type=parallel.type,...)
   registerDoParallel(cl)
+  library("BiocParallel")
+  ##should use MulticoreParam to use "parallel",
+  ##but currently gives send/receive errors on MacOS R 3.4.1 Conda
+  register(SnowParam(node.cores))
   return(cl)
 }
 
@@ -5715,27 +5757,58 @@ new_deseq2 <- function(...) {
 }
 
 get.deseq2.result.description <- function(x) {
-  paste(capture.output(head(x,0))[1:2],collapse=";")
+  paste(capture.output(show(x))[1:2],collapse=";")
 }
 
+deseq2.report.results <- function(res,formula.rhs,result.task) {
+  formula.rhs = paste(formula.rhs,collapse = " ")
+  res.descr = get.deseq2.result.description(res)
+  res.df = cbind(feature = rownames(res),as.data.frame(res))
+  caption=paste(formula.rhs,
+                arg.list.as.str(result.task),
+                res.descr,
+                sep=";")  
+  report$add.printed(summary(res),caption=paste("DESeq2 summary for task:",caption))
+  report$add.table(as.data.frame(res.df),
+                   caption=paste("DESeq2 results for task:",caption),
+                   show.row.names=F)
+  caption
+}
+
+#' m_a can be m_a or DESeqDataSet type
+#' If m_a is DESeqDataSet, and formula.rhs is not NULL,
+#' if will override formula in the DESeqDataSet
 deseq2.report <- function(m_a,
                           formula.rhs,
                           test.task=list(),
                           result.tasks=list(list()),
                           round.to.int=T,
-                          alpha=0.05
+                          alpha=0.05,
+                          do.report = T
 ) {
   library(DESeq2)
-  report.section = report$add.header("DESeq2 tests and data normalization",section.action="push")
-  report$add.package.citation("DESeq2")
-  dds = as.dds.m_a(m_a=m_a,
-                   formula.rhs=formula.rhs,
-                   force.lib.size=T,
-                   round.to.int=round.to.int)
+  library(foreach)
+  if(do.report) {
+    report.section = report$add.header("DESeq2 tests and data normalization",section.action="push")
+    report$add.package.citation("DESeq2")
+  }
+  if(!inherits(m_a,"DESeqDataSet")) {
+    dds = as.dds.m_a(m_a=m_a,
+                     formula.rhs=formula.rhs,
+                     force.lib.size=T,
+                     round.to.int=round.to.int)
+  }
+  else {
+    dds = m_a
+    if(!is.null(formula.rhs)) {
+      design(dds) = as.formula(sprintf("~ %s",formula.rhs))
+    }
+  }
   dds = do.call(DESeq,
                 c(list(object=dds),
                   test.task)
   )
+  formula.rhs = as.character(design(dds))[2] #cuts the ~
   res.all = foreach(result.task=result.tasks) %do% {
     if(is.null(result.task$alpha)) {
       result.task$alpha = alpha
@@ -5745,18 +5818,12 @@ deseq2.report <- function(m_a,
                     result.task)
     )
     res = res[order(abs(res$stat),decreasing=T),]  
-    res.descr = get.deseq2.result.description(res)
-    res.df = cbind(feature = rownames(res),as.data.frame(res))
-    report$add.table(as.data.frame(res.df),
-                     caption=paste("DESeq2 results for task:",
-                                   formula.rhs,
-                                   arg.list.as.str(result.task),
-                                   res.descr,
-                                   sep=";"),
-                     show.row.names=F)
+    if(do.report) {
+      deseq2.report.results(res=res,formula.rhs=formula.rhs,result.task=result.task)      
+    }
     res
   }
-  return (new_deseq2(dds=dds,results=res.all))
+  return (new_deseq2(dds=dds,results=res.all,result.tasks=result.tasks,formula.rhs=formula.rhs))
 }
 
 glmnet.stabpath.c060.report <- function(m_a,
@@ -7155,9 +7222,12 @@ heatmap.diff.abund <- function(m_a,
   colnames_count = colnames(count)
   if(!is.null(column_names)) {
     colnames_count = column_names
+    if(!is.null(max.n.columns)) {
+      colnames_count = colnames_count[1:max.n.columns]
+    }
   }
-  colnames_count = paste0(substr(column_names,1,max_column_names_symbols),
-                          ifelse(stringr::str_length(column_names)>max_column_names_symbols,
+  colnames_count = paste0(substr(colnames_count,1,max_column_names_symbols),
+                          ifelse(stringr::str_length(colnames_count)>max_column_names_symbols,
                                  "...",
                                  ""))
   ## add a running index if any column names become identical after trimming
@@ -7597,7 +7667,8 @@ plot_ordination.3d <- function(physeq,ordination,
 }
 
 
-ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T,descr="") {
+ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=T,descr="",
+                              legend.position="bottom") {
   require(phyloseq)
   report.section = report$add.header(paste("Ordinations",descr,sep = ", "),section.action="push",sub=sub.report)  
   report$add.package.citation("phyloseq")  
@@ -7645,7 +7716,7 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
                   c(list(ph,ord,type=pt.orig$type,
                          axes=pt.orig$axes,
                          #legend.point.size=pt.legend.point.size,
-                         legend.position="bottom"
+                         legend.position=legend.position
                          #ggplot.extra=pt.ggplot.extra
                   ),
                   pt
@@ -7682,7 +7753,7 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
         ph,ord,type=pt$type,axes=pt$axes,labels=pt$label,color=pt$color,size=pt$size,
         pch=pt$pch,
         lines.args = pt$lines.args,
-        axis.scale = pt$axis.scale),
+        axis.scale = if(!is.null(pt$axis.scale)) pt$axis.scale else NA),
         caption = caption)
     }
   }
