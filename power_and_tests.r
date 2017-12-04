@@ -5107,7 +5107,7 @@ mgsat.16s.task.template = within(list(), {
 })
 
 
-start.cluster.project <- function(parallel.type="PSOCK",...) {
+start.cluster.project <- function(parallel.type="PSOCK",bioc.backend=c("snow","parallel"),...) {
   library(foreach)
   library(doParallel)
   library(parallel)
@@ -5121,7 +5121,16 @@ start.cluster.project <- function(parallel.type="PSOCK",...) {
   library("BiocParallel")
   ##should use MulticoreParam to use "parallel",
   ##but currently gives send/receive errors on MacOS R 3.4.1 Conda
-  register(SnowParam(node.cores))
+  bioc.backend = bioc.backend[1]
+  if(bioc.backend=="snow") {
+    register(SnowParam(node.cores))
+  }
+  else if(bioc.backend=="parallel") {
+    register(MulticoreParam(node.cores))
+  }
+  else {
+    stop(sprintf("Unknown value for bioc.backend: %s",bioc.backend))
+  }
   return(cl)
 }
 
@@ -5777,6 +5786,30 @@ deseq2.report.results <- function(res,formula.rhs,result.task) {
   caption
 }
 
+as_data_table_with_rownames <- function(df) {
+  id_rownames = rownames(df)
+  if(is.null(id_rownames)) {
+    stop("Need defined rownames for conversion to data.table")
+  }
+  df = as.data.table(df)
+  df[,.id_rownames:=id_rownames]
+  df
+}
+
+deseq2.join_results_with_design <- function(dds,res) {
+  library(DESeq2)
+  library(data.table)
+  make.global()
+  rd = as_data_table_with_rownames(rowData(dds))
+  res = as_data_table_with_rownames(res)
+  res = rd[res,on=".id_rownames"]
+  res = res[order(abs(stat),decreasing = T,na.last = T)]
+  res = setDF(res)
+  rownames(res) = res[,".id_rownames"]
+  res[[".id_rownames"]] = NULL
+  res
+}
+
 #' m_a can be m_a or DESeqDataSet type
 #' If m_a is DESeqDataSet, and formula.rhs is not NULL,
 #' if will override formula in the DESeqDataSet
@@ -5819,7 +5852,7 @@ deseq2.report <- function(m_a,
                   c(list(object=dds),
                     result.task)
     )
-    res = res[order(abs(res$stat),decreasing=T),]  
+    res = deseq2.join_results_with_design(dds,res)    
     if(do.report) {
       deseq2.report.results(res=res,formula.rhs=formula.rhs,result.task=result.task)      
     }
