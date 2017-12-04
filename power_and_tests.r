@@ -5115,7 +5115,7 @@ start.cluster.project <- function(parallel.type="PSOCK",bioc.backend=c("snow","p
   node.cores = getOption("mc.cores", 4)
   options(boot.ncpus = node.cores)
   ## parallel backend
-  options(boot.parallel = "parallel")
+  options(boot.parallel = "multicore")
   cl<-parallel::makeCluster(node.cores,type=parallel.type,...)
   registerDoParallel(cl)
   library("BiocParallel")
