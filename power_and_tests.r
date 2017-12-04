@@ -2751,12 +2751,29 @@ order.levels <- function(lev,keys) {
   lev[order(keys,decreasing=T)]
 }
 
+#' split columns names with factors into two subsets to have about equal number of levels
+#' for each dimension in ggplot facet grid plot
 split.by.total.levels.data.frame <- function(x) {
-  cuprod = cumprod(plyr::colwise(function(y) length(levels(factor(y))))(x))
-  cuprod.max = cuprod[length(cuprod)][1,]
+  ##transpose and column subsetting below is to get first row as a vector,
+  ##otherwise the input to cumprod is a data.frame with a single row, and cumprod then works column-wise,
+  ##doing nothing
+  cuprod = cumprod(t(plyr::colwise(function(y) length(levels(factor(y))))(x))[,1])
+  cuprod.max = cuprod[length(cuprod)]
   ind.split = which(cuprod >= (cuprod.max/2))[1]
   colnam = colnames(x)
-  return(list(colnam[1:ind.split],colnam[(ind.split+1):length(colnam)]))
+  if(ind.split==1) {
+    if(length(colnam)<2) {
+      first_part = c()
+    }
+    else {
+      first_part = colnam[1]
+    }
+  }
+  else{
+    first_part = colnam[1:(ind.split-1)]
+  }
+  second_part = colnam[!colnam %in% first_part]
+  return(list(first_part,second_part))
 }
 
 ggplot.hue.colors <- function(n) {
