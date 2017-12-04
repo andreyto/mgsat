@@ -2793,13 +2793,15 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer
       if(family=="brewer") {
         pal.info = brewer.pal.info[brewer.pal.name,]
         n.color.orig = pal.info$maxcolors
-        if(length(lev)<n.color.orig) {
-          n.color.orig = length(lev)
+        n.excl = length(exclude.qual.colors)
+        n.request = n.excl + length(lev)
+        if(n.request>n.color.orig) {
+          n.request = n.color.orig
         }
-        palette = brewer.pal(n.color.orig, brewer.pal.name)
+        palette = brewer.pal(n.request, brewer.pal.name)
       }
       else if(family=="ggplot") {
-        palette = ggplot.hue.colors(length(lev)) 
+        palette = ggplot.hue.colors(n.request) 
       }
       palette = palette[!(palette %in% exclude.qual.colors)]
       #get.palette = colorRampPalette(palette)
