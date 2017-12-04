@@ -4481,7 +4481,7 @@ plot.profiles <- function(m_a,
               skip.bar_stacked = F
               if(other.params$flip.coords || 
                  !is.null(id.var.dodge$dodge) || 
-                 length(id.vars) > 1 ||
+                 #length(id.vars) > 1 ||
                  ncol(m_a$count) < 2) {
                 skip.bar_stacked = T
               }
