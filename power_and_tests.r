@@ -2904,6 +2904,7 @@ plot.abund.meta <- function(m_a,
                             feature.names.conv=NULL,
                             geom="bar",
                             line.show.points=T,
+                            line.legend.thickness=rel(3),
                             n.top=20,
                             id.var.dodge=NULL,
                             flip.coords=T,
@@ -3112,6 +3113,11 @@ plot.abund.meta <- function(m_a,
     }
     else {
       stop(paste("Unexpected parameter value: geom = ",geom))
+    }
+    if(geom %in% c("line","line_obs")) {
+      if(!is.na(line.legend.thickness)) {
+        gp = gp + guides(colour = guide_legend(override.aes = list(size=line.legend.thickness)))
+      }
     }
     
     #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
@@ -4348,12 +4354,13 @@ plot.profiles <- function(m_a,
                           do.feature.meta=T,
                           value.name="Abundance",
                           show.profile.task=list(
-                            geoms=c("bar","violin","boxplot","bar_stacked"),
+                            geoms=c("bar","violin","boxplot","bar_stacked","line","line_obs"),
                             dodged=T,
                             faceted=T,
                             stat_summary.fun.y="mean",
                             sqrt.scale=F,
                             line.show.points=T,
+                            line.legend.thickness=rel(3),
                             legend.title=NULL,
                             record.label=NULL,
                             theme_font_size=0.8,
@@ -4509,6 +4516,7 @@ plot.profiles <- function(m_a,
                                            feature.names.conv = feature.names.conv,
                                            geom=geom,
                                            line.show.points = show.profile.task$line.show.points,
+                                           line.legend.thickness = show.profile.task$line.legend.thickness,
                                            file_name=NULL,
                                            id.var.dodge=id.var.dodge$dodge,
                                            flip.coords=other.params$flip.coords,
@@ -5017,6 +5025,7 @@ mgsat.16s.task.template = within(list(), {
         stat_summary.fun.y="mean",
         sqrt.scale=T,
         line.show.points=F,
+        line.legend.thickness=rel(3),
         facet_wrap_ncol=3,
         legend.title=NULL,
         record.label=NULL,
