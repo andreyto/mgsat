@@ -5826,7 +5826,9 @@ deseq2.join_results_with_design <- function(dds,res) {
   library(DESeq2)
   library(data.table)
   make.global()
-  rd = as_data_table_with_rownames(rowData(dds))
+  rd = rowData(dds)
+  rownames(rd) = rownames(dds)
+  rd = as_data_table_with_rownames()
   res = as_data_table_with_rownames(res)
   res = rd[res,on=".id_rownames"]
   res = res[order(abs(stat),decreasing = T,na.last = T)]
