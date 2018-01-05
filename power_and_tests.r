@@ -292,6 +292,14 @@ quantcut.ordered <- function(x,na.rm=T,...) {
   ordered(y)
 }
 
+index_as_left_padded_str <- function(x,n_zeros=NULL) {
+  if(is.null(n_zeros)) {
+    n_zeros = ceiling(log10(length(x)))
+  }
+  frmt = paste0("%0",n_zeros,"i")
+  sprintf(frmt,x)
+}
+
 # copied from https://stackoverflow.com/a/25555105
 gm_mean = function(x, na.rm=TRUE, zero.propagate = FALSE){
   if(any(x < 0, na.rm = TRUE)){
