@@ -278,16 +278,21 @@ recode.values <- function(x,...,flavor=c("car","DescTools")) {
 }
 
 ## Call quantcut and return its result as ordered factor
-quantcut.ordered <- function(x,na.rm=T,...) {
+quantcut.ordered <- function(x,na.rm=T,q=4,...) {
   ##contrary to the docs, na.rm is ignored by quantcut causing stop, do it manually here
   if(na.rm) {
     x.nna = x[!is.na(x),drop=F]
-    qq.nna = gtools::quantcut(x.nna,...)
+    ##this line works around the error "'breaks' are not unique" when there are
+    ##fewer unique values in x than the q. Note that this might get slow if x
+    ##is a huge continuous vector
+    q = min(q,length(unique(x.nna))+1)
+    qq.nna = gtools::quantcut(x.nna,q=q,...)
     y = factor(rep(NA,length(x)),levels=c(levels(qq.nna),NA))
     y[!is.na(x)] = qq.nna
   }
   else {
-    y = gtools::quantcut(x)
+    q = min(q,length(unique(x))+1)
+    y = gtools::quantcut(x,q=q,...)
   }
   ordered(y)
 }
