@@ -5805,7 +5805,7 @@ deseq2.report.results <- function(res,formula.rhs,result.task) {
                 arg.list.as.str(result.task),
                 res.descr,
                 sep=";")  
-  report$add.printed(summary(res),caption=paste("DESeq2 summary for task:",caption))
+  #report$add.printed(summary(res),caption=paste("DESeq2 summary for task:",caption))
   report$add.table(as.data.frame(res.df),
                    caption=paste("DESeq2 results for task:",caption),
                    show.row.names=F)
