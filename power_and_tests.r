@@ -278,18 +278,31 @@ recode.values <- function(x,...,flavor=c("car","DescTools")) {
 }
 
 ## Call quantcut and return its result as ordered factor
-quantcut.ordered <- function(x,na.rm=T,...) {
+quantcut.ordered <- function(x,na.rm=T,q=4,...) {
   ##contrary to the docs, na.rm is ignored by quantcut causing stop, do it manually here
   if(na.rm) {
     x.nna = x[!is.na(x),drop=F]
-    qq.nna = gtools::quantcut(x.nna,...)
+    ##this line works around the error "'breaks' are not unique" when there are
+    ##fewer unique values in x than the q. Note that this might get slow if x
+    ##is a huge continuous vector
+    q = min(q,length(unique(x.nna))+1)
+    qq.nna = gtools::quantcut(x.nna,q=q,...)
     y = factor(rep(NA,length(x)),levels=c(levels(qq.nna),NA))
     y[!is.na(x)] = qq.nna
   }
   else {
-    y = gtools::quantcut(x)
+    q = min(q,length(unique(x))+1)
+    y = gtools::quantcut(x,q=q,...)
   }
   ordered(y)
+}
+
+index_as_left_padded_str <- function(x,n_zeros=NULL) {
+  if(is.null(n_zeros)) {
+    n_zeros = ceiling(log10(length(x)))
+  }
+  frmt = paste0("%0",n_zeros,"i")
+  sprintf(frmt,x)
 }
 
 # copied from https://stackoverflow.com/a/25555105
@@ -2776,9 +2789,18 @@ split.by.total.levels.data.frame <- function(x) {
   return(list(first_part,second_part))
 }
 
-ggplot.hue.colors <- function(n) {
+ggplot.hue.colors <- function(n,l=60,c=200) {
   hues = seq(15, 375, length=n+1)
-  grDevices::hcl(h=hues, l=65, c=100)[1:n]
+  grDevices::hcl(h=hues, l=l, c=c)[1:n]
+}
+
+#' copied from Heatplus RainbowPastel
+mgsat.rainbow.pastel <- function (n, blanche = 200, ...) 
+{
+  cv = rainbow(n, ...)
+  rgbcv = col2rgb(cv)
+  rgbcv = pmin(rgbcv + blanche, 255)
+  rgb(rgbcv[1, ], rgbcv[2, ], rgbcv[3, ], maxColorValue = 255)
 }
 
 #' exclude.qual.colors - these colors will be dropped from qualitative palettes. Current
@@ -2826,7 +2848,7 @@ generate.colors.mgsat <- function(x,value=c("colors","palette"),family=c("brewer
       palette = rep_len(palette,length(lev))
     }
     else {
-      palette = rainbow(length(lev))
+      palette = ggplot.hue.colors(length(lev))
     }
     names(palette) = lev
     if(value=="colors") {
@@ -3229,7 +3251,7 @@ plot.abund.meta <- function(m_a,
   color.palette="brew"
   
   if(color.palette=="brew") {
-    n.color.orig = 8
+    #n.color.orig = 8
     #palette = brewer.pal(n.color.orig, "Accent")
     #get.palette = colorRampPalette(palette)
     #palette = get.palette(max(length(features),n.color.orig))
@@ -3268,7 +3290,6 @@ plot.abund.meta <- function(m_a,
   if (!is.null(file_name)) {
     ggsave(file_name)
   }
-  
   return (new_mgsatres(plot=gp,dat.summary=dat.summary,dat.melt=dat.melt))
 }
 
