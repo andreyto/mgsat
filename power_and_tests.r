@@ -881,17 +881,30 @@ count_matr_from_df<-function(dat,col_ignore=c()) {
   as.matrix(dat[!mask_col_ignore])
 }
 
-split_count_df<-function(dat,col_ignore=c()) {
+split_count_df<-function(dat,col_ignore=c(),rownames_col=NULL) {
+  dat = as.data.frame(dat)
+  if(is.null(rownames_col)) {
+    rn = rownames(dat)
+  }
+  else {
+    rn = dat[[rownames_col]]
+    if(!rownames_col %in% col_ignore) {
+      col_ignore = c(col_ignore,rownames_col)
+    }
+  }
+  if(is.null(rn)) {
+    stop("Row IDs must be defined")
+  }
   mask_col_ignore = names(dat) %in% col_ignore
   if(!all(mask_col_ignore)) {
-    m = as.matrix(dat[!mask_col_ignore])
+    m = as.matrix(dat[,!mask_col_ignore])
   }
   else {
     m = NULL
   }
   attr = dat[mask_col_ignore]
-  rownames(attr) = rownames(dat)
-  rownames(m) = rownames(dat)
+  rownames(attr) = rn
+  rownames(m) = rn
   list(count=m,attr=attr)
 }
 
