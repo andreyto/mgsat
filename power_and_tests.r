@@ -277,24 +277,42 @@ recode.values <- function(x,...,flavor=c("car","DescTools")) {
   }
 }
 
-## Call quantcut and return its result as ordered factor
-quantcut.ordered <- function(x,na.rm=T,q=4,...) {
+#' Call quantcut and return its result as ordered factor.
+#' As in gtools::quantcut(), q can be either the desired number of
+#' quantiles, or a vector of quantiles (probabilities).
+#' If q_are_breaks==T, the q is interpreted as a vector with breaks of length n_groups + 1,
+#' and `base::cut` is called.
+quantcut.ordered <- function(x,na.rm=T,q=4,q_are_breaks=F,...) {
   ##contrary to the docs, na.rm is ignored by quantcut causing stop, do it manually here
   if(na.rm) {
     x.nna = x[!is.na(x),drop=F]
     ##this line works around the error "'breaks' are not unique" when there are
     ##fewer unique values in x than the q. Note that this might get slow if x
     ##is a huge continuous vector
-    q = min(q,length(unique(x.nna))+1)
-    qq.nna = gtools::quantcut(x.nna,q=q,...)
-    y = factor(rep(NA,length(x)),levels=c(levels(qq.nna),NA))
+    if(length(q)==1) {
+      q = min(q,length(unique(x.nna))+1)
+    }
+    if(q_are_breaks) {
+      qq.nna = cut(x.nna,breaks = q,ordered_result = T,...)
+    }
+    else {
+      qq.nna = gtools::quantcut(x.nna,q=q,...)
+    }
+    y = factor(rep(NA,length(x)),levels=c(levels(qq.nna),NA),ordered = T)
     y[!is.na(x)] = qq.nna
   }
   else {
-    q = min(q,length(unique(x))+1)
-    y = gtools::quantcut(x,q=q,...)
+    if(length(q)==1) {
+      q = min(q,length(unique(x))+1)
+    }
+    if(q_are_breaks) {
+      y = cut(x,breaks = q,ordered_result = T,...)
+    }
+    else {
+      y = gtools::quantcut(x,q=q,...)
+    }
   }
-  ordered(y)
+  as.ordered(y)
 }
 
 index_as_left_padded_str <- function(x,n_zeros=NULL) {
@@ -7506,32 +7524,43 @@ heatmap.combined.report <- function(m_a,
   }
 }
 
-quantcut.ordered.color <- function(x,as.rgb=F) {
-  x_q = quantcut.ordered(x)
+#' turn ordered quantiiles (as returned by quantcut.ordered()) into a color gradient
+#' x - original data vector
+#' x_q - quantiles vector same length as x
+ordered.color <- function(x,x_q,as.rgb=F) {
   names(x_q) = names(x)
-  col = scales::seq_gradient_pal("blue", "red", "Lab")(vegan::decostand(as.numeric(x_q),method = "range"))
-  y = data.table(x=x,x_q=x_q,col=col)
+  pal_tbl = data.table(x_q=levels(x_q))[,x_q:=factor(x_q,levels=x_q,ordered = T)]
+  pal_tbl[,col:=scales::seq_gradient_pal("blue", "red", "Lab")(vegan::decostand(.I,method = "range"))]
+  pal_tbl[,col:=factor(col,levels = col, ordered = T)]
+  if(as.rgb) {
+    pal_tbl = cbind(pal_tbl,t(col2rgb(pal_tbl$col)))
+  }
+  y = data.table(x=x,x_q=x_q)
+  y = pal_tbl[y,on="x_q"]
   if(!is.null(names(x_q))) {
     y[,rn:=names(x_q)]
   }
-  if(as.rgb) {
-    y = cbind(y,t(col2rgb(col)))
-  }
-  y
+  list(data=y,pal_tbl=pal_tbl)
 }
 
-#' tbl_col as returned by quantcut.ordered.color
-ordered.color.legend <- function(tbl_col,title) {
+quantcut.ordered.color <- function(x,q=4,as.rgb=F,...) {
+  x_q = quantcut.ordered(x,q=q,...)
+  ordered.color(x,x_q,as.rgb = as.rgb)
+}
+
+#' qcol as returned by quantcut.ordered.color
+ordered.color.legend <- function(qcol,title) {
   library(data.table)
   library(ggplot2)
-  tbl_col = copy(tbl_col)
-  tbl_col = tbl_col[,.(count=.N),by=.(x_q,col)][order(x_q)]
+  tbl_col = qcol$data
+  tbl_col = tbl_col[,.(count=.N),by=col]
+  tbl_col = tbl_col[qcol$pal_tbl,on="col"][order(col)]
   tbl_col[,right := as.numeric(stringr::str_match(x_q,",([.0-9eE]+)")[,2])]
   tbl_col[,left := as.numeric(stringr::str_match(x_q,"([.0-9eE]+),")[,2])]
   ticks = c(tbl_col[1,left],tbl_col[,right])
   ticks = sprintf("%s%%",ticks*100)
   ticks = c("",ticks[2:(length(ticks)-1)],"")
-  col_pal = tbl_col$col
+  col_pal = as.character(tbl_col$col)
   names(col_pal) = tbl_col$x_q
   #ticks = rev(ticks)
   tbl_col[,x_q:=ordered(x_q,levels=rev(levels(x_q)))]
