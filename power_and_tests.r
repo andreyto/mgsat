@@ -7302,6 +7302,11 @@ heatmap.diff.abund <- function(m_a,
                                column_names_max_height = NULL,
                                column_names_gp = NULL,
                                max_column_names_symbols=30) {
+  if(!is.null(res.test.df)) {
+    res.test.df = as.data.table(res.test.df)
+    res.test.df = res.test.df[data.table(ID=colnames(m_a$count)),on="ID"]
+    stopifnot(all(res.test.df$ID==colnames(m_a$count)))
+  }  
   if(!is.null(max.n.columns)) {
     max.n.columns = min(max.n.columns,ncol(m_a$count))
     m_a$count = m_a$count[,1:max.n.columns,drop=F]
