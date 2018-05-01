@@ -5846,21 +5846,22 @@ new_deseq2 <- function(...) {
 }
 
 get.deseq2.result.description <- function(x) {
-  paste(capture.output(show(x))[1:2],collapse=";")
+  paste(capture.output(show(x))[1:1],collapse=";")
 }
 
-deseq2.report.results <- function(res,formula.rhs,result.task) {
+deseq2.report.results <- function(res,formula.rhs,result.task,wrap.vals=T) {
   formula.rhs = paste(formula.rhs,collapse = " ")
-  res.descr = get.deseq2.result.description(res)
+  #res.descr = get.deseq2.result.description(res)
   res.df = cbind(feature = rownames(res),as.data.frame(res))
   caption=paste(formula.rhs,
                 arg.list.as.str(result.task),
-                res.descr,
+  #              res.descr,
                 sep=";")  
   #report$add.printed(summary(res),caption=paste("DESeq2 summary for task:",caption))
   report$add.table(as.data.frame(res.df),
                    caption=paste("DESeq2 results for task:",caption),
-                   show.row.names=F)
+                   show.row.names=F,
+                   wrap.vals=wrap.vals)
   caption
 }
 
