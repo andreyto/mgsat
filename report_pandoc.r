@@ -36,6 +36,25 @@ make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
 }
 
+#' patch generated HTML report
+#' TODO: reimplement with pure R to work on Windows
+.pander_patch_html_report <- function() {
+  ## Linux, Mac etc Unix-like
+  if(.Platform$OS.type == "unix") {
+  script = "#!/bin/sh
+find . -name '*.html' | xargs sed -i -e 's/href=\"http:/href=\"https:/'
+find . -name '*.html' | xargs sed -i -e 's/src=\"http:/src=\"https:/'
+find . -name '*.html' | xargs sed -i -e '/stylesheets\\/skeleton.css/s/$/\\n<style>\\n\\.container \\{ width: 100\\%; \\}\\n\\.container \\.twelve\\.columns \\{   width: 80\\%; \\}\\n\\.container \\.three\\.columns \\{   width: 20\\%; \\}\\n<\\/style>\\n/'
+"
+  script_fn = ".pander_patch_html_report.sh"
+  writeLines(script,script_fn)
+  system2("/bin/sh",script_fn)
+  }
+  else {
+    warning("Not running on a Unix-like platform - patching of HTML report is not implemented yet.")
+  }
+}
+
 # print a named list as a string of named function arguments
 arg.list.as.str<-function(x,collapse=",") {
   paste("[",
@@ -278,6 +297,15 @@ pandoc.anchor.return <- function(anchor,text) {
                 pandoc.link.verbatim.return(sprintf("#%s",anchor),
                                             text))
   return(ret)
+}
+
+str_match_all_group <- function(string,pattern,group=1) {
+  lapply(stringr::str_match_all(string, pattern),function(x) if(length(x)>0) x[,group+1] else c())
+}
+
+pandoc.replace.patt.with.links <- function(string,pattern,url_templ="",collapse=",",default="") {
+  sapply(str_match_all_group(string,pattern),
+         function(x) if(!is.null(x)) paste(pandoc.link.verbatim.return(sprintf(url_templ,x),x),collapse = collapse) else default)
 }
 
 ## make string x a (more or less) valid file name
@@ -933,7 +961,7 @@ PandocAT$methods(save = function(out.file.loc,out.formats.loc,portable.html.loc,
                      portable.html=portable.html.loc)
     }
   }
-  
+  .pander_patch_html_report()
 })
 
 
