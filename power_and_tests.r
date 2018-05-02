@@ -2986,7 +2986,10 @@ plot.abund.meta <- function(m_a,
                             record.label=NULL,
                             theme_font_size = 0.8,
                             hide.ticks.x=F,
-                            show.samp.n=T) {
+                            show.samp.n=T,
+                            axis.text.rel=1.,
+                            axis.text.rel.x=axis.text.rel,
+                            axis.text.rel.y=axis.text.rel) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -3084,6 +3087,9 @@ plot.abund.meta <- function(m_a,
     return(list(facet.form=wr,n.facet=n.facet))
   }
   
+  hide.panel.grid.major.x = F
+  hide.panel.grid.major.y = F
+  
   fc.form.res = make.facet.formula(dat,id.vars.facet)
   facet.form = fc.form.res$facet.form
   n.facet = fc.form.res$n.facet
@@ -3141,6 +3147,7 @@ plot.abund.meta <- function(m_a,
     gp = ggplot(dat, aes_s)
     
     if(geom == "bar") {
+      # Create data.frame with shading info
       pos_dod = position_dodge(width=0.7) #0.9
       gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
                              position=pos_dod)
@@ -3150,6 +3157,16 @@ plot.abund.meta <- function(m_a,
         gp = gp + geom_errorbar(position = pos_dod,
                                 aes(ymin=lwr.ci, ymax=upr.ci,width=0.5),
                                 color="black")
+      }
+      if(!is.null(id.var.dodge)) {
+        shading = data.frame(min = seq(from = 0.5, to = max(as.numeric(as.factor(dat$feature))), by = 2),
+                             max = seq(from = 1.5, to = max(as.numeric(as.factor(dat$feature))) + 0.5, by = 2))
+        gp = gp + geom_rect(data = shading,
+                            aes(xmin = min, xmax = max, ymin = -Inf, ymax = Inf),
+                            color="grey",alpha = 0.02,
+                            inherit.aes=F)
+        if(flip.coords) hide.panel.grid.major.y = T
+        else hide.panel.grid.major.x = T
       }
     }
     else if(geom == "violin") {
@@ -3301,9 +3318,9 @@ plot.abund.meta <- function(m_a,
   theme_args = list(text=element_text(color=c("black","black"),size = fontsize*theme_font_size_abs),
                     legend.position = legend.position,
                     axis.title=element_blank(),
-                    axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) 1 else 1)),
+                    axis.text.y=element_text(color=c("black","black"),size = rel(if(sqrt.scale) axis.text.rel.y else axis.text.rel.y)),
                     plot.title = element_text(size = rel(1)),
-                    axis.text.x = element_text(size = rel(if(flip.coords || geom == "bar_stacked") 1 else 1.25),
+                    axis.text.x = element_text(size = rel(if(!flip.coords || geom == "bar_stacked") axis.text.rel.x else axis.text.rel.x*1.25),
                                                angle=if(flip.coords) 0 else 90, hjust = 1))
   if(hide.ticks.x) {
     gp = gp + 
@@ -3312,6 +3329,10 @@ plot.abund.meta <- function(m_a,
     theme_args[["axis.text.x"]]=element_blank()
     theme_args[["axis.ticks.x"]]=element_blank()
   }
+  
+  if(hide.panel.grid.major.y) theme_args[["panel.grid.major.y"]]=element_blank()
+  if(hide.panel.grid.major.x) theme_args[["panel.grid.major.x"]]=element_blank()
+  
   gp = gp + do.call(theme,theme_args)
   if (!is.null(ggp.comp)) {
     for (g.c in ggp.comp) {
@@ -4435,7 +4456,11 @@ plot.profiles <- function(m_a,
                             theme_font_size=0.8,
                             width=NULL,
                             height=NULL,
-                            hi.res.width=NULL
+                            hi.res.width=NULL,
+                            show.samp.n=T,
+                            axis.text.rel=1.,
+                            axis.text.rel.x=1.,
+                            axis.text.rel.y=1.
                           ),
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
@@ -4597,7 +4622,10 @@ plot.profiles <- function(m_a,
                                            record.label = show.profile.task$record.label,
                                            theme_font_size = show.profile.task$theme_font_size,
                                            hide.ticks.x = show.profile.task$hide.ticks.x,
-                                           show.samp.n = show.profile.task$show.samp.n
+                                           show.samp.n = show.profile.task$show.samp.n,
+                                           axis.text.rel = show.profile.task$axis.text.rel,
+                                           axis.text.rel.x = show.profile.task$axis.text.rel.x,
+                                           axis.text.rel.y = show.profile.task$axis.text.rel.y
                   )
                   
                   pl.hist = pl.abu$plot
@@ -5103,7 +5131,10 @@ mgsat.16s.task.template = within(list(), {
         show.samp.n = T,
         width = NULL,
         height = NULL,
-        hi.res.width = NULL
+        hi.res.width = NULL,
+        axis.text.rel = 1.,
+        axis.text.rel.x = 1.,
+        axis.text.rel.y = 1.
       )
       show.feature.meta.task=list()
     })
