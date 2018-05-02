@@ -72,7 +72,9 @@ vanilla_packages = c(
   "d3heatmap",
   "threejs",
   "networkD3",
-  "pairsD3"
+  "pairsD3",
+  ## convenient date conversions
+  "lubridate"
 )
 
 vanilla_packages_github = c(
