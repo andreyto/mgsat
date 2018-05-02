@@ -30,7 +30,8 @@ evalsOptions("graph.RDS",F)
 #evalsOptions("graph.name","plot-%d-%n")
 ## This is ggplot2 function that changes
 ## text base size within a current theme for entire session
-theme_set(theme_gray(base_size = 20))
+#theme_set(theme_gray(base_size = 20))
+theme_set(theme_bw(base_size = 20))
 
 make.global <- function(var) {
   assign(deparse(substitute(var)),var,envir=globalenv()) 
