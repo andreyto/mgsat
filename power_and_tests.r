@@ -7760,7 +7760,6 @@ interpret.args.point_lines <- function(dt,
   dt = dt[!is.na(.ind_point_to)]
   ind_point_from = dt[,.ind_point]
   ind_point_to = dt[,.ind_point_to]
-  make.global()
   line.color = dt[,.line_color]
   if(length(axes)==3) {
     ret = list(from=ind_point_from,
