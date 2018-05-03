@@ -3158,16 +3158,6 @@ plot.abund.meta <- function(m_a,
                                 aes(ymin=lwr.ci, ymax=upr.ci,width=0.5),
                                 color="black")
       }
-      if(!is.null(id.var.dodge)) {
-        shading = data.frame(min = seq(from = 0.5, to = max(as.numeric(as.factor(dat$feature))), by = 2),
-                             max = seq(from = 1.5, to = max(as.numeric(as.factor(dat$feature))) + 0.5, by = 2))
-        gp = gp + geom_rect(data = shading,
-                            aes(xmin = min, xmax = max, ymin = -Inf, ymax = Inf),
-                            color="grey",alpha = 0.02,
-                            inherit.aes=F)
-        if(flip.coords) hide.panel.grid.major.y = T
-        else hide.panel.grid.major.x = T
-      }
     }
     else if(geom == "violin") {
       gp = gp + geom_violin(scale= "width", trim=TRUE, adjust=1)
@@ -3206,6 +3196,20 @@ plot.abund.meta <- function(m_a,
         gp = gp + guides(colour = guide_legend(override.aes = list(size=line.legend.thickness)))
       }
     }
+    else {
+      if(!is.null(id.var.dodge)) {
+        ## create alternated shading and grid lines between the categories in order to visually separate
+        ## groups of dodged geoms
+        shading = data.frame(min = seq(from = 0.5, to = max(as.numeric(as.factor(dat$feature))), by = 2),
+                             max = seq(from = 1.5, to = max(as.numeric(as.factor(dat$feature))) + 0.5, by = 2))
+        gp = gp + geom_rect(data = shading,
+                            aes(xmin = min, xmax = max, ymin = -Inf, ymax = Inf),
+                            color="grey",alpha = 0.02,
+                            inherit.aes=F)
+        if(flip.coords) hide.panel.grid.major.y = T
+        else hide.panel.grid.major.x = T
+      }
+    }
     
     #stat_summary(fun.data = mean_cl_boot, geom = "pointrange",color="black")+
     #coord_flip()+
@@ -3217,7 +3221,11 @@ plot.abund.meta <- function(m_a,
     #labels facet with number of cases
     if(flip.coords) {
       gp = gp + coord_flip()
-    }
+      ## flip the legend order so that both the legend and
+      ## dodged geomes go from bottom to top
+      gp = gp + guides(fill = guide_legend(reverse=TRUE),
+                       color = guide_legend(reverse=TRUE))
+     }
     if(sqrt.scale) {
       gp = gp + coord_trans(y = "signed_sqrt")
     }
