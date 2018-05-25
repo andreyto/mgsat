@@ -2986,6 +2986,7 @@ plot.abund.meta <- function(m_a,
                             record.label=NULL,
                             theme_font_size = 0.8,
                             hide.ticks.x=F,
+                            hide.axis.text.x=F,
                             show.samp.n=T,
                             axis.text.rel=1.,
                             axis.text.rel.x=axis.text.rel,
@@ -3331,13 +3332,16 @@ plot.abund.meta <- function(m_a,
                     axis.text.x = element_text(size = rel(if(!flip.coords || geom == "bar_stacked") axis.text.rel.x else axis.text.rel.x*1.25),
                                                angle=if(flip.coords) 0 else 90, hjust = 1))
   if(hide.ticks.x) {
+    hide.axis.text.x = TRUE
     gp = gp + 
       scale_x_discrete(breaks=NULL) +
       scale_y_continuous(expand = c(0,0))
     theme_args[["axis.text.x"]]=element_blank()
     theme_args[["axis.ticks.x"]]=element_blank()
   }
-  
+  if(hide.axis.text.x) {
+    theme_args[["axis.text.x"]]=element_blank()
+  }
   if(hide.panel.grid.major.y) theme_args[["panel.grid.major.y"]]=element_blank()
   if(hide.panel.grid.major.x) theme_args[["panel.grid.major.x"]]=element_blank()
   
@@ -4165,7 +4169,9 @@ mcp.wy <- function (data, fact, align = FALSE, block, boots = 5000, udmat = FALS
 mgsat.divrich.counts.glm.test <- function(m_a.divrich,
                                           divrich.names=NULL,                                          
                                           formula.rhs,
-                                          glm.args=list()) {
+                                          glm.args=list(),
+                                          do.plot.profiles=F,
+                                          plot.profiles.task=NULL) {
   if(is.null(divrich.names)) {
     divrich.names = colnames(m_a.divrich$count)
   }
@@ -4209,9 +4215,28 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
                                  GLM with family %s and formula %s",
                                  descr,family,form.str)
       )
+      make.global()
       
+      if(do.plot.profiles) {
+        plot.profiles.task$show.profile.task = within(plot.profiles.task$show.profile.task,{
+          geoms = c("boxplot","dotplot")
+          dodged=T
+          faceted=F
+          theme_font_size=0.5
+          hide.ticks.x=T
+          flip.coords=F
+        })
+        do.call(plot.profiles,
+                c(list(m_a=list(count=m_a.divrich$count[,divrich.name,drop=F],attr=m_a.divrich$attr),
+                       feature.descr=sprintf("Abundance-based %s",
+                                             descr),
+                       value.name="index"),
+                  plot.profiles.task
+                )
+        )
+      }
+            
       res[[divrich.name]] = mod
-      
     }  
   }
   
@@ -4396,7 +4421,11 @@ mgsat.divrich.report <- function(m_a,
       
       res$glm.res = do.call(mgsat.divrich.counts.glm.test,
                             c(list(m_a.dr),
-                              counts.glm.task
+                              counts.glm.task,
+                              list(
+                                do.plot.profiles=do.plot.profiles,
+                                plot.profiles.task=plot.profiles.task
+                              )
                             )
       )
       
@@ -4468,7 +4497,8 @@ plot.profiles <- function(m_a,
                             show.samp.n=T,
                             axis.text.rel=1.,
                             axis.text.rel.x=1.,
-                            axis.text.rel.y=1.
+                            axis.text.rel.y=1.,
+                            flip.coords=c(T,F)
                           ),
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
@@ -4571,15 +4601,14 @@ plot.profiles <- function(m_a,
           report$add.header(paste(id.var.dodge$descr,"plots. Iterating over orientation and, optionally, scaling"))
           report$push.section(report.section)
           sqrt.scale = show.profile.task$sqrt.scale
-          for(other.params in list(
-            list(flip.coords=T,
-                 sqrt.scale=F,
-                 descr="Plot is in flipped orientation, Y axis not scaled."),
-            list(flip.coords=F,
-                 sqrt.scale=sqrt.scale,
-                 descr=paste("Plot is in original orientation", if(sqrt.scale) ", Y axis SQRT scaled." else ".", sep=""))
-          )) {
-            
+          for(flip.c in show.profile.task$flip.coords) {
+            other.params = list(
+              flip.coords=flip.c,
+              sqrt.scale=if(flip.c) F else sqrt.scale,
+              descr=if(flip.c) "Plot is in flipped orientation, Y axis not scaled." else 
+                paste("Plot is in original orientation", 
+                                        if(sqrt.scale) ", Y axis SQRT scaled." else ".", sep=""))
+
             report$add.header(paste(feature.descr, 
                                     other.params$descr, "Iterating over plot geometry"))
             report$push.section(report.section)
@@ -4630,6 +4659,7 @@ plot.profiles <- function(m_a,
                                            record.label = show.profile.task$record.label,
                                            theme_font_size = show.profile.task$theme_font_size,
                                            hide.ticks.x = show.profile.task$hide.ticks.x,
+                                           hide.axis.text.x = show.profile.task$hide.axis.text.x,
                                            show.samp.n = show.profile.task$show.samp.n,
                                            axis.text.rel = show.profile.task$axis.text.rel,
                                            axis.text.rel.x = show.profile.task$axis.text.rel.x,
@@ -5135,6 +5165,7 @@ mgsat.16s.task.template = within(list(), {
         legend.title=NULL,
         record.label=NULL,
         hide.ticks.x=F,
+        hide.axis.text.x=F,
         theme_font_size = 0.8,
         show.samp.n = T,
         width = NULL,
@@ -5142,7 +5173,8 @@ mgsat.16s.task.template = within(list(), {
         hi.res.width = NULL,
         axis.text.rel = 1.,
         axis.text.rel.x = 1.,
-        axis.text.rel.y = 1.
+        axis.text.rel.y = 1.,
+        flip.coords = c(F,T)
       )
       show.feature.meta.task=list()
     })
