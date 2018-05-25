@@ -41,11 +41,14 @@ make.global <- function(var) {
 #' TODO: reimplement with pure R to work on Windows
 .pander_patch_html_report <- function() {
   ## Linux, Mac etc Unix-like
+  ## The dollar sign in the substitution pattern is a work-around the inability of Mac OS sed to understand the newline eascape sequence.
+  ## It only understands the actual newline after the line contunuation backlash. The dollar sign is passed to the shell, and the lines
+  ## are concatenated to build sed pattern string: https://superuser.com/questions/307165/newlines-in-sed-on-mac-os-x
   if(.Platform$OS.type == "unix") {
   script = "#!/bin/sh
-find . -name '*.html' | xargs sed -i -e 's/href=\"http:/href=\"https:/'
-find . -name '*.html' | xargs sed -i -e 's/src=\"http:/src=\"https:/'
-find . -name '*.html' | xargs sed -i -e '/stylesheets\\/skeleton.css/s/$/\\n<style>\\n\\.container \\{ width: 100\\%; \\}\\n\\.container \\.twelve\\.columns \\{   width: 80\\%; \\}\\n\\.container \\.three\\.columns \\{   width: 20\\%; \\}\\n<\\/style>\\n/'
+find . -name '*.html' | xargs sed -i '' -e 's/href=\"http:/href=\"https:/'
+find . -name '*.html' | xargs sed -i '' -e 's/src=\"http:/src=\"https:/'
+find . -name '*.html' | xargs sed -i '' -e '/stylesheets\\/skeleton.css/s/$/\\'$'\n''<style>\\'$'\n''\\.container \\{ width: 100\\%; \\}\\'$'\n''\\.container \\.twelve\\.columns \\{   width: 80\\%; \\}\\'$'\n''\\.container \\.three\\.columns \\{   width: 20\\%; \\}\\'$'\n''<\\/style>\\'$'\n''/'
 "
   script_fn = ".pander_patch_html_report.sh"
   writeLines(script,script_fn)
