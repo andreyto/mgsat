@@ -2990,7 +2990,8 @@ plot.abund.meta <- function(m_a,
                             show.samp.n=T,
                             axis.text.rel=1.,
                             axis.text.rel.x=axis.text.rel,
-                            axis.text.rel.y=axis.text.rel) {
+                            axis.text.rel.y=axis.text.rel,
+                            dodge.width=0.7) {
   
   if(is.null(id.var.dodge)) {
     id.vars.facet = id.vars
@@ -3149,7 +3150,7 @@ plot.abund.meta <- function(m_a,
     
     if(geom == "bar") {
       # Create data.frame with shading info
-      pos_dod = position_dodge(width=0.7) #0.9
+      pos_dod = position_dodge(width=dodge.width) #0.9
       gp = gp + stat_summary(fun.y=stat_summary.fun.y, geom="bar", aes(width=0.5), 
                              position=pos_dod)
       #geom_obj = stat_summary(aes(label=round(..y..,2)), fun.y=mean, geom="text")
@@ -3199,6 +3200,7 @@ plot.abund.meta <- function(m_a,
     }
     else {
       if(!is.null(id.var.dodge)) {
+        if(flip.coords) {
         ## create alternated shading and grid lines between the categories in order to visually separate
         ## groups of dodged geoms
         shading = data.frame(min = seq(from = 0.5, to = max(as.numeric(as.factor(dat$feature))), by = 2),
@@ -3207,6 +3209,7 @@ plot.abund.meta <- function(m_a,
                             aes(xmin = min, xmax = max, ymin = -Inf, ymax = Inf),
                             color="grey",alpha = 0.02,
                             inherit.aes=F)
+        }
         if(flip.coords) hide.panel.grid.major.y = T
         else hide.panel.grid.major.x = T
       }
@@ -3222,11 +3225,14 @@ plot.abund.meta <- function(m_a,
     #labels facet with number of cases
     if(flip.coords) {
       gp = gp + coord_flip()
-      ## flip the legend order so that both the legend and
-      ## dodged geomes go from bottom to top
-      gp = gp + guides(fill = guide_legend(reverse=TRUE),
-                       color = guide_legend(reverse=TRUE))
-     }
+    }
+
+    ## flip the legend order so that both the legend and
+    ## dodged geomes go from bottom to top if flipped coords,
+    ## and the legend order would be the same in non-flipped
+    gp = gp + guides(fill = guide_legend(reverse=TRUE),
+                     color = guide_legend(reverse=TRUE))
+     
     if(sqrt.scale) {
       gp = gp + coord_trans(y = "signed_sqrt")
     }
@@ -3260,8 +3266,8 @@ plot.abund.meta <- function(m_a,
     #this will be used to label each facet with number of cases in it
     facet.cnt <- plyr::ddply(.data=data, id.vars.facet, function(x,feature.names) 
     { c(.n=nrow(x),
-        .y=mean(colMeans(as.matrix(x[,feature.names]),na.rm=T),
-                names=F,na.rm=T),
+        .y=mean(apply(as.matrix(x[,feature.names]),2, function(z) max(z,na.rm=T)),
+                names=F,na.rm=T)*(if(!flip.coords) 2./3 else 1./3),
         .x=max(length(feature.names)/3,1)) },
     feature.names)
     if(geom=="bar_stacked") {
@@ -3284,7 +3290,7 @@ plot.abund.meta <- function(m_a,
                   data=facet.cnt, 
                   colour="black", 
                   inherit.aes=F, 
-                  size=4,
+                  size=theme_font_size_abs/3,
                   parse=FALSE)
     }
   }
@@ -4215,8 +4221,7 @@ mgsat.divrich.counts.glm.test <- function(m_a.divrich,
                                  GLM with family %s and formula %s",
                                  descr,family,form.str)
       )
-      make.global()
-      
+
       if(do.plot.profiles) {
         plot.profiles.task$show.profile.task = within(plot.profiles.task$show.profile.task,{
           geoms = c("boxplot","dotplot")
@@ -4283,6 +4288,7 @@ mgsat.divrich.report <- function(m_a,
                                  beta.task=NULL,
                                  plot.profiles.task=list(),
                                  do.plot.profiles=T,
+                                 do.plot.profiles.glm=T,
                                  do.incidence=T,
                                  do.abundance=T,
                                  do.abundance.richness=F,
@@ -4423,7 +4429,7 @@ mgsat.divrich.report <- function(m_a,
                             c(list(m_a.dr),
                               counts.glm.task,
                               list(
-                                do.plot.profiles=do.plot.profiles,
+                                do.plot.profiles=do.plot.profiles.glm,
                                 plot.profiles.task=plot.profiles.task
                               )
                             )
@@ -4498,7 +4504,8 @@ plot.profiles <- function(m_a,
                             axis.text.rel=1.,
                             axis.text.rel.x=1.,
                             axis.text.rel.y=1.,
-                            flip.coords=c(T,F)
+                            flip.coords=c(T,F),
+                            n.top=20
                           ),
                           show.feature.meta.task=list(),
                           feature.descr="Abundance.") {
@@ -4663,7 +4670,9 @@ plot.profiles <- function(m_a,
                                            show.samp.n = show.profile.task$show.samp.n,
                                            axis.text.rel = show.profile.task$axis.text.rel,
                                            axis.text.rel.x = show.profile.task$axis.text.rel.x,
-                                           axis.text.rel.y = show.profile.task$axis.text.rel.y
+                                           axis.text.rel.y = show.profile.task$axis.text.rel.y,
+                                           n.top = show.profile.task$n.top,
+                                           dodge.width = show.profile.task$dodge.width
                   )
                   
                   pl.hist = pl.abu$plot
@@ -5057,6 +5066,7 @@ mgsat.16s.task.template = within(list(), {
       ## this will be taken from task-wide structure
       counts.genesel.task = NULL
       do.plot.profiles = T
+      do.plot.profiles.glm = T
       ## Computing beta-diversity matrix on multiple rarefications can take a while
       do.beta = T
       do.accum = T
@@ -5174,7 +5184,9 @@ mgsat.16s.task.template = within(list(), {
         axis.text.rel = 1.,
         axis.text.rel.x = 1.,
         axis.text.rel.y = 1.,
-        flip.coords = c(F,T)
+        flip.coords = c(F,T),
+        n.top = 20,
+        dodge.width = 0.7
       )
       show.feature.meta.task=list()
     })
