@@ -7678,7 +7678,7 @@ make.color.legend.scatter.js3d <- function(xyz,color_val,color) {
 plot.scatter.js3d <- function(xyz,data,color=NULL,
                               labels=NULL,size=NULL,pch=NULL,
                               renderer="auto",show.color.legend=T,
-                              num.ticks=6,
+                              num.ticks=c(6,6,6),
                               axis.scale=NA,
                               lines.args=NULL,
                               cex.lab=0.8,
