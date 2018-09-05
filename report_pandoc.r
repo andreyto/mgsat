@@ -44,15 +44,19 @@ make.global <- function(var) {
   ## The dollar sign in the substitution pattern is a work-around the inability of Mac OS sed to understand the newline eascape sequence.
   ## It only understands the actual newline after the line contunuation backlash. The dollar sign is passed to the shell, and the lines
   ## are concatenated to build sed pattern string: https://superuser.com/questions/307165/newlines-in-sed-on-mac-os-x
+  ## On Ubuntu, the shell that understands the dollar sign trick should be `bash`, not `sh`
+  ##
+  ## Using the -i non-empty extension and deleting is the only way that works for both Mac OS, latest Ubuntu and CentOS 6
   if(.Platform$OS.type == "unix") {
-  script = "#!/bin/sh
-find . -name '*.html' | xargs sed -i '' -e 's/href=\"http:/href=\"https:/'
-find . -name '*.html' | xargs sed -i '' -e 's/src=\"http:/src=\"https:/'
-find . -name '*.html' | xargs sed -i '' -e '/stylesheets\\/skeleton.css/s/$/\\'$'\n''<style>\\'$'\n''\\.container \\{ width: 100\\%; \\}\\'$'\n''\\.container \\.twelve\\.columns \\{   width: 80\\%; \\}\\'$'\n''\\.container \\.three\\.columns \\{   width: 20\\%; \\}\\'$'\n''<\\/style>\\'$'\n''/'
+  script = "#!/bin/bash
+find . -name '*.html' | xargs sed -i'.sed.bak' -e 's/href=\"http:/href=\"https:/'
+find . -name '*.html' | xargs sed -i'.sed.bak' -e 's/src=\"http:/src=\"https:/'
+find . -name '*.html' | xargs sed -i'.sed.bak' -e '/stylesheets\\/skeleton.css/s/$/\\'$'\n''<style>\\'$'\n''\\.container \\{ width: 100\\%; \\}\\'$'\n''\\.container \\.twelve\\.columns \\{   width: 80\\%; \\}\\'$'\n''\\.container \\.three\\.columns \\{   width: 20\\%; \\}\\'$'\n''<\\/style>\\'$'\n''/'
+rm *.sed.bak
 "
   script_fn = ".pander_patch_html_report.sh"
   writeLines(script,script_fn)
-  system2("/bin/sh",script_fn)
+  system2("/bin/bash",script_fn)
   }
   else {
     warning("Not running on a Unix-like platform - patching of HTML report is not implemented yet.")
