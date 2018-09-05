@@ -323,7 +323,8 @@ index_as_left_padded_str <- function(x,n_zeros=NULL) {
   sprintf(frmt,x)
 }
 
-# copied from https://stackoverflow.com/a/25555105
+#' Geometric mean of a 1-D vector
+#' copied from https://stackoverflow.com/a/25555105
 gm_mean = function(x, na.rm=TRUE, zero.propagate = FALSE){
   if(any(x < 0, na.rm = TRUE)){
     return(NaN)
@@ -336,6 +337,11 @@ gm_mean = function(x, na.rm=TRUE, zero.propagate = FALSE){
   } else {
     exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
   }
+}
+
+#' Geometric median (spatial median or L1-median) of a matrix (rows are observations)
+gm_median = function(x,...) {
+  Gmedian::Weiszfeld(x,...)$median
 }
 
 missing.join.keys.report <- function(x,y,by,do.report=T,name.x="x",name.y="y",report.only.keys=F) {
@@ -7835,7 +7841,7 @@ interpret.args.point_lines <- function(dt,
   
   if(!is.null(line.group)) {
     dt[, `:=`(.ind_point_to = 
-                c(if(.N>1) .ind_point[2:.N] else c(),
+                c(if(.N>1) .ind_point[2:.N] else as.integer(c()),
                   if(line.order.cyclic) .ind_point[1] else NA),
               .ind_point_group = seq(.N)), by = line.group]
   }
