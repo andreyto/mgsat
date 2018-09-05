@@ -82,12 +82,12 @@ vanilla_packages_github = c(
   ###"juba/scatterD3",
   "bokeh/rbokeh",
   "bwlewis/doRedis",
-  "smartinsightsfromdata/rpivotTable"
+  "smartinsightsfromdata/rpivotTable",
+  "andreyto/GeneSelector@at_samr"
 )
 
 bio_packages = c(
   "multtest",
-  "GeneSelector",
   "RColorBrewer",
   "Heatplus",
   "DESeq2",
@@ -103,7 +103,7 @@ install_required_packages <- function() {
   ## packages needed on the system before you can install when building from sources:
   ##working java compiler for rJava: apt-get install openjdk-7-jdk && R CMD javareconf
   ##for other packages, the easiest on Debian is to use:
-  ##apt-get build-dep r-cran-xml r-cran-rgl r-cran-rcurl r-cran-car
+  ##apt-get libxml2-dev r-cran-xml r-cran-rgl r-cran-rcurl r-cran-car
   ##Package car uses pbkrtest, which requires R > 3.2.3. If you want to use older R, do:
   ##library(devtools); install_version("pbkrtest",version='0.4-5'); install.packages("car")
   ##Or use package "versions" to do the same.
