@@ -74,7 +74,9 @@ vanilla_packages = c(
   "networkD3",
   "pairsD3",
   ## convenient date conversions
-  "lubridate"
+  "lubridate",
+  ## geometric median for robust multidimensional averaging 
+  "Gmedian"
 )
 
 vanilla_packages_github = c(
