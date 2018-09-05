@@ -12,6 +12,13 @@ load.meta.diet <- function(file.name) {
     ## in the right order on plots (and possible used
     ## in models that care about ordered factors)
     meta$age.quant = quantcut.ordered(meta$age)
+    meta$Sample.type.ord = ordered(meta$Sample.type)
+    meta$FullLabel = paste(meta$SampleID,meta$Sample.type,meta$SubjectID,meta$MatchedGroupID)
+    mask = meta$Drug.Before.Diet
+    meta$Drug.Before.Diet = "DrugBefore_NO"
+    meta$Drug.Before.Diet[mask] = "DrugBefore_YES"
+    meta$Drug.Before.Diet = factor(meta$Drug.Before.Diet)
+    meta$Drug.Before.Diet.Visit = paste0(meta$Drug.Before.Diet,".",meta$visit)
     return (meta)
 }
   
@@ -71,7 +78,8 @@ summary.meta.diet <- function(m_a) {
 }
 
 
-new_ordination.task <- function(main.meta.var,norm.method,label=NULL,size=NULL) {
+new_ordination.task <- function(main.meta.var,norm.method,label=NULL,size=NULL,
+                                lines.args=NULL) {
   if(norm.method=="prop") {
     ord.method = "CCA"
     distance.0="bray"
@@ -92,7 +100,8 @@ new_ordination.task <- function(main.meta.var,norm.method,label=NULL,size=NULL) 
           type="samples",
           color=main.meta.var,
           label = label,
-          size = size
+          size = size,
+          lines.args = lines.args
           ##other arguments to phyloseq:::plot_ordination
         )
       ),
@@ -106,14 +115,14 @@ new_ordination.task <- function(main.meta.var,norm.method,label=NULL,size=NULL) 
           type="samples",
           color=main.meta.var,
           label = label,
-          size = size
+          size = size,
+          lines.args = lines.args
           ##other arguments to phyloseq:::plot_ordination
         )
       )          
     )
   })            
 }
-
 
 ## This function must generate a list with analysis tasks
 
@@ -235,7 +244,7 @@ gen.tasks.diet <- function() {
       do.glmer = F
       do.plot.profiles.abund=T
       do.heatmap.abund=T
-      
+
       divrich.task = within(divrich.task,{
         group.attr = NULL
         counts.glm.task = NULL
@@ -259,7 +268,9 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID") 
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="FullLabel",
+                                            lines.args = list(line.group="SubjectID",
+                                                              line.order="visit")) 
       
     })
     
@@ -288,6 +299,7 @@ gen.tasks.diet <- function() {
     })
     
     test.counts.task = within(test.counts.task, {
+      
       do.divrich = T
       do.deseq2 = T
       do.adonis = T
@@ -297,7 +309,7 @@ gen.tasks.diet <- function() {
       do.plot.profiles.abund=T
       do.heatmap.abund=T
       do.network.features.combined=T
-      
+
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
         counts.glm.task = within(counts.glm.task,{
@@ -345,7 +357,9 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID") 
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SubjectID",
+                                            lines.args = list(line.group="MatchedGroupID",
+                                                              line.order="Sample.type.ord")) 
       
     })
     
@@ -441,7 +455,7 @@ gen.tasks.diet <- function() {
     do.summary.meta = F
     
     do.tests = T
-    
+
     get.taxa.meta.aggr<-function(m_a) { 
       m_a = get.taxa.meta.aggr.base(m_a)
       m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient" 
@@ -462,7 +476,7 @@ gen.tasks.diet <- function() {
       do.plot.profiles.abund=F
       do.heatmap.abund=T
       do.extra.method = taxa.levels
-      
+            
       divrich.task = within(divrich.task,{
         group.attr = main.meta.var
         counts.glm.task = within(counts.glm.task,{
@@ -519,7 +533,9 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID")
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="FullLabel",
+                                            lines.args = list(line.group="SubjectID",
+                                                              line.order="visit"))
       
       
       extra.method.task = within(extra.method.task, {
@@ -575,7 +591,7 @@ gen.tasks.diet <- function() {
     
     main.meta.var = "visit"
     
-    descr = "Patients samples"
+    descr = "Patient samples"
     
     do.summary.meta = F
     
@@ -647,21 +663,75 @@ gen.tasks.diet <- function() {
         attr.annot.names=c(main.meta.var)
       })
       
-      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID")
+      ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="FullLabel",
+                                            lines.args = list(line.group="SubjectID",
+                                                              line.order="visit"))
       
     })
     
   })
+
+  task5 = within( task0, {
+    
+    main.meta.var = "DietStatus"
+    
+    descr = "Patient samples aggregated as geometric medians post-normalization by drug before diet status"
+    
+    do.summary.meta = F
+    
+    do.tests = T
+
+    taxa.levels = 6
+    
+    get.taxa.meta.aggr<-function(m_a) { 
+      m_a = get.taxa.meta.aggr.base(m_a)
+      m_a = subset.m_a(m_a,subset=(m_a$attr$Sample.type=="patient"))
+      return(m_a)
+    }
+    
+    test.counts.task = within(test.counts.task, {
+      
+      do.divrich = c()
+      do.deseq2 = F
+      do.adonis = F
+      do.genesel = F
+      do.stabsel = F
+      do.glmer = F
+      do.plot.profiles.abund=F
+      do.heatmap.abund=F
+      do.aggr.after.norm = taxa.levels
+
+      aggr.after.norm.task = within(list(), {
+        func = function(m_a,m_a.norm,m_a.abs,res.tests,...) 
+        {
+          m_a.norm = aggregate.by.meta.data.m_a(m_a.norm,group_col="Drug.Before.Diet.Visit",count_aggr=gm_median,colwise = F)
+          m_a.norm$attr$FullLabel = m_a.norm$attr$Drug.Before.Diet.Visit
+          ## generate m_a as m_a.norm with equal library size to make sure that we
+          ## are averaging after proprotions and not after summing raw counts downstream
+          ## of this function
+          m_a = m_a.norm
+          m_a$count = m_a$count*10000
+          return(list(m_a=m_a,m_a.norm=m_a.norm,m_a.abs=m_a))
+        }
+        ##possibly other arguments to func()
+      })
+      
+      ordination.task = new_ordination.task(main.meta.var,norm.method="prop",label="FullLabel",
+                                            lines.args = list(line.group="Drug.Before.Diet",
+                                                              line.order="visit"))   
+    })
+    
+  })
   
-  return (list(task2))
-  #return (list(task1,task2,task2.1,task3,task3.1,task4))
+  return (list(task5))
+  return (list(task1,task2,task2.1,task3,task3.1,task4))
 }
 
 
-
+mc.cores = 8
 ## number of cores to use on multicore machines
-options(mc.cores=4)
-options(boot.ncpus=4)
+options(mc.cores=mc.cores)
+options(boot.ncpus=mc.cores)
 ## parallel backend
 options(boot.parallel="snow")
 
@@ -685,7 +755,7 @@ source(paste(MGSAT_SRC,"dependencies.r",sep="/"),local=T)
 load_required_packages()
 
 library("BiocParallel")
-register(SnowParam(4))
+register(SnowParam(mc.cores))
 
 ## loads MGSAT code
 source(paste(MGSAT_SRC,"report_pandoc.r",sep="/"),local=T)
@@ -706,3 +776,4 @@ res = proc.project(
 
 report$save()
 
+## TODO: ordinations 3D; speakeasi; add pivot; add 3D ord with lines; add geom median bars
