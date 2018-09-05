@@ -8094,9 +8094,9 @@ mgsat.plot.igraph <- function (g, vertex.data = NULL,
   return(p)
 }
 
-scale.to.range <- function(x,quant.min=0.1,quant.max=0.9) {
+scale.to.range <- function(x,quant.min=0.1,quant.max=0.9,na.rm=T) {
   require(vegan)
-  q = quantile(x,c(quant.min,quant.max))
+  q = quantile(x,c(quant.min,quant.max),na.rm=na.rm)
   x[x<q[1]] = q[1]
   x[x>q[2]] = q[2]
   return (decostand(x,method="range"))
@@ -8143,12 +8143,12 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
     if(is.numeric(vertex.data[,Group])) {
       vertex.data[,Group] = signif(vertex.data[,Group],6)
       q = quantile(vertex.data[,Group],c(0.1,0.5,0.9))
-      colorScale=JS(sprintf('d3.scale.linear()
+      colorScale=JS(sprintf('d3.scaleLinear()
                      .domain([%s, %s, %s])
                      .range(["blue", "grey", "red"])',q[1],q[2],q[3]))
     }
     else {
-      colorScale=JS('d3.scale.category10()')
+      colorScale=JS('d3.schemeCategory10')
     }
   }
   NodeID = vertex.text.options$label
@@ -8165,7 +8165,8 @@ mgsat.plot.igraph.d3net <- function (g, vertex.data = NULL,
                    zoom = T, 
                    clickAction = 'd.fixed = !d.fixed',
                    radiusCalculation=radiusCalculation,
-                   colourScale = colorScale)
+                   colourScale = colorScale,
+                   fontSize = 11)
   return (list(plot.obj=p,msg="OK"))
 }
 
@@ -8183,12 +8184,15 @@ network.spiec.easi <- function(count,
   options = update.list(network.spiec.easi.options,list(...))
   #se.est = dbg.cache$se.est
   #if(is.null(se.est)) {
+  ## without bringing everything to the global namespace, the package gives an error of
+  ## not being able to find some function through a get() call: 
+  library(SpiecEasi)
   se.est <- do.call(SpiecEasi::spiec.easi,c(list(count),options))
   #}
-  ##make.global(name="dbg.cache")
-  rownames(se.est$refit) = colnames(se.est$data)
-  colnames(se.est$refit) = colnames(se.est$data)
-  gr = igraph::graph.adjacency(as.matrix(se.est$refit), mode = "undirected",diag=F)
+  rownames(se.est$refit$stars) = colnames(count)
+  colnames(se.est$refit$stars) = colnames(count)
+  adj = getRefit(se.est)
+  gr = adj2igraph(adj,vertex.attr = list(name = rownames(adj)))
   return (list(method.res=se.est,graph=gr))
 }  
 
@@ -8228,14 +8232,13 @@ network.report <- function(m_a,
                  )
     )
     report$add(gp,caption=caption)
-    
     gp.3d.res = do.call(mgsat.plot.igraph.d3net,
                         c(list(gr),
                           plot.task
                         )
     )
-    if(!is.null(gp.3d.res$plot)) {
-      report$add.widget(gp,caption=caption)
+    if(!is.null(gp.3d.res$plot.obj)) {
+      report$add.widget(gp.3d.res$plot.obj,caption=caption)
     }
     else {
       report$add.p(sprintf("Not creating 3D network plot. %s",gp.3d.res$msg))
