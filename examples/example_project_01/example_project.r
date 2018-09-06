@@ -75,6 +75,16 @@ summary.meta.diet <- function(m_a) {
                stat_smooth(method="loess", se = T,degree=1,size=1),
              caption="Plot for age and visit with Loess trend line")
   
+  p = rpivotTable::rpivotTable(meta,
+                               cols = c("visit"),
+                               rows = c("Sample.type","DietStatus"),
+                               aggregatorName = "Count", 
+                               vals = "SampleID", 
+                               rendererName = "Stacked Bar Chart")
+  
+  report$add.widget(p,caption = "Dynamic Pivot Table to explore metadata distribution 
+                    at the lowest granularity (drag and drop field names and pick averaging 
+                    functions or plot types)")  
 }
 
 
@@ -675,7 +685,7 @@ gen.tasks.diet <- function() {
     
     main.meta.var = "DietStatus"
     
-    descr = "Patient samples aggregated as geometric medians post-normalization by drug before diet status"
+    descr = "Patient samples aggregated as geometric medians post-normalization, split by drug before diet status"
     
     do.summary.meta = F
     
@@ -723,8 +733,8 @@ gen.tasks.diet <- function() {
     
   })
   
-  return (list(task5))
-  return (list(task1,task2,task2.1,task3,task3.1,task4))
+  #return (list(task1))
+  return (list(task1,task2,task2.1,task3,task3.1,task4,task5))
 }
 
 
@@ -775,5 +785,3 @@ res = proc.project(
 )
 
 report$save()
-
-## TODO: ordinations 3D; speakeasi; add pivot; add 3D ord with lines; add geom median bars
