@@ -5179,6 +5179,9 @@ mgsat.16s.task.template = within(list(), {
         line.legend.thickness=rel(3),
         facet_wrap_ncol=3,
         legend.title=NULL,
+        ## record.label will control the order of bars in stacked bar plot,
+        ## without that argument they will be ordered by abundance of the most
+        ## dominant taxa
         record.label=NULL,
         hide.ticks.x=F,
         hide.axis.text.x=F,

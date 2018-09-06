@@ -222,6 +222,12 @@ gen.tasks.diet <- function() {
       
       ordination.task = new_ordination.task(main.meta.var,norm.method="clr",label="SampleID")      
       
+      plot.profiles.task = within(plot.profiles.task, {
+        show.profile.task=within(show.profile.task,{
+          legend.title = "Taxa"
+        })
+      })
+      
     })
     
   })
@@ -707,10 +713,15 @@ gen.tasks.diet <- function() {
       do.genesel = F
       do.stabsel = F
       do.glmer = F
-      do.plot.profiles.abund=F
-      do.heatmap.abund=F
+      do.plot.profiles.abund=T
+      do.heatmap.abund=T
       do.aggr.after.norm = taxa.levels
 
+      norm.count.task = within(norm.count.task, {
+        method="norm.prop"
+        method.args=list()
+      })
+      
       aggr.after.norm.task = within(list(), {
         func = function(m_a,m_a.norm,m_a.abs,res.tests,...) 
         {
@@ -718,12 +729,33 @@ gen.tasks.diet <- function() {
           m_a.norm$attr$FullLabel = m_a.norm$attr$Drug.Before.Diet.Visit
           ## generate m_a as m_a.norm with equal library size to make sure that we
           ## are averaging after proprotions and not after summing raw counts downstream
-          ## of this function
+          ## of this function. **Note**: this assumes that original normalization method
+          ## was `norm.prop`
           m_a = m_a.norm
           m_a$count = m_a$count*10000
           return(list(m_a=m_a,m_a.norm=m_a.norm,m_a.abs=m_a))
         }
         ##possibly other arguments to func()
+      })
+
+      plot.profiles.task = within(plot.profiles.task, {
+        id.vars.list = list(c())
+        do.profile=T
+        do.feature.meta=T
+        show.profile.task=within(show.profile.task,{
+          geoms=c("bar_stacked")
+          ## record.label will control the order of bars in stacked bar plot,
+          ## without that argument they will be ordered by abundance of the most
+          ## dominant taxa
+          record.label="SampleID"
+          #facet_wrap_ncol=3
+          #height=1000
+          #width=1000
+        })        
+      })
+      
+      heatmap.combined.task = within(heatmap.combined.task, {
+        attr.annot.names=c(main.meta.var,"Drug.Before.Diet","visit")
       })
       
       ordination.task = new_ordination.task(main.meta.var,norm.method="prop",label="FullLabel",
@@ -733,7 +765,7 @@ gen.tasks.diet <- function() {
     
   })
   
-  #return (list(task1))
+  return (list(task5))
   return (list(task1,task2,task2.1,task3,task3.1,task4,task5))
 }
 
