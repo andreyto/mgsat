@@ -319,8 +319,18 @@ pandoc.replace.patt.with.links <- function(string,pattern,url_templ="",collapse=
 ## make string x a (more or less) valid file name
 str.to.file.name <- function(x,max.length=0) {
   x = gsub('[^-[:alnum:]._]+','.',x)
+  ## R Studio's own Web server does not like file names with double .. in them.
+  ## For example, if you generate here "something.", then append extension ".html"
+  ## and get "something..html", and try to open it from the Files tab, you will get
+  ## file/something..html not found. Below we zap all double dots, and any tailing dots
+  ## after the max length cut has been applied.
+  x = gsub('[.]+','.',x)
   if(max.length>0) {
     x = substring(x,1,max.length)
+  }
+  x = gsub('[.]+$','',x)
+  if(stringr::str_length(x)==0) {
+    x = "file"
   }
   x
 }
