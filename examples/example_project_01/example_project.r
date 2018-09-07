@@ -716,7 +716,8 @@ gen.tasks.diet <- function() {
       do.plot.profiles.abund=T
       do.heatmap.abund=T
       do.aggr.after.norm = taxa.levels
-
+      do.ordination = F
+      
       norm.count.task = within(norm.count.task, {
         method="norm.prop"
         method.args=list()
@@ -765,7 +766,7 @@ gen.tasks.diet <- function() {
     
   })
   
-  return (list(task5))
+  #return (list(task2))
   return (list(task1,task2,task2.1,task3,task3.1,task4,task5))
 }
 
@@ -805,7 +806,7 @@ source(paste(MGSAT_SRC,"power_and_tests.r",sep="/"),local=T)
 source(paste(MGSAT_SRC,"g_test.r",sep="/"),local=T)
 
 ## leave with try.debug=F for production runs
-set_trace_options(try.debug=T)
+set_trace_options(try.debug=F)
 
 report <- PandocAT$new(author="noone@mail.com",
                        title="Analysis of Dieting study 16S data",

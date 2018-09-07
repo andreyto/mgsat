@@ -5998,6 +5998,11 @@ deseq2.join_results_with_design <- function(dds,res) {
   res
 }
 
+formula_varnames <- function(x,all.vars) {
+  names = unique(all.names(x))
+  names[names %in% all.vars]
+}
+
 #' m_a can be m_a or DESeqDataSet type
 #' If m_a is DESeqDataSet, and formula.rhs is not NULL,
 #' if will override formula in the DESeqDataSet
@@ -6007,7 +6012,9 @@ deseq2.report <- function(m_a,
                           result.tasks=list(list()),
                           round.to.int=T,
                           alpha=0.05,
-                          do.report = T
+                          do.report = T,
+                          wrap.vals = T,
+                          max.n.columns = 20
 ) {
   library(DESeq2)
   library(foreach)
@@ -6042,7 +6049,13 @@ deseq2.report <- function(m_a,
     )
     res = deseq2.join_results_with_design(dds,res)    
     if(do.report) {
-      deseq2.report.results(res=res,formula.rhs=formula.rhs,result.task=result.task)      
+      descr_res = deseq2.report.results(res=res,formula.rhs=formula.rhs,result.task=result.task,wrap.vals = wrap.vals)
+      tt = as.data.table(res,keep.rownames = "ID")
+      m_a.heat = as.m_a.dds(dds,do.rlog.norm=T)
+      plot_heatmap.deseq2(m_a=m_a.heat,tt=tt,max.n.columns=max.n.columns,
+                          column_names = "ID",
+                          attr.annot.names = formula_varnames(design(dds),colnames(m_a.heat$attr)))
+      
     }
     res
   }
@@ -7337,16 +7350,17 @@ heatmap.feature.test.annot <- function(test.res,
                                                   axis = T,
                                                   which=annot.which,
                                                   ylim = make.plot.ylim(y,margin.abs = c(0,1)),
-                                                  gp = gpar(col = ifelse(y_orig <= p.val.adj.alpha, "green", "black")),
                                                   axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
     decorations[[p.val]] = make_annot_label(p.val,label=sprintf("%s, -log10",p.val))
   }
   if(!is.null(p.val.adj)) {
+    y_orig = test.res[[p.val.adj]]
     y = -log10(test.res[[p.val.adj]]+1e-16)
     annots[[p.val.adj]] = ComplexHeatmap::anno_points(y,
                                                       axis = T,
                                                       which=annot.which,
                                                       ylim = make.plot.ylim(y,margin.abs = c(0,1)),
+                                                      gp = gpar(col = ifelse(y_orig <= p.val.adj.alpha, "green", "black")),
                                                       axis_gp = gpar(fontsize=fontsize,cex=cex_axis))
     decorations[[p.val.adj]] = make_annot_label(p.val.adj,label=sprintf("%s, -log10",p.val.adj))
   }
@@ -7529,6 +7543,51 @@ heatmap.diff.abund <- function(m_a,
                    row.names=F)
 }
 
+
+plot_heatmap.deseq2 <- function(m_a,tt,
+                                column_names="ID",
+                                max.n.columns=20,
+                                effect="log2FoldChange",
+                                attr.annot.names=c("Group"),
+                                hmap.width=1000,
+                                alpha=0.05) {
+  max.n.columns = max(min(max.n.columns,nrow(tt)),1)
+  tt = tt[1:max.n.columns,]
+  m_a.orig = m_a
+  if(is.null(tt$ID)) {
+    stop("Need ID field in DESeq2 result table to identify each feature")
+  }
+  m_a = subset.m_a(m_a,select.count = (colnames(m_a$count) %in% tt$ID))
+  attr_feat = m_a$attr_feat
+  if(column_names == "ID" || is.null(attr_feat)) {
+    column_names = as.character(colnames(m_a$count))
+  }
+  else {
+    column_names = ifelse(!is.na(attr_feat[[column_names]]),
+                        as.character(attr_feat[[column_names]]),
+                        as.character(colnames(m_a$count)))
+  }
+  heatmap.diff.abund(m_a=m_a,
+                     res.test.df=tt,
+                     max.n.columns=max.n.columns,
+                     base="baseMean",
+                     effect=effect,
+                     p.val="pvalue",
+                     p.val.adj="padj",
+                     p.val.adj.alpha=alpha,
+                     effect_baseline=0,
+                     hmap.label = "Normalized Counts",
+                     hmap.width=hmap.width,
+                     hmap.height=hmap.width*0.8,
+                     attr.annot.names=attr.annot.names,
+                     clustering_distance_rows="pearson",
+                     cluster_columns=T,
+                     km=0,
+                     show_row_names = F,
+                     show_column_names = T,
+                     column_names = column_names)  
+}
+
 heatmap.combined.report <- function(m_a,
                                     m_a.norm,
                                     res.tests,
@@ -7595,12 +7654,23 @@ heatmap.combined.report <- function(m_a,
   if(!is.null(rows.cluster$split)) {
     report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
-  mor_rowAnnotations <- m_a.norm$attr[,attr.annot.names,drop=F]
+  mor_rowAnnotations = NULL
+  if(length(attr.annot.names) > 0) {
+    mor_rowAnnotations = m_a.norm$attr[,attr.annot.names,drop=F]
+    if(ncol(mor_rowAnnotations)<2) {
+      ##morpheus fails on 1-col data.frame
+      mor_rowAnnotations$SampleID = rownames(mor_rowAnnotations)
+      if(ncol(mor_rowAnnotations)<2) {
+        mor_rowAnnotations$ID = rownames(mor_rowAnnotations)
+      }      
+    }
+  }
   mor_p = morpheus::morpheus(m_a.norm$count,
            rowAnnotations=mor_rowAnnotations,
            rows=c(list(list(field="id", display=list("text"))),
                   lapply(attr.annot.names,function(x) list(field=x,display=list("text","color")))
-                  )
+                  ),
+           dendrogram = "row" # column dendro is too tall and pushes heatmap bottom rows off screen
            )
   report$add.package.citation("morpheus")
   report$add.widget(mor_p,show.inline=F,
