@@ -85,6 +85,7 @@ vanilla_packages_github = c(
   "bokeh/rbokeh",
   "bwlewis/doRedis",
   "smartinsightsfromdata/rpivotTable",
+  "cmap/morpheus.R",
   "andreyto/GeneSelector@at_samr"
 )
 

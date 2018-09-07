@@ -7579,6 +7579,19 @@ heatmap.combined.report <- function(m_a,
   if(!is.null(rows.cluster$split)) {
     report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
+  mor_rowAnnotations <- m_a.norm$attr[,attr.annot.names,drop=F]
+  mor_p = morpheus::morpheus(m_a.norm$count,
+           rowAnnotations=mor_rowAnnotations,
+           rows=c(list(list(field="id", display=list("text"))),
+                  lapply(attr.annot.names,function(x) list(field=x,display=list("text","color")))
+                  )
+           )
+  report$add.package.citation("morpheus")
+  report$add.widget(mor_p,show.inline=F,
+                    caption = "Dynamic Morpheus heatmap of normalized abundance values. 
+                    It is available here through the link only because it can take a while to render for large datasets.
+                    This is very customizable. What you will see initially is just a default starting configuration. Explore its menus.")
+  
   export.taxa.meta(rows.cluster$m_a,
                    label="htmap",
                    descr="Data used for heatmap with added row cluster splits (clustering by abundance profile)",
