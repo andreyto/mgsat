@@ -4702,6 +4702,22 @@ plot.profiles <- function(m_a,
                   dat.melt = pl.abu$dat.melt
                   if(!is.null(dat.melt)) {
                     report$add.table(dat.melt,caption=paste("Data table used for plots.",gr.by.msg))
+                    for(piv_opt in list(
+                      list(cols = ".record.id",rendererName = "Stacked Bar Chart"),
+                      list(cols = id.vars, rendererName = "Table Barchart")
+                    )) {
+                      piv_p = rpivotTable::rpivotTable(dat.melt,
+                                                   cols = piv_opt$cols,
+                                                   rows = "feature",
+                                                   aggregatorName = "Average", 
+                                                   vals = value.name, 
+                                                   rendererName = piv_opt$rendererName)
+                      
+                      report$add.widget(piv_p,show.inline=F,
+                      caption = sprintf("Dynamic Pivot Table link (drag and drop field names and pick averaging 
+                      functions or plot types; click on fields or legend elements to filter values). 
+                      Starting rendering is %s. %s",piv_opt$rendererName,gr.by.msg))
+                    }
                   }
                   
                   dat.summary = pl.abu$dat.summary
