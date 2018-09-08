@@ -38,4 +38,19 @@ Andrey Tovchigrechko `<andreyto AT gmail.com>`
 ## License ##
 GPLv3. See also COPYING file that accompanies the source code.
 
+## Some publications that used MGSAT ##
+```
+Cohen, T. S., et al. (2018). "S. aureus Evades Macrophage Killing through NLRP3-Dependent Effects on Mitochondrial Trafficking." Cell reports 22(9): 2431-2441.
+	
+Rosas-Salazar, C., et al. (2016). "Nasopharyngeal microbiome in respiratory syncytial virus resembles profile associated with increased childhood asthma risk." American journal of respiratory and critical care medicine 193(10): 1180-1183.
+	
+Rosas-Salazar, C., et al. (2018). "Nasopharyngeal Lactobacillus is associated with a reduced risk of childhood wheezing illnesses following acute respiratory syncytial virus infection in infancy." Journal of Allergy and Clinical Immunology.
+	
+Rosas-Salazar, C., et al. (2016). "Differences in the nasopharyngeal microbiome during acute respiratory tract infection with human rhinovirus and respiratory syncytial virus in infancy." The Journal of infectious diseases 214(12): 1924-1928.
+	
+Shilts, M. H., et al. (2016). "Minimally invasive sampling method identifies differences in taxonomic richness of nasal microbiomes in young infants associated with mode of delivery." Microbial ecology 71(1): 233-242.
+	
+Suh, M.-J., et al. (2015). "Quantitative differences in the urinary proteome of siblings discordant for type 1 diabetes include lysosomal enzymes." Journal of proteome research 14(8): 3123-3135.
+```
+
 ![Abundance profile across visits patients geometric medians with and without drug treatment before dieting](examples/example_project_01/media/diet_gmedian_treat_before_stack.png "Abundance profile across visits patients geometric medians with and without drug treatment before dieting")
