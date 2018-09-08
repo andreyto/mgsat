@@ -2,7 +2,7 @@
 
 ![Beta-diversity geometric median plot example](examples/example_project_01/media/diet_gmedian_treat_before.png "Beta-diversity geometric median  plot example")
 
-##Overview##
+## Overview ##
 MGSAT is written in R. It applies several types of statistical tests, normalizations and plotting routines to the abundance count matrices that are typically the output of annotating (meta)omics datasets, and generates a [structured HTML report](https://andreyto.github.io/mgsat-examples/example_project_01/0-report.html) that, in addition to results, shows method parameters and versions of the external packages. 
 
 The user has fine-grained control over types of tests, parameters, and a description of a study design through a named list data structure that is provided as input to the top-level routine of the package.
@@ -17,7 +17,7 @@ Plots include abundance profile plots in different representations split by grou
 
 ![DESeq2 results comparing patients with matched controls](examples/example_project_01/media/diet_patients_controls_deseq2.png "DESeq2 results comparing patients with matched controls")
 
-##Sample Analysis Code and Output##
+## Sample Analysis Code and Output ##
 The easiest way to start using this package is to study the inputs and outputs of an example analysis project.
 
 The project is a made-up (fictional) 16S sequencing study that supposedly looked at the association of a gut microbiome with some diet regimen. Samples were taken at several longitudinal points (called "visits" here), each visit coming after the next phase of diet regimen. Visit 1 was before the start of treatment. At Visit 1 (and a few at Visit 2), samples were also taken from healthy control individuals, each of which was matched with a corresponding patient. Some patients received a separate incidental drug treatment before coming for visit 1, which was reflected in a corresponding metadata variable. Note that because the enrollment was ongoing throughout  the study period, and the treatment was taking more than a year, there are progressively fewer samples at the higher visit numbers. There were no study drop-outs.
@@ -32,10 +32,10 @@ The user has analyzed data in subsets, such as controls vs patients before diet 
 
 The example also shows how custom user analysis code `extra.method.task` can be injected into the pipeline and executed along with the already available methods. 
 
-##Author##
+## Author ##
 Andrey Tovchigrechko `<andreyto AT gmail.com>`
 
-##License##
+## License ##
 GPLv3. See also COPYING file that accompanies the source code.
 
 ![Abundance profile across visits patients geometric medians with and without drug treatment before dieting](examples/example_project_01/media/diet_gmedian_treat_before_stack.png "Abundance profile across visits patients geometric medians with and without drug treatment before dieting")
