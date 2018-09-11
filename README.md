@@ -32,6 +32,23 @@ The user has analyzed data in subsets, such as controls vs patients before diet 
 
 The example also shows how custom user analysis code `extra.method.task` can be injected into the pipeline and executed along with the already available methods. 
 
+## How to run ##
+The easiest way to start using MGSAT through the Docker image that we have built and made available at the [MGSAT Docker Hub Repository](https://hub.docker.com/r/andreyto/mgsat/).
+
+MGSAT Docker image incorporates the open-source version of [RStudio&reg; Server](https://www.rstudio.com/products/rstudio-server/) as a Web GUI front-end. 
+The image has been derived from the [Rocker](https://hub.docker.com/r/rocker/rstudio/) image. You can read [Rocker Wiki](https://github.com/rocker-org/rocker/wiki/Using-the-RStudio-image) for the full description of start-up options. In short, you can run MGSAT container with something like:
+```
+docker run --rm -d -p 8787:8787 -e PASSWORD=<put your arbitrary password here> andreyto/mgsat:1.4
+```
+Then, login to RStudio in your browser at the URL `your_docker_host:8787` with a user name `rstudio` and the password that you have provided in the `docker run` command.
+
+Using RStudio `Files` pane or RStudio Tools->Shell menu, create new directory somewhere and create the driver R script in it. You can start that file by modifying a copy of `examples/example_project_01/example_project.r`.
+
+After you run the driver script, you can open the generated report right from RStudio by clicking on `0-report.html` in the `Files` pane. Note that you also have the convenient `Upload` button in that pane that allows you putting input files for your analysis without leaving the RStudio UI.
+
+### Trademarks in MGSAT Docker image ###
+RStudio and the RStudio logo are registered trademarks of RStudio, Inc. The use of RStudio trademarks as they appear in an unmodified form of RStudio derived from [Rocker's permitted image](https://hub.docker.com/r/rocker/rstudio/) and as part of a free and open source bundle in MGSAT has been granted by explicit permission of RStudio. Please review RStudio's [trademark use policy](https://www.rstudio.com/about/trademark/) and address inquiries about further distribution or other questions to <permissions@rstudio.com>.
+
 ## Author ##
 Andrey Tovchigrechko `<andreyto AT gmail.com>`
 
