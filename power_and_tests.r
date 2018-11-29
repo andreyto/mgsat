@@ -7456,12 +7456,24 @@ heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) 
       split.descr = "Splitting clusters resulted in a single partition"
     }
   }
-  caption.g.test=sprintf("G-test of independence between automatic cluster splits and attribute '%s'. %s.",
-                         main.meta.var,split.descr)
+  caption.g.test=sprintf("G-test of independence between automatic cluster splits and attributes '%s'. Numeric attributes are converted to quartiles. %s.",
+                         paste(main.meta.var,collapse = ","),split.descr)
   g.t = NULL
   if(!is.null(split)) {
-    if(num.levels(split)>1 && !is.null(main.meta.var) && num.levels(m_a$attr[,main.meta.var])>1) {
-      g.t = g.test(m_a$attr[,main.meta.var],split)
+    if(num.levels(split)>1 && !is.null(main.meta.var))  {
+      for(m.var in main.meta.var) {
+        x = m_a$attr[[m.var]]
+        if(!(is.factor(x) || is.character(x))) {
+          x = quantcut.ordered(x)
+        }
+        if(num.levels(x)>1) {
+          g.t.var = g.test(x,split)
+          g.t.var.df = as.data.frame(g.t.var[c("statistic","parameter","p.value")])
+          g.t.var.df = cbind(data.frame(var=m.var),g.t.var.df)
+          rownames(g.t.var.df) = m.var
+          g.t = rbind(g.t,g.t.var.df)
+        }
+      }
     }
     m_a$attr$.Heatmap.Cluster.Split = split
   }
@@ -7502,7 +7514,7 @@ heatmap.diff.abund <- function(m_a,
   }
   main.meta.var = NULL
   if(length(attr.annot.names)>0) {
-    main.meta.var = attr.annot.names[[1]]
+    main.meta.var = attr.annot.names
   }
   fontsize = ggplot2::theme_get()$text$size
   fontsize_leg = fontsize*0.8
@@ -7583,7 +7595,7 @@ heatmap.diff.abund <- function(m_a,
              caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(rows.cluster$split)) {
-    report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+    report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
   export.taxa.meta(rows.cluster$m_a,
                    label="htmap",
@@ -7657,13 +7669,14 @@ heatmap.combined.report <- function(m_a,
                              res.tests=res.tests,
                              norm.count.task=norm.count.task)
   }
+  m_a.norm.full = m_a.norm
   if(!is.null(max.n.columns)) {
     max.n.columns = min(max.n.columns,ncol(m_a.norm$count))
     m_a.norm$count = m_a.norm$count[,1:max.n.columns,drop=F]
   }
   main.meta.var = NULL
   if(length(attr.annot.names)>0) {
-    main.meta.var = attr.annot.names[[1]]
+    main.meta.var = attr.annot.names
   }
   fontsize = ggplot2::theme_get()$text$size
   fontsize_leg = fontsize*0.8
@@ -7674,7 +7687,7 @@ heatmap.combined.report <- function(m_a,
   colnames_count = colnames(count)
   #column_names_max_height = grid::unit(1, "strwidth",colnames_count[which.max(stringr::str_length(colnames_count))[1]])
   column_names_max_height = ComplexHeatmap::max_text_width(colnames_count, gp = gpar(fontsize = fontsize))
-  rows.cluster = heatmap.cluster.rows(m_a=m_a.norm,
+  rows.cluster = heatmap.cluster.rows(m_a=m_a.norm.full,
                                       main.meta.var=main.meta.var,
                                       clustering_distance_rows=clustering_distance_rows,
                                       km=km.abund)  
@@ -7707,7 +7720,7 @@ heatmap.combined.report <- function(m_a,
   report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(rows.cluster$split)) {
-    report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+    report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
   mor_rowAnnotations = NULL
   if(length(attr.annot.names) > 0) {
@@ -7760,7 +7773,7 @@ heatmap.combined.report <- function(m_a,
     report$add(h,caption=sprintf("Clustered heatmap of diversity and normalized abundance values. %s.",rows.cluster$split.descr),
                width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
     if(!is.null(rows.cluster$split)) {
-      report$add(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+      report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
     }
     export.taxa.meta(rows.cluster$m_a,
                      label="htmap",
