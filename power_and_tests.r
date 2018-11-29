@@ -967,13 +967,17 @@ new.m_a <- function(count=NULL,attr=NULL,attr_feat=NULL,validate=F) {
   list(count=count,attr=attr,attr_feat=attr_feat)
 }
 
-as.m_a.dds <- function(dds,do.rlog.norm,...) {
+as.m_a.dds <- function(dds,do.rlog.norm=F,do.vst.norm=T,...) {
   library(DESeq2)
-  if(!do.rlog.norm) {
+  if(do.rlog.norm && do.vst.norm) {
+    stop("Both do.rlog.norm and do.vst.norm cannot be set")
+  }
+  if(!do.rlog.norm && !do.vst.norm) {
     count = t(as.matrix(assay(dds)))
   }
   else {
-    count = rlog.dds(dds,...)
+    if(do.rlog.norm) count = rlog.dds(dds,...)
+    else if(do.vst.norm) count = vst.dds(dds,...)
   }
   attr = as.data.frame(colData(dds))
   attr_feat = as.data.frame(rowData(dds))
@@ -1231,10 +1235,27 @@ norm.rlog.dds <- function(x.f,dds,...) {
 #' Note the discussion of the proper value for blind in the DESeq2::rlog help page:
 #' "blind=FALSE should be used for transforming data for downstream analysis, 
 #' where the full use of the design information should be made".
+#' Otherwise, the variance associated with the design covariates will be shrunk.
+#' Note that blind=FALSE will not affect variance shrinkage but not the means
+#' of the features.
 rlog.dds <- function(dds,blind=T,fitType="local",...) {
   t(assay(rlog(dds,blind=blind,fitType=fitType,...)))
 }
 
+#' @method results of DESeq2 vst transform. x.f is not used
+norm.vst.dds <- function(x.f,dds,...) {
+  vst.dds(dds,...)
+}
+
+#' @method extract vst transformed values from DESeq2 object as sample-row matrix
+#' Note the discussion of the proper value for blind in the DESeq2::vst help page".
+vst.dds <- function(dds,blind=F,fitType="local",nsub=NULL,...) {
+  if(is.null(nsub)) {
+    ## https://support.bioconductor.org/p/98634/
+    nsub = min(1000,nrow(dds))
+  }
+  t(assay(vst(dds,blind=blind,fitType=fitType,nsub=nsub,...)))
+}
 
 ## IHS (inverse hyperbolic sign) transform
 ## asinh(x) == log(x+(x**2+1)**0.5)
@@ -1470,7 +1491,12 @@ norm.count <- function(x, ...) {
   UseMethod('norm.count', x)
 }
 
-norm.count.matrix <- function(count,method,drop.features=c("other"),method.args=list()) {
+norm.count.matrix <- function(count,
+                              method,
+                              drop.features=c("other"),
+                              method.args=list(),
+                              remove.batch.eff=FALSE,
+                              remove.batch.eff.args=list()) {
   if( ! (method %in% c("norm.ident","ident")) ) {
     count = do.call(method,c(
       list(count),
@@ -1478,15 +1504,36 @@ norm.count.matrix <- function(count,method,drop.features=c("other"),method.args=
     )
     )
   }
+  if(remove.batch.eff) {
+    
+    count = t(do.call(limma::removeBatchEffect,c(
+                      list(t(count)),
+                      remove.batch.eff.args
+                      )))
+  }
   if(!is.null(drop.features)) {
     count = count[,!colnames(count) %in% drop.features,drop=F]
   }
   return (count)
 }
 
-norm.count.m_a <- function(m_a,...) {
+norm.count.m_a <- function(m_a,
+                           remove.batch.eff=FALSE,
+                           remove.batch.eff.args=list(),                           
+                           ...) {
+  if(remove.batch.eff) {
+    design.formula = remove.batch.eff.args$design.formula
+    remove.batch.eff.args$design = NULL
+    remove.batch.eff.args = interpret.args.in.df(remove.batch.eff.args,m_a$attr)
+    if(!is.null(design.formula)) {
+      remove.batch.eff.args$design = model.matrix(as.formula(design.formula),data = m_a$attr)
+    }
+  }
   m_a.norm = m_a
-  m_a.norm$count = norm.count(m_a.norm$count,...)
+  m_a.norm$count = norm.count(m_a.norm$count,
+                              remove.batch.eff=remove.batch.eff,
+                              remove.batch.eff.args=remove.batch.eff.args,
+                              ...)
   return(m_a.norm)
 }
 
@@ -6038,6 +6085,9 @@ deseq2.report <- function(m_a,
                 c(list(object=dds),
                   test.task)
   )
+  if(do.report) {
+    m_a.heat = as.m_a.dds(dds,do.vst.norm=T)
+  }
   formula.rhs = as.character(design(dds))[2] #cuts the ~
   res.all = foreach(result.task=result.tasks) %do% {
     if(is.null(result.task$alpha)) {
@@ -6051,7 +6101,6 @@ deseq2.report <- function(m_a,
     if(do.report) {
       descr_res = deseq2.report.results(res=res,formula.rhs=formula.rhs,result.task=result.task,wrap.vals = wrap.vals)
       tt = as.data.table(res,keep.rownames = "ID")
-      m_a.heat = as.m_a.dds(dds,do.rlog.norm=T)
       plot_heatmap.deseq2(m_a=m_a.heat,tt=tt,max.n.columns=max.n.columns,
                           column_names = "ID",
                           attr.annot.names = formula_varnames(design(dds),colnames(m_a.heat$attr)))
@@ -7602,6 +7651,12 @@ heatmap.combined.report <- function(m_a,
                                     show_row_names = F,
                                     show_column_names = T,
                                     max.n.columns=NULL) {
+  if(!is.null(norm.count.task)) {
+    m_a.norm = norm.count.report(m_a,
+                             descr="Combined Heatmap",
+                             res.tests=res.tests,
+                             norm.count.task=norm.count.task)
+  }
   if(!is.null(max.n.columns)) {
     max.n.columns = min(max.n.columns,ncol(m_a.norm$count))
     m_a.norm$count = m_a.norm$count[,1:max.n.columns,drop=F]
