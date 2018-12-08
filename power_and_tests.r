@@ -6955,7 +6955,7 @@ test.counts.project <- function(m_a,
     })
     
     tryCatchAndWarn({
-      do.call(heatmap.combined.report,
+      res$heatmap.combined = do.call(heatmap.combined.report,
               c(list(m_a=m_a,
                      m_a.norm=m_a.norm,
                      res.tests=res),
@@ -7445,6 +7445,8 @@ heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) 
       split = cluster::pam(diss, k=km)$clustering
       split.descr = "Number of cluster splits is set to a fixed value that is passed to method `cluster::pam`"
     }
+    split = factor(paste0("C",split))
+    names(split) = rownames(m_a$count)
   }
   else {
     split = NULL
@@ -7459,6 +7461,7 @@ heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) 
   caption.g.test=sprintf("G-test of independence between automatic cluster splits and attributes '%s'. Numeric attributes are converted to quartiles. %s.",
                          paste(main.meta.var,collapse = ","),split.descr)
   g.t = NULL
+  xtab = list()
   if(!is.null(split)) {
     if(num.levels(split)>1 && !is.null(main.meta.var))  {
       for(m.var in main.meta.var) {
@@ -7472,12 +7475,16 @@ heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) 
           g.t.var.df = cbind(data.frame(var=m.var),g.t.var.df)
           rownames(g.t.var.df) = m.var
           g.t = rbind(g.t,g.t.var.df)
+          xtab.form = as.formula(paste0("~split+",m.var))
+          xtab.dat = data.frame(split=split)
+          xtab.dat[[m.var]] = x
+          xtab[[m.var]] = xtabs(xtab.form,data=xtab.dat,drop.unused.levels=T)
         }
       }
     }
     m_a$attr$.Heatmap.Cluster.Split = split
   }
-  list(split=split,m_a=m_a,g.t=g.t,main.meta.var=main.meta.var,caption.g.test=caption.g.test,split.descr=split.descr)  
+  list(split=split,m_a=m_a,g.t=g.t,xtab=xtab,main.meta.var=main.meta.var,caption.g.test=caption.g.test,split.descr=split.descr)  
 }
 
 heatmap.diff.abund <- function(m_a,
@@ -7595,8 +7602,14 @@ heatmap.diff.abund <- function(m_a,
              caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(rows.cluster$split)) {
-    report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+    xtab = rows.cluster$xtab
+    for(m.var in names(xtab)) {
+      report$add(xtab[[m.var]],caption = sprintf("Cross-tabulation of cluster split with %s",m.var))
+      report$add.printed(summary(xtab[[m.var]]))
+    }
+    if(!is.null(rows.cluster$g.t)) report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
+  
   export.taxa.meta(rows.cluster$m_a,
                    label="htmap",
                    descr="Data used for heatmap with added row cluster splits",
@@ -7663,6 +7676,7 @@ heatmap.combined.report <- function(m_a,
                                     show_row_names = F,
                                     show_column_names = T,
                                     max.n.columns=NULL) {
+  res = new_mgsatres()
   if(!is.null(norm.count.task)) {
     m_a.norm = norm.count.report(m_a,
                              descr="Combined Heatmap",
@@ -7691,6 +7705,7 @@ heatmap.combined.report <- function(m_a,
                                       main.meta.var=main.meta.var,
                                       clustering_distance_rows=clustering_distance_rows,
                                       km=km.abund)  
+  res$split = rows.cluster$split
   h = ComplexHeatmap::Heatmap(count,name="Abundance",
                               cluster_columns=cluster_columns,
                               show_row_names = show_row_names,
@@ -7720,7 +7735,12 @@ heatmap.combined.report <- function(m_a,
   report$add(h,caption=sprintf("Clustered heatmap of normalized abundance values. %s.",rows.cluster$split.descr),
              width=hmap.width,height=hmap.height,hi.res.width = hmap.width, hi.res.height=hmap.height)
   if(!is.null(rows.cluster$split)) {
-    report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
+    xtab = rows.cluster$xtab
+    for(m.var in names(xtab)) {
+      report$add(xtab[[m.var]],caption = sprintf("Cross-tabulation of cluster split with %s",m.var))
+      report$add.printed(summary(xtab[[m.var]]))
+    }
+    if(!is.null(rows.cluster$g.t)) report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
   mor_rowAnnotations = NULL
   if(length(attr.annot.names) > 0) {
@@ -7781,6 +7801,7 @@ heatmap.combined.report <- function(m_a,
                      row.proportions=F,
                      row.names=F)
   }
+  res
 }
 
 #' turn ordered quantiiles (as returned by quantcut.ordered()) into a color gradient
