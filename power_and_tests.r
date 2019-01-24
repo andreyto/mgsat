@@ -7470,15 +7470,21 @@ heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) 
           x = quantcut.ordered(x)
         }
         if(num.levels(x)>1) {
-          g.t.var = g.test(x,split)
-          g.t.var.df = as.data.frame(g.t.var[c("statistic","parameter","p.value")])
-          g.t.var.df = cbind(data.frame(var=m.var),g.t.var.df)
-          rownames(g.t.var.df) = m.var
-          g.t = rbind(g.t,g.t.var.df)
-          xtab.form = as.formula(paste0("~split+",m.var))
-          xtab.dat = data.frame(split=split)
-          xtab.dat[[m.var]] = x
-          xtab[[m.var]] = xtabs(xtab.form,data=xtab.dat,drop.unused.levels=T)
+          x_f = factor(x)
+          x_f_mask = !is.na(x_f)
+          x_f = factor(x_f[x_f_mask])
+          split_f = factor(split[x_f_mask])
+          if(num.levels(x_f)>1 && num.levels(split_f)>1) {
+            g.t.var = g.test(x_f,split_f)
+            g.t.var.df = as.data.frame(g.t.var[c("statistic","parameter","p.value")])
+            g.t.var.df = cbind(data.frame(var=m.var),g.t.var.df)
+            rownames(g.t.var.df) = m.var
+            g.t = rbind(g.t,g.t.var.df)
+            xtab.form = as.formula(paste0("~split+",m.var))
+            xtab.dat = data.frame(split=split)
+            xtab.dat[[m.var]] = x
+            xtab[[m.var]] = xtabs(xtab.form,data=xtab.dat,drop.unused.levels=T)
+          }
         }
       }
     }
@@ -7765,7 +7771,6 @@ heatmap.combined.report <- function(m_a,
                     caption = "Dynamic Morpheus heatmap of normalized abundance values. 
                     It is available here through the link only because it can take a while to render for large datasets.
                     This is very customizable. What you will see initially is just a default starting configuration. Explore its menus.")
-  
   export.taxa.meta(rows.cluster$m_a,
                    label="htmap",
                    descr="Data used for heatmap with added row cluster splits (clustering by abundance profile)",
