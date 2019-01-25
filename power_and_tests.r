@@ -185,6 +185,10 @@ file.dep.updated <- function(dep,targ) {
   return (F)
 }
 
+abs_path <- function(x) {
+  file.path(normalizePath(dirname(x)),basename(x))  
+}
+
 label.size.points <- function(x,what="width",resolution=72) {
   require(graphics)
   if(what=="width") {
