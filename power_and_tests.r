@@ -7749,6 +7749,12 @@ heatmap.combined.report <- function(m_a,
     for(m.var in names(xtab)) {
       report$add(xtab[[m.var]],caption = sprintf("Cross-tabulation of cluster split with %s",m.var))
       report$add.printed(summary(xtab[[m.var]]))
+      report$add(mosaic(xtab[[m.var]],shade = T,
+                        spacing = spacing_increase(start = 0.6, rate = 1.5),
+                        offset_labels = c(left = 1, top = 2),
+                        labeling_args = list(rot_labels = c(top = 90,left = 0), varnames=F)),
+                 width=400,height=400,
+                 caption = sprintf("Mosaic plot of the contigency table between cluster splits and %s",m.var))
     }
     if(!is.null(rows.cluster$g.t)) report$add.table(rows.cluster$g.t,caption = rows.cluster$caption.g.test)
   }
