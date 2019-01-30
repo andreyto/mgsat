@@ -1684,7 +1684,40 @@ subset.m_a <- function(m_a,subset=NULL,select.count=NULL,select.attr=NULL,na.ind
   return(m_a)
 }
 
-cbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
+cbind.m_a <- function(m_a.list,assay_attr="AssayName",feat_id_attr="FeatID") {
+  m_a.list = as.list(m_a.list)
+  assay_names = names(m_a.list)
+  stopifnot(!(any(is.null(assay_names)) || any(is.na(assay_names))))
+  m_a.list.copy = m_a.list
+  names(m_a.list.copy) = NULL
+  count = do.call(data.frame,
+                  c(
+                  lapply(m_a.list.copy,function(x) x$count),
+                  list(check.rows=T,check.names=F)
+                  ))
+  attr = m_a.list[[1]]$attr
+  attr_feat_list = list()
+  for(assay_name in assay_names) {
+    x = m_a.list[[assay_name]]
+    x_attr_feat = x$attr_feat
+    if(is.null(x_attr_feat)) {
+      x_attr_feat = data.table(dummy=rep(NA,ncol(x$count)))
+      x_attr_feat[[feat_id_attr]] = colnames(x$count)
+    }
+    else {
+      x_attr_feat = as.data.table(x_attr_feat,keep.rownames = feat_id_attr)
+    }
+    x_attr_feat[[assay_attr]] = assay_name
+    attr_feat_list[[assay_name]] = x_attr_feat
+  }
+  attr_feat = data.table::rbindlist(attr_feat_list,
+                        fill=T)
+  setDF(attr_feat)
+  rownames(attr_feat) = attr_feat[[feat_id_attr]]
+  new.m_a(count=count,attr=attr,attr_feat=attr_feat,validate = T)
+}
+
+rbind.m_a <- function(m_a.list,batch.attr,col.match=T) {
   cols.map = unlist(lapply(m_a.list,function(x) colnames(x$count)))
   batch.id.rows = unlist(lapply(m_a.list,function(x) (x$attr[,batch.attr])))
   batch.id.cols = unlist(lapply(m_a.list,function(x) {
