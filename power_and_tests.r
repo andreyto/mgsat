@@ -5344,6 +5344,7 @@ mgsat.16s.task.template = within(list(), {
             type="samples",
             legend.point.size = ggplot2::rel(4),
             legend.position="right",
+            hull = T,
             ggplot.extra=list()
             ##line.args, axis.scale=c(1,1,1)
             ##other arguments to phyloseq:::plot_ordination
@@ -8000,6 +8001,7 @@ plot_ordination.2d <- function(physeq,ordination,
                                legend.point.size = rel(4),
                                legend.position="right",
                                border=T,
+                               hull=T,
                                ggplot.extra=list(),
                                ...) {
   library(phyloseq)
@@ -8048,6 +8050,12 @@ plot_ordination.2d <- function(physeq,ordination,
   
   pl = pl + make.geom(geom_point,data=df.plot,
                       options=pt,options.fixed = options.fixed)
+  
+  if(hull) {
+    library(ggpubr)
+    pt_hull = list(fill=pt$color)
+    pl = pl + make.geom(stat_chull,data=df.plot,options=pt_hull,options.fixed=list(alpha = 0.1, geom = "polygon",show.legend=F))
+  }
   
   pl = pl + theme_bw(base_size = 18) + theme(legend.position=legend.position)
   if(!is.null(ggplot.extra)) {
@@ -8208,6 +8216,9 @@ ordination.report <- function(m_a,res=NULL,distance="bray",ord.tasks,sub.report=
       
       pt = pt.orig
       pt$axes = 1:3
+      pt$hull = NULL
+
+      pt = plyr::compact(pt)
       
       caption=sprintf("Ordination plot in 3D. Ordination performed with parameters %s. 
                Plot used parameters %s.",
