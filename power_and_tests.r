@@ -7520,7 +7520,7 @@ heatmap.cluster.rows <- function(m_a,main.meta.var,clustering_distance_rows,km) 
             ##TODO: add pairwiseNominalIndependence; add Kruskall-Wallis test for continuous covariates, and pairwise.wilcox.test
             ##or use jmv package: jmv::anovaNP(formula = cont ~ factor,data, pairs = T)
             ##jmv::ANOVA(formula = Haemophilus ~ split,data=data.frame(split=paste0("C",split),t(data$Mbiome)),postHoc = ~split)
-            ##or PMCMR; or use pairwise.table
+            ##or PMCMRPlus; or use pairwise.table
             ## Use functions in ggpubr to both do pairwise KW tests and plot p-values
             g.t = rbind(g.t,g.t.var.df)
             xtab.form = as.formula(paste0("~split+",m.var))
@@ -8039,9 +8039,10 @@ plot_ordination.2d <- function(physeq,ordination,
   }
   
   options.fixed = list()
+  pt_point = pt
   if(border) {
-    pt$fill = pt$color
-    pt$color = NULL
+    pt_point$fill = pt_point$color
+    pt_point$color = NULL
     options.fixed$shape=21
   }
   if(is.null(pt$size)) {
@@ -8049,7 +8050,7 @@ plot_ordination.2d <- function(physeq,ordination,
   }
   
   pl = pl + make.geom(geom_point,data=df.plot,
-                      options=pt,options.fixed = options.fixed)
+                      options=pt_point,options.fixed = options.fixed)
   
   if(hull) {
     library(ggpubr)
