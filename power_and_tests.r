@@ -7674,6 +7674,7 @@ plot_heatmap.deseq2 <- function(m_a,tt,
                                 attr.annot.names=c("Group"),
                                 hmap.width=1000,
                                 alpha=0.05) {
+  tt = tt[!is.na(padj)]
   max.n.columns = max(min(max.n.columns,nrow(tt)),1)
   tt = tt[1:max.n.columns,]
   m_a.orig = m_a
@@ -7788,7 +7789,7 @@ heatmap.combined.report <- function(m_a,
     for(m.var in names(xtab)) {
       report$add(xtab[[m.var]],caption = sprintf("Cross-tabulation of cluster split with %s",m.var))
       report$add.printed(summary(xtab[[m.var]]))
-      report$add(mosaic(xtab[[m.var]],shade = T,
+      report$add(vcd::mosaic(xtab[[m.var]],shade = T,
                         spacing = spacing_increase(start = 0.6, rate = 1.5),
                         offset_labels = c(left = 1, top = 2),
                         labeling_args = list(rot_labels = c(top = 90,left = 0), varnames=F)),
