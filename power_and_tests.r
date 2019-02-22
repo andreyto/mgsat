@@ -4939,10 +4939,14 @@ power.choc<-function(taxa.meta.data,taxa.meta.attr.names) {
 ## read.data.project(). The method should create SampleID factor key field and also set row.names to
 ## the values of that field.
 
-load.meta.default <- function(file.name) {
-  meta = read.delim(file.name,header=T,stringsAsFactors=T)
-  meta$SampleID = as.factor(meta$SampleID)
-  row.names(meta) = meta$SampleID
+load.meta.default <- function(file.name=NULL) {
+  if(!is.null(file.name)) {
+    meta = read.delim(file.name,header=T,stringsAsFactors=T)
+    meta$SampleID = as.factor(meta$SampleID)
+    row.names(meta) = meta$SampleID
+  } else {
+    meta = NULL
+  }
   return (meta)
 }
 
