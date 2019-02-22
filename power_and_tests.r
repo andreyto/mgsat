@@ -7042,6 +7042,7 @@ test.counts.project <- function(m_a,
   
   if(do.return.data) {
     res$m_a = m_a
+    res$m_a.norm = m_a.norm
   }
   return (res)
 }
