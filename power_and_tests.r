@@ -2689,7 +2689,7 @@ is.taxa.level.otu <- function(taxa.level) {
 
 read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T,taxa.level="otu",
                                       count.basis=c("seq","otu"),otu.count.filter.options=NULL,taxa.levels.mix=0,
-                                      rarefy.target=ifelse(count.basis[1]=="otu","min",NULL)) {
+                                      rarefy.target=if(count.basis[1]=="otu") "min" else NULL) {
   count.basis = count.basis[1]                
   otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
   taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level,taxa.levels.mix=taxa.levels.mix)
@@ -9199,9 +9199,12 @@ RankingWilcoxonAT <- function (x, y, type = c("unpaired", "paired", "onesample")
       }
       else {
         require("exactRankTests")
-        pvals = apply(x,1,function(z) {
+        x_mask_non_zero = (rowSums(x==0) != ncol(x))
+        pvals_non_zero = apply(x[x_mask_non_zero,],1,function(z) {
           wilcox.exact(x=z,y=NULL,paired=F)$p.value
         })
+        pvals <- rep(1, nrow(x))
+        pvals[x_mask_non_zero] = pvals_non_zero
       }
     }
     else pvals <- rep(NA, nrow(x))
@@ -9361,7 +9364,7 @@ genesel.stability <- function(m_a,
   ##make.global(y.relev)
   ##make.global(type)
   
-  if(replicates > 0) {
+  if(replicates > 1) {
     #minclassize = min(table(y.relev))*samp.fold.ratio*0.9
     ##TODO: expose minclassize and balanced to user. But currently neither works.
     #contrary to the help page, does not work when y is a factor - need to convert
