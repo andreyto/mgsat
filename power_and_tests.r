@@ -2688,7 +2688,9 @@ is.taxa.level.otu <- function(taxa.level) {
 }
 
 read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitize=T,taxa.level="otu",
-                                      count.basis="seq", otu.count.filter.options=NULL,taxa.levels.mix=0) {
+                                      count.basis=c("seq","otu"),otu.count.filter.options=NULL,taxa.levels.mix=0,
+                                      rarefy.target=ifelse(count.basis[1]=="otu","min",NULL)) {
+  count.basis = count.basis[1]                
   otu.df = read.mothur.otu.shared(otu.shared.file,sanitize=sanitize)
   taxa.df = read.mothur.cons.taxonomy(cons.taxonomy.file,sanitize=sanitize,taxa.level=taxa.level,taxa.levels.mix=taxa.levels.mix)
   ##make.global(name="otu.fr")
@@ -2703,6 +2705,15 @@ read.mothur.otu.with.taxa <- function(otu.shared.file,cons.taxonomy.file,sanitiz
   taxa.df = taxa.df[otu.name.ind,]
   otu.df = otu.df[,otu.name.mask]
   stopifnot(all(colnames(otu.df) == taxa.df$OTU))
+  if(!is.null(rarefy.target)) {
+    if(is.character(rarefy.target)) {
+      if(rarefy.target=="min") {
+        rarefy.target = min(rowSums(otu.df))
+      }
+    }
+    report$add.descr(sprintf("Rarefying raw counts to sample depth %s",rarefy.target))
+    otu.df = vegan::rrarefy(otu.df,rarefy.target)
+  }
   if(count.basis=="otu") {
     otu.df = ifelse(otu.df > 0,1,0)
   }
@@ -4984,7 +4995,7 @@ read.data.project.yap <- function(taxa.summary.file,
     cons.taxonomy.file = Sys.glob(cons.taxonomy.file)
     stopifnot(length(cons.taxonomy.file)==1)
     if(taxa.level=="otu") {
-      ## Since we label taxa with OTU name anyway, just use the first deined rank name
+      ## Since we label taxa with OTU name anyway, just use the first defined rank name
       ## for the prefix
       taxa.levels.mix = Inf
     }
@@ -5022,6 +5033,7 @@ read.data.project.yap <- function(taxa.summary.file,
   taxa.lev = report.count.filter.m_a(taxa.lev.all,count.filter.options=count.filter.options)
   meta = do.call(load.meta.method,c(file.name=meta.file,load.meta.options))  
   m_a = merge.counts.with.meta(taxa.lev$count,meta)
+  
   report$add.p(sprintf("After merging with metadata, %i records left",
                        nrow(m_a$count)))
   return (m_a)
