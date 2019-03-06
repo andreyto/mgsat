@@ -9311,7 +9311,8 @@ genesel.stability <- function(m_a,
     stopifnot(length(levels(y))==2)
     ##make last level to be first, so that effect sizes and statistics
     ##are computed for last over first
-    y.relev = relevel(y,levels(y)[length(levels(y))])
+    #y.relev = relevel(y,levels(y)[length(levels(y))])
+    y.relev = factor(y,levels=rev(levels(y)))
     levels.last.first = levels(y.relev)
   }
   
