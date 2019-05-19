@@ -1843,6 +1843,8 @@ count.filter.m_a <- function(m_a,
                              min_max=0,
                              min_mean=0,
                              min_mean_frac=0.0,
+                             min_median_frac=0.0,
+                             min_median_nz_frac=0.0,
                              min_quant_mean_frac=0.0,
                              min_incidence_frac=0.0,
                              min_quant_incidence_frac=0.0,
@@ -1915,10 +1917,12 @@ count.filter.m_a <- function(m_a,
   
   ## dropping columns with various criteria, each criteria is applied column-wise
   ## (does not depend on other columns). Building mask of columns to *keep*.
-  mask_col_sel = mask_col_sel & apply(cnt_norm,2,max) >= min_max_frac
+  mask_col_sel = mask_col_sel & (apply(cnt_norm,2,max) >= min_max_frac)
   #cnt = cnt[,ind_col_sel,drop=F]
   #cnt_norm = cnt_norm[,ind_col_sel,drop=F]
   mask_col_sel = mask_col_sel & (apply(cnt_norm,2,mean) >= min_mean_frac)
+  mask_col_sel = mask_col_sel & (apply(cnt_norm,2,median) >= min_median_frac)
+  mask_col_sel = mask_col_sel & (apply(cnt_norm,2,function(x) { x=x[x>0]; if(length(x)>0) median(x) else 0 }) >= min_median_nz_frac)
   #cnt = cnt[,ind_col_sel,drop=F]
   #cnt_norm = cnt_norm[,ind_col_sel,drop=F]
   if(drop.zero) {
