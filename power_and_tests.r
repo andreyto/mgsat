@@ -1479,6 +1479,25 @@ norm.boxcox.matrix <- function(x.f, mar=2, ...) {
   return(y)
 }
 
+norm.caret <- function(x, ...) {
+  UseMethod('norm.caret', x)
+}
+
+#' Call caret::preProcess, then call predict with the resulting preprocess object and input data.
+#' 
+#' See the original wrapped function for the full list of options. The defaults in this
+#' wrapper will drop zero-variance features (columns), then apply Yeo-Johnson transform,
+#' then centering. Note that the order of values in the method arg does not matter - caret
+#' always uses a fixed order as described above.
+#' Warning: splitting the returned data into training and out-of-sample testing data would
+#' be inappropriate because in a general case parts of the input data will influence each other
+#' in the output. You should do splitting before, then use preProcess on the training set, and
+#' apply to both training and testing subsets, as per caret example.
+norm.caret.default <- function(x.f,method = c("zv","YeoJohnson","center"),...) {
+  x.f = as.matrix(x.f)
+  x = predict(caret::preProcess(x.f,method=method,...),x.f)
+}
+
 norm.ihs.prop <- function(x,theta=1,mar=1) {
   norm.ihs(norm.prop(x,mar=mar),theta=theta)
 }
@@ -1487,6 +1506,9 @@ norm.boxcox.prop <- function(x,mar.prop=1,mar.boxcox=2) {
   norm.boxcox(norm.prop(x,mar=mar.prop),mar=mar.boxcox)
 }
 
+norm.caret.prop <- function(x,mar=1,...) {
+  norm.caret(norm.prop(x,mar=mar),...)
+}
 
 ## normalize raw count data according to one of the
 ## methods defined above.

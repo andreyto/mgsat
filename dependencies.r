@@ -76,7 +76,15 @@ vanilla_packages = c(
   ## convenient date conversions
   "lubridate",
   ## geometric median for robust multidimensional averaging 
-  "Gmedian"
+  "Gmedian",
+  ## mosaic plot for tests of proportions
+  "vcd",
+  ## plot p-values for anova or kruskal-wallis post-hocs
+  "ggpubr",
+  ## repel text labels in ggplot to prevent overlapping of labels
+  # ggrepel
+  ## transforms such as Yeo-Johnsons
+  "caret"
 )
 
 vanilla_packages_github = c(
