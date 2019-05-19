@@ -1510,6 +1510,10 @@ norm.caret.prop <- function(x,mar=1,...) {
   norm.caret(norm.prop(x,mar=mar),...)
 }
 
+norm.caret.clr <- function(x,...) {
+  norm.caret(norm.clr(x),...)
+}
+
 ## normalize raw count data according to one of the
 ## methods defined above.
 
