@@ -3987,7 +3987,8 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
                                  group.attr=NULL,
                                  betadisper.task=list(),
                                  adonis.task=NULL,
-                                 do.rarefy=T) {
+                                 do.rarefy=T,
+                                 return.dist=T) {
   
   require(vegan)
   
@@ -4040,6 +4041,9 @@ mgsat.diversity.beta <- function(m_a,n.rar.rep=400,method="-1",
                            )
       )
     })
+  }
+  if(isTRUE(return.dist)) {
+    res$beta.dist = beta.dist
   }
   return(res)
 }
@@ -5213,6 +5217,7 @@ mgsat.16s.task.template = within(list(), {
         method="-1"
         betadisper.task=list()
         adonis.task=NULL #will be replaced by global adonis.task
+        return.dist=TRUE #include dissimilarity matrix `dist` object in return value
       })
       ## Same structure as the task-wide genesel.task; if NULL,
       ## this will be taken from task-wide structure
@@ -5548,6 +5553,24 @@ get.diversity.mgsatres <- function(x.f,type=NULL,...) {
   else {
     return (get.diversity(dr,type=type,...))
   }
+}
+
+## extract results of diversity analysis
+get.beta.dist <- function(x, ...) {
+  UseMethod('get.beta.dist', x)
+}
+
+get.beta.dist.default <- function(x.f) {
+  stop("Not defined for arbitrary objects")
+}
+
+get.beta.dist.divrich <- function(x.f,type) {
+  x.f$beta$beta.dist
+}
+
+get.beta.dist.mgsatres <- function(x.f,...) {
+  dr = x.f[["divrich"]]
+  get.beta.dist(dr)
 }
 
 report.count.filter.m_a <- function(m_a,count.filter.options=NULL,descr="",warn.richness=T) {
