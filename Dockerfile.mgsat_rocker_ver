@@ -1,0 +1,205 @@
+FROM rocker/tidyverse:latest as mgsat-deps
+
+RUN \
+  BUILDDEPS="curl \
+    default-jdk \
+    libbz2-dev \
+    libcairo2-dev \
+    libcurl4-openssl-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libicu-dev \
+    libpcre3-dev \
+    libpng-dev \
+    libreadline-dev \
+    libtiff5-dev \
+    liblzma-dev \
+    libx11-dev \
+    libxt-dev \
+    libgeos-dev \
+    libhdf5-dev \
+    libudunits2-dev \
+    libgdal-dev \
+    perl \
+    tcl8.6-dev \
+    tk8.6-dev \
+    texinfo \
+    texlive-extra-utils \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    texlive-latex-recommended \
+    x11proto-core-dev \
+    xauth \
+    xfonts-base \
+    xvfb \
+    zlib1g-dev" \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+    git \
+    pandoc \
+    qpdf \
+    $BUILDDEPS \
+  && apt-get autoremove -y \
+  && apt-get autoclean -y \
+  && rm -rf /var/lib/apt/lists/* \
+  && install2.r --ncpus \-1 --error \
+    --deps TRUE \
+    --skipinstalled \
+    gtools \
+    reshape2 \
+    plyr \
+    purrr \
+    stringr \ 
+    ggplot2 \
+    vegan \ 
+    glmnet \
+    stabs \
+    geoR \ 
+    foreach \ 
+    iterators \ 
+    doParallel \ 
+    fdrtool \ 
+    HMP \ 
+    boot \
+    lattice \
+    timeDate \
+    Hmisc \
+    kernlab \
+    lme4 \
+    pander \
+    fitdistrplus \
+    doBy \
+    exactRankTests \
+    data.table \
+    dplyr \
+    tidyr \
+    pROC \
+    pspline \
+    simboot \
+    fpc \
+    DescTools \
+    arm \
+    afex \
+    Rlof \
+    htmlwidgets \
+    d3heatmap \
+    threejs \
+    plotly \
+    networkD3 \
+    pairsD3 \
+    lubridate \
+    Gmedian \
+    vcd \
+    ggpubr \
+    ggrepel \
+    caret
+
+RUN r -e 'BiocManager::install(\
+c( \
+  "multtest",\
+  "RColorBrewer",\
+  "Heatplus",\
+  "DESeq2",\
+  "ComplexHeatmap",\
+  "phyloseq",\
+  "zdk123/SpiecEasi",\
+  "bokeh/rbokeh",\
+  "smartinsightsfromdata/rpivotTable",\
+  "cmap/morpheus.R",\
+  "andreyto/GeneSelector@at_samr"\
+))'
+
+FROM mgsat-deps as mgsat
+
+RUN mkdir /home/rstudio/work
+WORKDIR /home/rstudio/work
+
+RUN ((curl -LJ https://github.com/andreyto/mgsat/tarball/master \
+| tar -zxf -) \
+&& mv *mgsat* mgsat)
+
+FROM mgsat as cgfease
+
+RUN \
+install2.r --ncpus \-1 --error \
+    --deps TRUE \
+    --skipinstalled \
+    purrr \
+    dtplyr \
+    itertools \
+    R.cache \
+    memoise \
+    ranger \
+    randomForest \
+    caret \
+    e1071 \
+    genoPlotR \
+    futile.logger \
+&& \
+r -e 'BiocManager::install(\
+c( \
+  "GenomicRanges",\
+  "rtracklayer",\
+  "hiAnnotator"\
+),clean=TRUE,Ncpus=max(1L, parallel::detectCores()))' \
+&& rm -rf /tmp/downloaded_packages/*
+
+FROM mgsat as multiomig
+
+RUN \
+  apt-get update \
+  && apt-get install -y --no-install-recommends \
+    python-pip \
+    libpython2.7 \
+    libglu1-mesa-dev \
+    plink1.9 \
+  && apt-get autoremove -y \
+  && apt-get autoclean -y \
+  && rm -rf /var/lib/apt/lists/* \
+  && \
+  install2.r --ncpus \-1 --error \
+    --deps TRUE \
+    --skipinstalled \
+    flexmix \
+    tibble \
+    ggfortify \
+    FactoMineR \
+    vcd \
+    GFA \
+    enrichR \
+    vtreat \
+    visreg \
+    latex2exp \
+    sfsmisc \
+    finalfit \
+    broom \
+    matrixStats \
+    MatrixEQTL \
+    haploR \
+    digest \
+  && \
+  python -m pip install -U pip \
+  && \
+  python -m pip install mofapy \
+  && \
+  r -e 'BiocManager::install(\
+  c( \
+    "MOFA",\
+    "HDF5Array",\
+    "MultiAssayExperiment",\
+    "privefl/bigsnpr",\
+    "bigstatsr",\
+    "limma",\
+    "rtracklayer",\
+    "hiAnnotator",\
+    "EGSEA",\
+    "GenomicRanges",\
+    "snpStats",\
+    "SummarizedExperiment",\
+    "VariantAnnotation",\
+    "AnnotationHub",\
+    "AnnotationDbi",\
+    "GenomicFeatures",\
+    "flowCore"\
+  ),clean=TRUE,Ncpus=max(1L, parallel::detectCores()))' \
+  && rm -rf /tmp/downloaded_packages/*
