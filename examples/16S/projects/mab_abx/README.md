@@ -22,7 +22,7 @@ consistency as compared to the labels used in the StudyDesign.txt files here
 and in the ENA file names:
 
 | From  | To     |
-| -------------- |
+| ----- | ------ |
 | R347  | c-IgG  |
 | Naive | Saline |
 | LC10  | 4893   |
