@@ -2,9 +2,9 @@
 
 **Jones et al, Antibacterial Monoclonal Antibodies Do Not Disrupt the Intestinal Microbiome or its Function**
 
-- run_data.sh - executes primary analysis making taxonomic abundance 
+- `run_data.sh` - executes primary analysis making taxonomic abundance 
   matrix from FASTQ files
-- run_mgsat_qsub.sh - executes secondary analysis starting from the
+- `run_mgsat_qsub.sh` - executes secondary analysis starting from the
   taxonomic abundance matrix and study design table
 
 Run these in separate directories for each of the three experiments.
@@ -22,7 +22,7 @@ consistency as compared to the labels used in the StudyDesign.txt files here
 and in the ENA file names:
 
 | From  | To     |
-|----------------|
+| -------------- |
 | R347  | c-IgG  |
 | Naive | Saline |
 | LC10  | 4893   |
