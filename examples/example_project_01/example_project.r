@@ -716,7 +716,7 @@ gen.tasks.diet <- function() {
       do.plot.profiles.abund=T
       do.heatmap.abund=T
       do.aggr.after.norm = taxa.levels
-      do.ordination = F
+      do.ordination = T
       
       norm.count.task = within(norm.count.task, {
         method="norm.prop"
